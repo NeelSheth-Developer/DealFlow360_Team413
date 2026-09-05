@@ -33,7 +33,8 @@ npm run db:push
 npm run dev
 ```
 
-The API is then available at `http://localhost:5000/api/v1`.
+The API is then available at `http://localhost:5050/api/v1`, and a browser-based
+auth tester at `http://localhost:5050` (development only).
 
 ## Scripts
 
