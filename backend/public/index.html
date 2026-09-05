@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DealFlow360 — Auth Tester</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #161923; --panel2: #1c2030; --line: #262b3a;
+    --text: #e6e8f0; --muted: #8b92a8; --accent: #7c5cff; --accent2: #a78bfa;
+    --ok: #34d399; --warn: #fbbf24; --err: #f87171; --info: #60a5fa;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; background: rgba(15,17,23,.92);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 14px 20px;
+  }
+  .bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  h1 span { color: var(--accent2); }
+  .grow { flex: 1; }
+  .session {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .pill {
+    padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel2); font-size: 11px; font-family: var(--mono);
+  }
+  .pill.on { border-color: var(--ok); color: var(--ok); }
+  .pill.off { border-color: var(--line); color: var(--muted); }
+
+  main { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; padding: 18px 20px 60px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .card > summary {
+    cursor: pointer; padding: 12px 14px; display: flex; gap: 10px; align-items: center;
+    list-style: none; user-select: none;
+  }
+  .card > summary::-webkit-details-marker { display: none; }
+  .card > summary:hover { background: var(--panel2); }
+  .method {
+    font-family: var(--mono); font-size: 10px; font-weight: 700; padding: 3px 7px;
+    border-radius: 5px; letter-spacing: .04em;
+  }
+  .POST { background: #2b2350; color: var(--accent2); }
+  .GET { background: #16324a; color: var(--info); }
+  .PATCH { background: #4a3a16; color: var(--warn); }
+  .path { font-family: var(--mono); font-size: 12.5px; }
+  .note { color: var(--muted); font-size: 11.5px; margin-left: auto; text-align: right; }
+  .body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 9px; }
+
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--muted); }
+  input, select, textarea {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 7px; padding: 7px 9px; font-family: var(--mono); font-size: 12.5px; width: 100%;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 7px;
+    padding: 8px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: var(--accent2); }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+  button.ghost:hover { background: var(--panel2); color: var(--text); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .out {
+    font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; word-break: break-word;
+    background: #0b0d13; border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    max-height: 260px; overflow: auto; margin: 0;
+  }
+  .status { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
+  .s2 { background: rgba(52,211,153,.15); color: var(--ok); }
+  .s4 { background: rgba(248,113,113,.15); color: var(--err); }
+  .s5 { background: rgba(251,191,36,.15); color: var(--warn); }
+
+  .log { position: sticky; top: 76px; }
+  .log .body { max-height: calc(100vh - 140px); overflow: auto; }
+  .entry { border-left: 2px solid var(--line); padding: 6px 0 6px 10px; margin-bottom: 8px; }
+  .entry.ok { border-color: var(--ok); }
+  .entry.bad { border-color: var(--err); }
+  .entry .head { display: flex; gap: 8px; align-items: center; font-family: var(--mono); font-size: 11px; }
+  .entry .head .t { color: var(--muted); margin-left: auto; }
+  .hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+  .hint code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  .warnbox {
+    border: 1px solid #4a3a16; background: rgba(251,191,36,.07); color: var(--warn);
+    border-radius: 8px; padding: 9px 11px; font-size: 11.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <h1>DealFlow360 <span>Auth Tester</span></h1>
+    <label style="flex-direction:row;align-items:center;gap:7px;color:var(--muted)">
+      base
+      <input id="base" style="width:230px" value="/api/v1" />
+    </label>
+    <div class="grow"></div>
+    <div class="session">
+      <span class="pill off" id="pKind">no session</span>
+      <span class="pill off" id="pAccess">no access token</span>
+      <span class="pill off" id="pRefresh">no refresh token</span>
+      <button class="ghost" id="btnClear">Clear session</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ───────────────────────── left column ───────────────────────── -->
+  <div class="col">
+
+    <div class="warnbox">
+      Set <code>EXPOSE_DEV_OTP=true</code> in <code>.env</code> and the OTP comes back in the
+      response — this page fills it in for you. It is double-gated and inert in production.
+    </div>
+
+    <details class="card" open>
+      <summary><span class="method POST">POST</span><span class="path">/auth/signup</span>
+        <span class="note">201 → OTP · 200 → tokens</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>type
+            <select id="su_type"><option value="internal">internal</option><option value="customer">customer</option></select>
+          </label>
+          <label>name<input id="su_name" value="Priya Sharma" /></label>
+        </div>
+        <div class="row">
+          <label>email<input id="su_email" /></label>
+          <label>password<input id="su_password" value="S3cure!pass" /></label>
+        </div>
+        <div class="actions">
+          <button data-run="signup">Send</button>
+          <button class="ghost" id="btnFresh">New random email</button>
+          <span class="hint">Server assigns <code>role</code>/<code>tier</code> — sending them is rejected.</span>
+        </div>
+        <pre class="out" id="out_signup">—</pre>
+      </div>
+    </details>
+
+    <details class="card" open>
+      <summary><span class="method POST">POST</span><span class="path">/auth/verify-otp</span>
+        <span class="note">issues the tokens</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>type
+            <select id="vo_type"><option value="internal">internal</option><option value="customer">customer</option></select>
+          </label>
+          <label>otp<input id="vo_otp" placeholder="6 digits" /></label>
+        </div>
+        <label>email<input id="vo_email" /></label>
+        <div class="actions"><button data-run="verify">Send</button>
+          <span class="hint">No <code>purpose</code> field — the server reads it from the stored code.</span></div>
+        <pre class="out" id="out_verify">—</pre>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary><span class="method POST">POST</span><span class="path">/auth/resend-otp</span>
+        <span class="note">60s cooldown</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>type
+            <select id="ro_type"><option value="internal">internal</option><option value="customer">customer</option></select>
+          </label>
+          <label>purpose
+            <select id="ro_purpose"><option value="signup">signup</option><option value="password_reset">password_reset</option></select>
+          </label>
+        </div>
+        <label>email<input id="ro_email" /></label>
+        <div class="actions"><button data-run="resend">Send</button></div>
+        <pre class="out" id="out_resend">—</pre>
+      </div>
+    </details>
+
+    <details class="card" open>
+      <summary><span class="method POST">POST</span><span class="path">/auth/login</span>
+        <span class="note">type picks the table</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>type
+            <select id="li_type"><option value="internal">internal</option><option value="customer">customer</option></select>
+          </label>
+          <label>password<input id="li_password" value="S3cure!pass" /></label>
+        </div>
+        <label>email<input id="li_email" /></label>
+        <div class="actions"><button data-run="login">Send</button>
+          <span class="hint">Unknown email and wrong password give the same 401.</span></div>
+        <pre class="out" id="out_login">—</pre>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary><span class="method POST">POST</span><span class="path">/auth/forgot-password</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>type
+            <select id="fp_type"><option value="internal">internal</option><option value="customer">customer</option></select>
+          </label>
+          <label>email<input id="fp_email" /></label>
+        </div>
+        <div class="actions"><button data-run="forgot">Send</button>
+          <span class="hint">Always 200, even for an unknown address.</span></div>
+        <pre class="out" id="out_forgot">—</pre>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary><span class="method POST">POST</span><span class="path">/auth/reset-password</span>
+        <span class="note">revokes all sessions</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>type
+            <select id="rp_type"><option value="internal">internal</option><option value="customer">customer</option></select>
+          </label>
+          <label>otp<input id="rp_otp" /></label>
+        </div>
+        <div class="row">
+          <label>email<input id="rp_email" /></label>
+          <label>newPassword<input id="rp_new" value="Brand!New9pass" /></label>
+        </div>
+        <div class="actions"><button data-run="reset">Send</button>
+          <span class="hint">Reusing the current password does <b>not</b> burn the code.</span></div>
+        <pre class="out" id="out_reset">—</pre>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary><span class="method POST">POST</span><span class="path">/auth/change-password</span>
+        <span class="note">bearer</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>currentPassword<input id="cp_cur" value="S3cure!pass" /></label>
+          <label>newPassword<input id="cp_new" value="Brand!New9pass" /></label>
+        </div>
+        <label style="flex-direction:row;align-items:center;gap:7px">
+          <input type="checkbox" id="cp_keep" checked style="width:auto" /> send refreshToken (keeps this session)
+        </label>
+        <div class="actions"><button data-run="change">Send</button></div>
+        <pre class="out" id="out_change">—</pre>
+      </div>
+    </details>
+  </div>
+
+  <!-- ───────────────────────── right column ───────────────────────── -->
+  <div class="col">
+
+    <details class="card" open>
+      <summary><span class="method POST">POST</span><span class="path">/auth/refresh</span>
+        <span class="note">rotates the pair</span></summary>
+      <div class="body">
+        <div class="actions">
+          <button data-run="refresh">Send</button>
+          <button class="ghost" data-run="replay">Replay the OLD token</button>
+        </div>
+        <div class="hint">Replaying a rotated token kills <b>every</b> session for that account.</div>
+        <pre class="out" id="out_refresh">—</pre>
+      </div>
+    </details>
+
+    <details class="card" open>
+      <summary><span class="method GET">GET</span><span class="path">/auth/me</span>
+        <span class="note">bearer</span></summary>
+      <div class="body">
+        <div class="actions">
+          <button data-run="me">Send</button>
+          <button class="ghost" data-run="me_bad">With a garbage token</button>
+          <button class="ghost" data-run="me_none">With no token</button>
+        </div>
+        <pre class="out" id="out_me">—</pre>
+      </div>
+    </details>
+
+    <details class="card" open>
+      <summary><span class="method POST">POST</span><span class="path">/auth/logout</span>
+        <span class="note">204</span></summary>
+      <div class="body">
+        <div class="actions"><button data-run="logout">Send</button></div>
+        <div class="hint">The access token still works for up to 15 min — it cannot be revoked.</div>
+        <pre class="out" id="out_logout">—</pre>
+      </div>
+    </details>
+
+    <details class="card" open>
+      <summary><span class="method GET">GET</span><span class="path">/roles · /users</span>
+        <span class="note">admin only — guard checks</span></summary>
+      <div class="body">
+        <div class="actions">
+          <button data-run="roles">GET /roles</button>
+          <button data-run="users">GET /users</button>
+        </div>
+        <div class="hint">
+          Expect <code>403 FORBIDDEN</code> as a rep, <code>403 WRONG_KIND</code> as a customer.
+          Seed an admin: <code>npm run seed:admin -- you@x.com "Name" "S3cure!pass"</code>
+        </div>
+        <div class="row">
+          <label>user id (for PATCH)<input id="pu_id" placeholder="uuid" /></label>
+          <label>role
+            <select id="pu_role">
+              <option>sales_rep</option><option>sales_manager</option>
+              <option>finance</option><option>admin</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions"><button data-run="patchUser">PATCH /users/:id</button>
+          <span class="hint"><code>admin</code> is rejected — seed only.</span></div>
+        <pre class="out" id="out_admin">—</pre>
+      </div>
+    </details>
+
+    <details class="card log" open>
+      <summary><span class="method GET">LOG</span><span class="path">request history</span>
+        <span class="note"><button class="ghost" id="btnClearLog">clear</button></span></summary>
+      <div class="body"><div id="log"></div></div>
+    </details>
+  </div>
+</main>
+
+<script src="./app.js"></script>
+</body>
+</html>

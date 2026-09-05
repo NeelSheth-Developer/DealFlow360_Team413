@@ -5,7 +5,8 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'drizzle/**'],
+    // `public/` is browser code for the dev tester, outside the TS project.
+    ignores: ['dist/**', 'node_modules/**', 'drizzle/**', 'public/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -32,6 +33,11 @@ export default tseslint.config(
   {
     files: ['*.config.js', '*.config.ts', 'drizzle.config.ts'],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    // CLI scripts talk to an operator on stdout, not through the request logger.
+    files: ['src/scripts/**/*.ts'],
+    rules: { 'no-console': 'off' },
   },
   prettier,
 );
