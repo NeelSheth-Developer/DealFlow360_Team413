@@ -37,7 +37,7 @@ const SECTIONS = [
   {
     label: 'Platform',
     items: [
-      { to: '/app/backend/users', label: 'Users & roles', icon: Users, ref: '' },
+      { to: '/app/backend/directory', label: 'Account directory', icon: Users, ref: '' },
       { to: '/app/backend/audit-log', label: 'Audit log', icon: ClipboardList, ref: '' },
     ],
   },

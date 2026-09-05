@@ -33,7 +33,11 @@ export function computeBlendedRisk(lines = [], categoryCeilings = {}, tierCeilin
     const ceiling = Math.min(categoryCeiling, tierCeiling);
 
     const overBy = Math.max(0, effectivePct - ceiling);
-    const value = (Number(line.qty) || 0) * (Number(line.unitPrice) || 0) * (1 - lineDiscount / 100);
+
+    // Weight is the GROSS line value (qty × unit price), before any discount.
+    // Worked example: a 1,000 laptop inside its ceiling and a 2,000 service
+    // 8 points over gives (1000×0 + 2000×8) / (1000+2000) = 5.33 points.
+    const value = (Number(line.qty) || 0) * (Number(line.unitPrice) || 0);
 
     if (overBy > worstSingleOverage) worstSingleOverage = overBy;
     weightedOverage += overBy * value;

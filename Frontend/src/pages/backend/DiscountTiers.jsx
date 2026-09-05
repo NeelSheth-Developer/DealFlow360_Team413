@@ -1,17 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
   Award,
   FlaskConical,
   Layers,
+  Loader2,
   Plus,
   Trash2,
   UserCheck,
   Workflow,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import { computeBlendedRisk, resolveApprovalPath } from '@/lib/riskEngine';
+import { PENDING_RISK, scoreLines } from '@/services/riskService';
 import { categoryLabel, money, percent, roleLabel, tierLabel } from '@/lib/format';
 import { cn, nextId } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
@@ -44,17 +45,41 @@ export default function DiscountTiers() {
   // -------------------------------------------------------------- sandbox
   const [sandboxTier, setSandboxTier] = useState('gold');
   const [sandboxLines, setSandboxLines] = useState([
-    { id: 'sb-1', productName: 'Laptop Pro 14', category: 'hardware', qty: 1, unitPrice: 100000, discountPct: 12 },
-    { id: 'sb-2', productName: 'Setup Service', category: 'service', qty: 1, unitPrice: 20000, discountPct: 18 },
+    { id: 'sb-1', productName: 'Laptop', category: 'hardware', qty: 1, unitPrice: 1000, discountPct: 10 },
+    { id: 'sb-2', productName: 'Setup Service', category: 'service', qty: 1, unitPrice: 2000, discountPct: 18 },
   ]);
+  const [scored, setScored] = useState(PENDING_RISK);
+  const [scoring, setScoring] = useState(false);
 
-  const sandboxRisk = computeBlendedRisk(
-    sandboxLines,
-    categoryCeilings,
-    tierCeilings[sandboxTier] ?? 0,
-    0,
-  );
-  const sandboxPath = resolveApprovalPath(sandboxRisk, approvalChain);
+  // Debounced so dragging a slider doesn't fire a request per frame. This calls
+  // the same scoring service the app uses, so the sandbox genuinely tests
+  // production behaviour rather than a separate local copy of the rules.
+  useEffect(() => {
+    let cancelled = false;
+    setScoring(true);
+
+    const timer = setTimeout(async () => {
+      const result = await scoreLines({
+        lines: sandboxLines,
+        categoryCeilings,
+        tierCeiling: tierCeilings[sandboxTier] ?? 0,
+        orderDiscountPct: 0,
+        approvalChain,
+      });
+      if (!cancelled) {
+        setScored(result);
+        setScoring(false);
+      }
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [sandboxLines, sandboxTier, categoryCeilings, tierCeilings, approvalChain]);
+
+  const sandboxRisk = scored.risk;
+  const sandboxPath = scored.approvalPath;
 
   const updateSandboxLine = (id, patch) =>
     setSandboxLines((lines) => lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -313,9 +338,22 @@ export default function DiscountTiers() {
         <div className="xl:sticky xl:top-24 xl:self-start">
           <GlassPanel
             title="Risk sandbox"
-            description="Test the live scoring function against sample lines."
+            description="Sends sample lines through the same scoring service the app uses."
             icon={FlaskConical}
             accent="teal"
+            actions={
+              scoring ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" aria-hidden="true" />
+              ) : (
+                <Badge tone={scored.source === 'server' ? 'success' : 'neutral'} size="xs">
+                  {scored.source === 'server'
+                    ? 'server'
+                    : scored.source === 'fallback'
+                      ? 'fallback'
+                      : 'local'}
+                </Badge>
+              )
+            }
           >
             <Select
               label="Customer tier"

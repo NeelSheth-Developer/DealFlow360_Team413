@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, FileText, Package, Repeat } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cadenceAdverb, dateShort, money } from '@/lib/format';
@@ -6,11 +6,11 @@ import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { Button } from '@/components/ui/Button';
 
 /** Post-confirmation success screen for the customer. */
-export default function PortalConfirmed() {
-  const { token } = useParams();
-  const view = useAppStore((s) => s.portalGetQuote(token));
+export default function CustomerConfirmed() {
+  const { id } = useParams();
+  const view = useAppStore((s) => s.customerGetQuote(id));
 
-  if (!view) return null;
+  if (!view) return <Navigate to="/customer/quotations" replace />;
 
   const recurring = view.lines.filter((l) => l.isRecurring);
   const oneTime = view.lines.filter((l) => !l.isRecurring);
@@ -24,7 +24,7 @@ export default function PortalConfirmed() {
 
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">Quotation confirmed</h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-soft">
-          Thank you. {view.reference} is confirmed and moving into fulfillment. Your account contact
+          Thank you. {view.reference} is confirmed and moving into fulfillment. Your account manager
           will follow up with delivery details.
         </p>
 
@@ -39,7 +39,7 @@ export default function PortalConfirmed() {
         </div>
       </GlassCard>
 
-      <GlassPanel title="What happens next" icon={Package}>
+      <GlassPanel title="What happens next" icon={Package} accent="teal">
         <ol className="space-y-3">
           <NextStep
             index={1}
@@ -56,7 +56,7 @@ export default function PortalConfirmed() {
             icon={FileText}
             title="Invoice for one-time charges"
             body={
-              oneTime.length
+              view.totals.oneTimeTotal > 0
                 ? `An invoice for ${money(view.totals.oneTimeTotal, view.currency)} will be issued with 15-day payment terms.`
                 : 'No one-time charges on this order.'
             }
@@ -72,11 +72,14 @@ export default function PortalConfirmed() {
         </ol>
       </GlassPanel>
 
-      <div className="flex justify-center">
-        <Link to={`/portal/${token}`}>
+      <div className="flex flex-wrap justify-center gap-2">
+        <Link to={`/customer/quotations/${id}`}>
           <Button variant="secondary" icon={ArrowLeft}>
             View quotation details
           </Button>
+        </Link>
+        <Link to="/customer/quotations">
+          <Button variant="ghost">All quotations</Button>
         </Link>
       </div>
     </div>
@@ -86,7 +89,7 @@ export default function PortalConfirmed() {
 function NextStep({ index, icon: Icon, title, body }) {
   return (
     <li className="flex gap-3">
-      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-500/12 text-brand-600">
+      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent-teal/12 text-accent-teal">
         <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
       <div className="min-w-0">

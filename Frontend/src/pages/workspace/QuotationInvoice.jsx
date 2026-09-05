@@ -5,17 +5,19 @@ import {
   Download,
   FileText,
   Info,
+  Lock,
   Receipt,
   Repeat,
   ScrollText,
   Send,
+  ShieldCheck,
   Wallet,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectBillingView, selectInvoiceForQuote } from '@/store/selectors';
 import { INVOICE_STEPS, invoiceStepIndex } from '@/lib/billingEngine';
 import { exportInvoiceToPdf } from '@/lib/exporters';
-import { dateShort, invoiceStatusLabel, money, paymentMethodLabel } from '@/lib/format';
+import { dateShort, invoiceStatusLabel, money, paymentMethodLabel, roleLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -54,6 +56,10 @@ export default function QuotationInvoice() {
   });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // Settling money is restricted to Finance and Admin.
+  const canSettle = useAppStore((s) => s.canRecordPayments());
+  const currentUser = useAppStore((s) => s.currentUser);
 
   if (!quote) return <Navigate to="/404" replace />;
 
@@ -171,7 +177,7 @@ export default function QuotationInvoice() {
         }
         actions={
           <>
-            {invoice.status === 'draft' && (
+            {invoice.status === 'draft' && canSettle && (
               <Button
                 size="sm"
                 icon={Send}
@@ -387,12 +393,62 @@ export default function QuotationInvoice() {
           </GlassCard>
 
           {/* -------------------------------------- record payment form */}
-          <GlassPanel title="Record a payment" icon={Wallet} accent="teal">
-            {invoice.balanceRemaining <= 0 ? (
+          <GlassPanel
+            title="Record a payment"
+            icon={Wallet}
+            accent="teal"
+            actions={
+              canSettle ? (
+                <Badge tone="success" size="xs" icon={ShieldCheck}>
+                  Authorised
+                </Badge>
+              ) : (
+                <Badge tone="neutral" size="xs" icon={Lock}>
+                  Finance only
+                </Badge>
+              )
+            }
+          >
+            {!canSettle ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-2.5 rounded-xl border border-brand-500/20 bg-brand-500/8 p-3">
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-ink">
+                      {roleLabel(currentUser?.role)} cannot confirm payments
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+                      Only Finance or an Admin may mark money as received. Whoever sold the deal is
+                      deliberately not the person who confirms the cash arrived — that separation is
+                      what makes the payment record trustworthy.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-white/60 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                    Outstanding balance
+                  </p>
+                  <p className="num mt-1 text-xl font-extrabold text-state-danger">
+                    {money(invoice.balanceRemaining, invoice.currency)}
+                  </p>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+                    Switch to the Finance role from the user menu to record a payment during a demo.
+                  </p>
+                </div>
+              </div>
+            ) : invoice.balanceRemaining <= 0 ? (
               <div className="flex items-start gap-2.5 rounded-xl bg-state-success/10 p-3">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-state-success" aria-hidden="true" />
                 <p className="text-xs leading-relaxed text-ink-soft">
                   This invoice is fully settled. The order has been marked confirmed.
+                </p>
+              </div>
+            ) : invoice.status === 'draft' ? (
+              <div className="flex items-start gap-2.5 rounded-xl bg-accent-amber/10 p-3">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent-amber" aria-hidden="true" />
+                <p className="text-xs leading-relaxed text-ink-soft">
+                  Issue the invoice first. A payment can only be recorded against a sent invoice.
                 </p>
               </div>
             ) : (
@@ -471,26 +527,28 @@ export default function QuotationInvoice() {
             )}
           </GlassPanel>
 
-          <GlassCard className="p-4">
-            <Button
-              variant="secondary"
-              fullWidth
-              size="sm"
-              icon={ScrollText}
-              onClick={() => {
-                createCreditNote(id, {
-                  amount: Math.round(invoice.total * 0.05),
-                  type: 'credit_note',
-                  reason: 'Goodwill credit issued from the invoice screen.',
-                });
-                toast.success('Credit note created', {
-                  description: 'Visible in the billing screen ledger and the audit trail.',
-                });
-              }}
-            >
-              Create Credit Note
-            </Button>
-          </GlassCard>
+          {canSettle && (
+            <GlassCard className="p-4">
+              <Button
+                variant="secondary"
+                fullWidth
+                size="sm"
+                icon={ScrollText}
+                onClick={() => {
+                  createCreditNote(id, {
+                    amount: Math.round(invoice.total * 0.05),
+                    type: 'credit_note',
+                    reason: 'Goodwill credit issued from the invoice screen.',
+                  });
+                  toast.success('Credit note created', {
+                    description: 'Visible in the billing screen ledger and the audit trail.',
+                  });
+                }}
+              >
+                Create Credit Note
+              </Button>
+            </GlassCard>
+          )}
         </div>
       </div>
     </div>

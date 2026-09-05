@@ -70,6 +70,19 @@ export function RiskEngineDemo() {
             </span>
           </div>
 
+          <div className="mb-4 rounded-xl bg-brand-500/8 px-3 py-2.5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-brand-700">
+              How the score is computed
+            </p>
+            <p className="num mt-1 text-xs font-semibold text-ink">
+              Σ (line value × points over ceiling) ÷ Σ line value
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-ink-soft">
+              A ₹1,000 line inside its ceiling and a ₹2,000 line 8 points over gives
+              (1000×0 + 2000×8) ÷ 3000 = <span className="font-bold text-ink">5.33 points</span>.
+            </p>
+          </div>
+
           <div className="space-y-5">
             <LineControl
               name="Laptop Pro 14"

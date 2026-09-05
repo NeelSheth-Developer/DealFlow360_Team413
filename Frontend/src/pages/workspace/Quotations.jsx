@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FileText, Kanban, List, Plus, Search } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectQuotationRows } from '@/store/selectors';
+import { useAllRisks } from '@/hooks/useRisk';
 import { STAGES } from '@/lib/stageMachine';
 import { money, percent, stageLabel } from '@/lib/format';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
@@ -20,6 +21,9 @@ export default function Quotations() {
   const navigate = useNavigate();
   const users = useAppStore((s) => s.users);
   const stallThreshold = useAppStore((s) => s.dashboardConfig.stallThresholdDays);
+
+  // One batched scoring request keeps every row's risk chip accurate.
+  useAllRisks();
 
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('');

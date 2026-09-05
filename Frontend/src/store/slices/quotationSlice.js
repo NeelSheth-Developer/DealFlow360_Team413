@@ -1,13 +1,7 @@
-import { makeToken, nextId, nowISO, addDaysISO } from '@/lib/utils';
+import { nextId, nowISO, addDaysISO } from '@/lib/utils';
 import { roleLabel, stageLabel } from '@/lib/format';
 import { tierPrice } from '@/lib/pricing';
-import {
-  approvalPathLabel,
-  buildApprovalSteps,
-  computeBlendedRisk,
-  currentPendingStep,
-  resolveApprovalPath,
-} from '@/lib/riskEngine';
+import { buildApprovalSteps, currentPendingStep } from '@/lib/riskEngine';
 import { canTransition } from '@/lib/stageMachine';
 import { defaultPlanForProduct } from '@/data/seed/subscriptionPlans';
 
@@ -40,10 +34,25 @@ export function createQuotationSlice(set, get) {
     },
 
     // -------------------------------------------------------------- creation
-    createQuotation(customerId) {
+    /**
+     * Creates a quotation assigned to a registered customer.
+     *
+     * A rep always owns what they create. Admin and Sales Manager may assign the
+     * quotation to a specific rep at creation time.
+     */
+    createQuotation(customerId, ownerId = null) {
       const customer = get().customers.find((c) => c.id === customerId);
       const me = get().currentUser;
       if (!customer || !me) return null;
+
+      let owner = me;
+      if (ownerId && ownerId !== me.id) {
+        if (!get().canAssignQuotations()) return null;
+        const candidate = get().users.find((u) => u.id === ownerId);
+        if (candidate && ['sales_rep', 'sales_manager'].includes(candidate.role)) {
+          owner = candidate;
+        }
+      }
 
       const quotation = {
         id: nextQuoteNumber(),
@@ -51,15 +60,17 @@ export function createQuotationSlice(set, get) {
         customerName: customer.name,
         tier: customer.tier,
         currency: customer.currency,
-        ownerId: me.id,
-        ownerName: me.name,
+        ownerId: owner.id,
+        ownerName: owner.name,
+        createdById: me.id,
+        createdByName: me.name,
         stage: 'draft',
         lines: [],
         orderDiscountPct: 0,
         approvalSteps: [],
-        portalToken: makeToken(`${customer.name}${Date.now()}`),
         negotiationStatus: 'none',
         awaitingSeller: false,
+        sharedAt: null,
         counterDiscountPct: null,
         counterJustification: null,
         dismissedSuggestions: [],
@@ -73,12 +84,24 @@ export function createQuotationSlice(set, get) {
       };
 
       set((state) => ({ quotations: [quotation, ...state.quotations] }));
+
       get().logAudit({
         entityType: 'quotation',
         entityId: quotation.id,
-        action: 'Quotation created',
-        meta: { customer: customer.name, tier: customer.tier },
+        action: `Quotation created for ${customer.name} and assigned to ${owner.name}`,
+        meta: { customerId: customer.id, tier: customer.tier, ownerId: owner.id },
       });
+
+      if (owner.id !== me.id) {
+        get().notify({
+          userId: owner.id,
+          type: 'system',
+          title: `${quotation.id} assigned to you`,
+          body: `${customer.name} · created by ${me.name}.`,
+          link: `/app/quotations/${quotation.id}`,
+        });
+      }
+
       return quotation;
     },
 
@@ -191,35 +214,20 @@ export function createQuotationSlice(set, get) {
     },
 
     // ------------------------------------------------------- risk & approval
-    /** Live risk for a quotation using current configuration. */
-    riskFor(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return null;
-      return computeBlendedRisk(
-        quote.lines,
-        get().categoryCeilings,
-        get().tierCeilings[quote.tier] ?? 0,
-        quote.orderDiscountPct,
-      );
-    },
-
-    approvalPathFor(quoteId) {
-      const risk = get().riskFor(quoteId);
-      if (!risk) return { approvers: [], label: 'Auto-approve', ruleId: null };
-      return resolveApprovalPath(risk, get().approvalChain);
-    },
-
     /**
-     * Routes the quotation. Empty approver list means it auto-approves — the rep
-     * never has to request approval, and never gets to skip it either.
+     * Routes the quotation using a freshly-fetched, server-authoritative score.
+     * Empty approver list means it auto-approves — the rep never has to request
+     * approval, and never gets to skip it either.
      */
-    submitForApproval(quoteId) {
+    async submitForApproval(quoteId) {
       const quote = get().getQuotation(quoteId);
       if (!quote) return { ok: false, error: 'Quotation not found.' };
       if (!quote.lines.length) return { ok: false, error: 'Add at least one line first.' };
 
-      const risk = get().riskFor(quoteId);
-      const path = get().approvalPathFor(quoteId);
+      // Never route on a cached number — re-score before deciding.
+      const scored = await get().ensureRisk(quoteId);
+      const risk = scored.risk;
+      const path = scored.approvalPath;
 
       if (path.approvers.length === 0) {
         const check = canTransition(quote.stage, 'approved', quote);
@@ -453,29 +461,76 @@ export function createQuotationSlice(set, get) {
       return { ok: true };
     },
 
-    /** Generates/reveals the portal link and marks the quote as sent. */
+    /**
+     * Shares the quotation with the assigned customer. It then appears in that
+     * customer's own signed-in quotation list — there is no link to send.
+     */
     sendToCustomer(quoteId) {
       const quote = get().getQuotation(quoteId);
       if (!quote) return { ok: false, error: 'Quotation not found.' };
       if (!quote.lines.length) return { ok: false, error: 'Add at least one line first.' };
 
-      const token = quote.portalToken || makeToken(quote.id);
+      const customer = get().customers.find((c) => c.id === quote.customerId);
+      if (!customer) return { ok: false, error: 'This quotation has no assigned customer.' };
 
       patchQuote(quoteId, {
         stage: quote.stage === 'draft' ? 'sent' : quote.stage,
         negotiationStatus: 'sent',
         awaitingSeller: false,
-        portalToken: token,
+        sharedAt: nowISO(),
       });
 
       get().logAudit({
         entityType: 'quotation',
         entityId: quoteId,
-        action: 'Sent to customer portal',
-        meta: { token },
+        action: `Shared with ${customer.name} for review`,
+        meta: { customerId: customer.id, hasAccount: Boolean(customer.password) },
       });
 
-      return { ok: true, token, url: `/portal/${token}` };
+      return {
+        ok: true,
+        customer,
+        // Flags the case where the company exists but nobody has claimed the
+        // login yet, so the rep knows to ask them to register.
+        needsRegistration: !customer.password,
+      };
+    },
+
+    /**
+     * Reassigns the owning rep. Only Admin and Sales Manager may do this — a rep
+     * cannot hand their own deal to someone else.
+     */
+    assignOwner(quoteId, ownerId) {
+      if (!get().canAssignQuotations()) {
+        return { ok: false, error: 'Only an Admin or Sales Manager can reassign a quotation.' };
+      }
+      const quote = get().getQuotation(quoteId);
+      const owner = get().users.find((u) => u.id === ownerId);
+      if (!quote || !owner) return { ok: false, error: 'Unknown quotation or user.' };
+      if (owner.role !== 'sales_rep' && owner.role !== 'sales_manager') {
+        return { ok: false, error: 'Quotations can only be owned by a Sales Rep or Sales Manager.' };
+      }
+
+      const previous = quote.ownerName;
+      patchQuote(quoteId, { ownerId: owner.id, ownerName: owner.name });
+
+      get().logAudit({
+        entityType: 'quotation',
+        entityId: quoteId,
+        action: `Reassigned from ${previous} to ${owner.name}`,
+        meta: { fromId: quote.ownerId, toId: owner.id },
+      });
+
+      get().notify({
+        userId: owner.id,
+        type: 'system',
+        title: `${quote.id} assigned to you`,
+        body: `${quote.customerName} · reassigned by ${get().currentUser?.name}.`,
+        link: `/app/quotations/${quoteId}`,
+      });
+
+      get().recomputeAlerts();
+      return { ok: true, owner };
     },
 
     // ------------------------------------------------------- rep-side replies
@@ -512,7 +567,7 @@ export function createQuotationSlice(set, get) {
     },
 
     /** Applies the customer's counter-discount across all lines, then re-scores. */
-    applyCounterDiscount(quoteId) {
+    async applyCounterDiscount(quoteId) {
       const quote = get().getQuotation(quoteId);
       if (!quote || quote.counterDiscountPct == null) {
         return { ok: false, error: 'No counter-discount to apply.' };
@@ -529,9 +584,9 @@ export function createQuotationSlice(set, get) {
         meta: { counterDiscountPct: pct },
       });
 
-      const risk = get().riskFor(quoteId);
+      const scored = await get().ensureRisk(quoteId);
       get().recomputeAlerts();
-      return { ok: true, risk, path: get().approvalPathFor(quoteId) };
+      return { ok: true, risk: scored.risk, path: scored.approvalPath };
     },
 
     // ------------------------------------------------------------- upsell
@@ -568,9 +623,5 @@ export function createQuotationSlice(set, get) {
       );
     },
 
-    // -------------------------------------------------------------- helpers
-    approvalLabelFor(quoteId) {
-      return approvalPathLabel(get().approvalPathFor(quoteId).approvers);
-    },
   };
 }
