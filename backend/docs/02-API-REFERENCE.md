@@ -352,7 +352,7 @@ is written to. Customers are never created by a rep.
 > | Field | Set to | Changed later by |
 > |---|---|---|
 > | `role` | always `sales_rep` | admin — `PATCH /users/:id { "role": "sales_manager" }` |
-> | `tier` | always `bronze` | not editable through the API — see [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md) |
+> | `tier` | always `bronze` | not editable through the API — see [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md) · [`06-ADMIN-ROLE.md`](./06-ADMIN-ROLE.md) |
 > | `currency` | `INR` | not editable through the API |
 >
 > Sending any of these returns **`400 FIELD_NOT_ALLOWED`**, naming the offending field.
