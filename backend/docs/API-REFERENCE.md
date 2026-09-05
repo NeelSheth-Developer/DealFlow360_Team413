@@ -315,9 +315,18 @@ unreachable from outside — the first one is planted with `npm run seed:admin`.
 For `type: "customer"` the account is created at **bronze**. Tier decides pricing, so
 it is never self-selected.
 
+**Signing up again with an address that is registered but NOT yet verified is
+allowed.** The pending row is overwritten — new name, new password, fresh code. That
+is deliberate: if the first email never arrived, the account could otherwise never be
+verified, logged into, or registered again, and anyone typing a stranger's address
+would lock it permanently. A pending row means nobody has proved they control the
+inbox, so there is nothing there to defend. The resend cooldown stops it becoming a
+way to spam an address.
+
 | Error | Status | When |
 |---|---|---|
-| `EMAIL_ALREADY_REGISTERED` | 409 | The address exists in either table |
+| `EMAIL_ALREADY_REGISTERED` | 409 | The address exists **and is verified** |
+| `ACCOUNT_DISABLED` | 403 | The account is deactivated |
 | `FIELD_NOT_ALLOWED` | 400 | A server-assigned field was sent |
 | `OTP_RESEND_TOO_SOON` | 429 | Within the resend cooldown |
 
