@@ -518,7 +518,11 @@ async function main() {
     ...repeat('lost', 10),
   ];
 
-  const quotableProducts = productRows.filter((p) => p.category !== 'subscription');
+  // One-time goods and services. Subscription products are added separately below,
+  // because a recurring line needs a plan attached and a start date — putting them in
+  // the general pool would produce subscription-category lines that never bill.
+  const oneTimeProducts = productRows.filter((p) => p.category !== 'subscription');
+  const recurringProducts = productRows.filter((p) => p.category === 'subscription');
   const priceFor = new Map(priceValues.map((p) => [`${p.productId}:${p.tier}`, Number(p.price)]));
   const now = Date.now();
   const DAY = 86_400_000;
@@ -574,7 +578,7 @@ async function main() {
     const chosen = new Set<string>();
     const lineValues = [];
     for (let l = 0; l < lineCount; l += 1) {
-      const product = pick(quotableProducts);
+      const product = pick(oneTimeProducts);
       if (chosen.has(product.id)) continue;
       chosen.add(product.id);
 
@@ -594,6 +598,35 @@ async function main() {
         createdAt,
       });
     }
+    /**
+     * Every third quotation also carries a subscription line, so the billing screen
+     * has genuinely mixed orders — one-time goods invoiced up front, recurring seats
+     * on their own schedule. That separation is the point of the feature, and it
+     * cannot be demonstrated on an order that is entirely one or the other.
+     */
+    const isHybrid = i % 3 === 0 && recurringProducts.length > 0;
+    if (isHybrid) {
+      const product = pick(recurringProducts);
+      const unitPrice = priceFor.get(`${product.id}:${customer.tier}`) ?? Number(product.basePrice);
+      const plan = planRows[i % planRows.length]!;
+      lineValues.push({
+        quotationId: quotation!.id,
+        productId: product.id,
+        productName: productValues[productRows.indexOf(product)]!.name,
+        category: product.category,
+        qty: between(5, 40),
+        unitPrice: money(unitPrice),
+        costPrice: product.costPrice,
+        discountPct: money(between(0, 8)),
+        taxPct: '18.00',
+        isSubscription: true,
+        planId: plan.id,
+        subscriptionStartDate: new Date(now - between(5, 60) * DAY).toISOString().slice(0, 10),
+        position: lineValues.length,
+        createdAt,
+      });
+    }
+
     await db.insert(quotationLines).values(lineValues);
 
     // A pending chain only where the stage says one is open.
@@ -696,44 +729,44 @@ async function main() {
   }
 
   // --- billing schedules for a few subscription lines ------------------------
+  console.log('Building recurring billing schedules…');
   const recurring = await db
     .select({
       id: quotationLines.id,
       quotationId: quotationLines.quotationId,
       unitPrice: quotationLines.unitPrice,
+      discountPct: quotationLines.discountPct,
       qty: quotationLines.qty,
+      startDate: quotationLines.subscriptionStartDate,
     })
     .from(quotationLines)
-    .where(sql`${quotationLines.category} = 'subscription'`)
-    .limit(20);
+    .where(sql`${quotationLines.isSubscription} = true`);
 
   if (recurring.length > 0) {
-    await db
-      .update(quotationLines)
-      .set({
-        isSubscription: true,
-        planId: planRows[0]!.id,
-        subscriptionStartDate: new Date(now - 30 * DAY).toISOString().slice(0, 10),
-      })
-      .where(
-        sql`${quotationLines.id} IN (${sql.join(
-          recurring.map((r) => sql`${r.id}`),
-          sql`, `,
-        )})`,
+    const occurrences = recurring.flatMap((line) => {
+      // Net of the line discount, matching what the billing engine computes.
+      const perCycle = line.qty * Number(line.unitPrice) * (1 - Number(line.discountPct) / 100);
+      const start = new Date(
+        `${line.startDate ?? new Date().toISOString().slice(0, 10)}T00:00:00Z`,
       );
-
-    await db.insert(billingOccurrences).values(
-      recurring.flatMap((line) =>
-        Array.from({ length: 6 }, (_, cycle) => ({
+      return Array.from({ length: 12 }, (_, cycle) => {
+        const occursOn = new Date(start);
+        occursOn.setUTCMonth(occursOn.getUTCMonth() + cycle);
+        return {
           quotationId: line.quotationId,
           lineId: line.id,
-          occursOn: new Date(now + (cycle - 1) * 30 * DAY).toISOString().slice(0, 10),
-          amount: money(line.qty * Number(line.unitPrice)),
-          status: cycle === 0 ? ('invoiced' as const) : ('scheduled' as const),
+          occursOn: occursOn.toISOString().slice(0, 10),
+          amount: money(perCycle),
+          // Cycles already in the past are settled; the rest are still scheduled.
+          status: occursOn.getTime() < now ? ('invoiced' as const) : ('scheduled' as const),
           cycleIndex: cycle,
-        })),
-      ),
-    );
+        };
+      });
+    });
+
+    for (let i = 0; i < occurrences.length; i += 200) {
+      await db.insert(billingOccurrences).values(occurrences.slice(i, i + 200));
+    }
   }
 
   // --- a couple of line comments, for the portal ----------------------------
