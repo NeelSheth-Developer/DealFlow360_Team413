@@ -147,18 +147,15 @@ async function revokeAllSessions(subjectId: string, kind: SubjectKind): Promise<
 // Signup / verification
 // ---------------------------------------------------------------------------
 
-export type SignupResult =
-  | { status: 'otp_sent'; code: string }
-  | { status: 'signed_in'; account: Account; session: Session };
+export type SignupResult = { status: 'otp_sent'; code: string };
 
 /**
- * Signup, resend-on-unverified, and login-if-already-registered all funnel through
- * here so the response cannot be used to discover which addresses exist:
+ * Signup behaviour:
  *
- *   new email                  → create + send OTP
- *   exists, not yet verified   → send a fresh OTP   (same response as new)
- *   exists, verified, correct  → sign in
- *   exists, wrong password     → 401, same message as any other credential failure
+ *   new email                → create row + send OTP → 201 otp_sent
+ *   exists, verified         → 409 EMAIL_ALREADY_REGISTERED (hint: login)
+ *   exists, not verified     → 409 EMAIL_ALREADY_REGISTERED (hint: check inbox)
+ *   exists, disabled         → 403 ACCOUNT_DISABLED
  */
 export async function signup(
   type: AccountType,
@@ -168,19 +165,21 @@ export async function signup(
   const existing = await findAccount(type, input.email);
 
   if (existing) {
-    const matches = await verifyPassword(input.password, existing.passwordHash);
-    if (!matches) throw ApiError.invalidCredentials();
     if (!existing.active) {
       throw ApiError.forbidden('ACCOUNT_DISABLED', 'This account is no longer active');
     }
 
     if (existing.verified) {
-      const session = await createSession(type, existing, meta);
-      return { status: 'signed_in', account: existing, session };
+      throw ApiError.conflict(
+        'EMAIL_ALREADY_REGISTERED',
+        'An account with this email already exists. Please log in instead.',
+      );
     }
 
-    const code = await sendCode('signup', type, existing.email, existing.name);
-    return { status: 'otp_sent', code };
+    throw ApiError.conflict(
+      'EMAIL_ALREADY_REGISTERED',
+      'This email is pending verification. Please check your inbox or request a new code.',
+    );
   }
 
   const passwordHash = await hashPassword(input.password);
