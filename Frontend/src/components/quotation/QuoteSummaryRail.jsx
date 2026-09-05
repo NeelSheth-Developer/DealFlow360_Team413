@@ -1,4 +1,13 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, Eye, Save, Send, ShieldAlert } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Save,
+  Send,
+  ServerCog,
+  Share2,
+  ShieldAlert,
+} from 'lucide-react';
 import { explainRisk } from '@/lib/riskEngine';
 import { money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -21,9 +30,10 @@ export function QuoteSummaryRail({
   approvalPath,
   editable,
   busy,
+  riskLoading = false,
+  riskIsFallback = false,
   onSubmit,
   onSaveDraft,
-  onPreviewAsCustomer,
   onSendToCustomer,
 }) {
   const approverCount = approvalPath.approvers.length;
@@ -120,11 +130,32 @@ export function QuoteSummaryRail({
 
       {/* --------------------------------------------------------- risk */}
       <GlassCard strong className="p-4">
-        <RiskGauge score={risk.score} label={approvalPath.label} className="mx-auto" />
+        <div className="mb-2 flex items-center justify-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-ink-muted">
+            Blended risk
+          </span>
+          {riskLoading ? (
+            <Loader2 className="h-3 w-3 animate-spin text-brand-500" aria-hidden="true" />
+          ) : (
+            <ServerCog className="h-3 w-3 text-ink-muted" aria-hidden="true" />
+          )}
+        </div>
+
+        <RiskGauge
+          score={risk.score}
+          label={riskLoading ? 'Scoring…' : approvalPath.label}
+          className="mx-auto"
+        />
 
         <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-soft">
-          {explainRisk(risk)}
+          {riskLoading ? 'Fetching the score from the governance service…' : explainRisk(risk)}
         </p>
+
+        {riskIsFallback && (
+          <p className="mt-2 rounded-lg bg-accent-amber/12 px-2.5 py-1.5 text-center text-[10px] font-semibold leading-relaxed text-accent-amber">
+            Scoring service unreachable — showing a provisional local estimate.
+          </p>
+        )}
 
         {violations.length > 0 && (
           <ul className="mt-3 space-y-1.5 border-t border-brand-500/12 pt-3">
@@ -162,17 +193,19 @@ export function QuoteSummaryRail({
           size="lg"
           icon={actionIcon}
           className={actionClass}
-          disabled={!editable || quote.lines.length === 0}
-          loading={busy}
+          disabled={!editable || quote.lines.length === 0 || riskLoading}
+          loading={busy || riskLoading}
           onClick={onSubmit}
         >
-          {actionLabel}
+          {riskLoading ? 'Waiting for score…' : actionLabel}
         </Button>
 
         <p className="mt-2 text-center text-[11px] font-semibold text-ink-muted">
-          {approverCount === 0
-            ? 'No approval required — every line is inside its ceiling'
-            : `${approverCount} approver${approverCount > 1 ? 's' : ''} required`}
+          {riskLoading
+            ? 'The route is decided by the server, not this screen'
+            : approverCount === 0
+              ? 'No approval required — every line is inside its ceiling'
+              : `${approverCount} approver${approverCount > 1 ? 's' : ''} required`}
         </p>
 
         <div className="mt-3 space-y-2 border-t border-brand-500/12 pt-3">
@@ -186,20 +219,19 @@ export function QuoteSummaryRail({
           >
             Save Draft
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="ghost" size="sm" icon={Eye} onClick={onPreviewAsCustomer}>
-              Preview
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={ArrowRight}
-              disabled={quote.lines.length === 0}
-              onClick={onSendToCustomer}
-            >
-              Send
-            </Button>
-          </div>
+          <Button
+            fullWidth
+            variant="ghost"
+            size="sm"
+            icon={Share2}
+            disabled={quote.lines.length === 0}
+            onClick={onSendToCustomer}
+          >
+            Share with customer
+          </Button>
+          <p className="text-center text-[10px] leading-relaxed text-ink-muted">
+            Appears in their own signed-in account. No link to send.
+          </p>
         </div>
       </GlassCard>
     </div>

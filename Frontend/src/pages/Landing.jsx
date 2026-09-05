@@ -133,7 +133,7 @@ function LandingNav() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link to="/portal/login" className="hidden sm:block">
+          <Link to="/customer/login" className="hidden sm:block">
             <Button variant="ghost" size="sm">
               Customer Portal
             </Button>
@@ -517,7 +517,7 @@ function CtaBand() {
                 Get started
               </Button>
             </Link>
-            <Link to="/portal/login">
+            <Link to="/customer/login">
               <Button
                 size="lg"
                 variant="outline"
@@ -575,7 +575,7 @@ function LandingFooter() {
                 </li>
                 <li>
                   <Link
-                    to="/portal/login"
+                    to="/customer/login"
                     className="text-xs font-medium text-ink-soft hover:text-brand-700"
                   >
                     Customer portal login

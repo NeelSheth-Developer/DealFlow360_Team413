@@ -1,17 +1,19 @@
 import { differenceInDays, isAfter, isBefore, parseISO } from 'date-fns';
 import { lineTotal, productMarginPct, quoteTotals, tierPrice } from '@/lib/pricing';
-import { computeBlendedRisk, resolveApprovalPath, riskBand } from '@/lib/riskEngine';
 import { rankSuggestions } from '@/lib/upsellEngine';
-import { invoiceBalances } from '@/lib/billingEngine';
-import { annualValue } from '@/lib/billingEngine';
+import { annualValue, invoiceBalances } from '@/lib/billingEngine';
 import { FUNNEL_ORDER, OPEN_STAGES, PIPELINE_COLUMNS } from '@/lib/stageMachine';
 import { stockSignal } from '@/lib/warehouseSplit';
+import { PENDING_RISK } from '@/services/riskService';
 import { mean, round2, sum } from '@/lib/utils';
 
 /**
  * Derived read models. Nothing here mutates state — these turn the raw store
  * into exactly what each screen needs, so components stay thin and the same
  * numbers appear everywhere.
+ *
+ * Risk scores are read from `state.riskCache`, which the risk slice populates
+ * from the backend. Selectors never compute a score.
  */
 
 // ---------------------------------------------------------------- quotations
@@ -22,22 +24,17 @@ export function selectQuoteWithTotals(state, quoteId) {
   return { ...quote, totals: quoteTotals(quote) };
 }
 
+/** Server-scored risk for a quotation, or a pending placeholder. */
 export function selectQuoteRisk(state, quoteId) {
-  const quote = state.quotations.find((q) => q.id === quoteId);
-  if (!quote) return null;
-  const risk = computeBlendedRisk(
-    quote.lines,
-    state.categoryCeilings,
-    state.tierCeilings[quote.tier] ?? 0,
-    quote.orderDiscountPct,
-  );
-  return { ...risk, band: riskBand(risk.score) };
+  return (state.riskCache[quoteId] ?? PENDING_RISK).risk;
 }
 
 export function selectApprovalPath(state, quoteId) {
-  const risk = selectQuoteRisk(state, quoteId);
-  if (!risk) return { approvers: [], label: 'Auto-approve', ruleId: null };
-  return resolveApprovalPath(risk, state.approvalChain);
+  return (state.riskCache[quoteId] ?? PENDING_RISK).approvalPath;
+}
+
+export function selectRiskEntry(state, quoteId) {
+  return state.riskCache[quoteId] ?? PENDING_RISK;
 }
 
 /** Ceiling that applies to a specific line — shown as the inline hint. */
@@ -232,17 +229,14 @@ export function selectPipelineColumns(state, { ownerId = null, tier = null, sear
 /** Shared card/row decoration so list and Kanban always agree. */
 export function decorateQuote(state, quote) {
   const totals = quoteTotals(quote);
-  const risk = computeBlendedRisk(
-    quote.lines,
-    state.categoryCeilings,
-    state.tierCeilings[quote.tier] ?? 0,
-    quote.orderDiscountPct,
-  );
+  const riskEntry = state.riskCache[quote.id] ?? PENDING_RISK;
   const idleDays = differenceInDays(new Date(), new Date(quote.lastActivityAt));
   return {
     ...quote,
     totals,
-    risk: { ...risk, band: riskBand(risk.score) },
+    risk: riskEntry.risk,
+    approvalPath: riskEntry.approvalPath,
+    riskStatus: riskEntry.status ?? riskEntry.source,
     idleDays,
     isStale: OPEN_STAGES.includes(quote.stage) && idleDays > state.dashboardConfig.stallThresholdDays,
   };

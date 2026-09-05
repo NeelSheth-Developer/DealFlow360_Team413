@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectAlerts, selectDealHealth, selectStageFunnel } from '@/store/selectors';
+import { useAllRisks } from '@/hooks/useRisk';
 import { agingBuckets, alertTargetRoute, SEVERITY_META } from '@/lib/anomalyEngine';
 import { moneyCompact, percent, relativeTime, stageLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -62,6 +63,9 @@ const FILTERS = [
 /** Deal health and anomaly dashboard (spec B9). */
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  useAllRisks();
+
   const health = useAppStore(selectDealHealth);
   const quotations = useAppStore((s) => s.quotations);
   const funnel = useAppStore(selectStageFunnel);

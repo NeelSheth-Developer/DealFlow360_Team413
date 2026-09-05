@@ -364,9 +364,9 @@ export default function WorkspaceLayout() {
         description="Every quotation, invoice and configuration change goes back to the seeded state."
         confirmLabel="Reset everything"
         variant="danger"
-        onConfirm={() => {
-          resetDemoData();
+        onConfirm={async () => {
           setResetOpen(false);
+          await resetDemoData();
           toast.success('Demo data reset', {
             description: 'All quotations, invoices and config are back to their seeded values.',
           });

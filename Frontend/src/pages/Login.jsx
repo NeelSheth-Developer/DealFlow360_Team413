@@ -115,7 +115,7 @@ export default function Login() {
             <div className="mt-4 border-t border-brand-500/12 pt-4">
               <p className="text-xs text-ink-muted">
                 Are you a customer reviewing a quotation?{' '}
-                <Link to="/portal/login" className="font-semibold text-brand-600 hover:underline">
+                <Link to="/customer/login" className="font-semibold text-brand-600 hover:underline">
                   Use the portal
                 </Link>
               </p>
