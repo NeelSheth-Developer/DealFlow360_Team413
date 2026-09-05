@@ -20,10 +20,10 @@ const envSchema = z.object({
 
   // Neon Postgres
   DATABASE_URL: z.string().startsWith('postgres'),
-  DIRECT_URL: z.string().startsWith('postgres').optional(),
 
-  // Redis
-  REDIS_URL: z.string().startsWith('redis'),
+  // Upstash Redis (REST)
+  UPSTASH_REDIS_REST_URL: z.url(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
   REDIS_PREFIX: z.string().default('team413'),
   REDIS_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 

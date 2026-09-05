@@ -1,7 +1,7 @@
 # Team_413 — Backend
 
 Node.js + TypeScript REST API built on Express 5, with Neon (serverless Postgres),
-Redis, Resend, and Cloudinary.
+Upstash Redis, Resend, and Cloudinary.
 
 ## Stack
 
@@ -11,7 +11,7 @@ Redis, Resend, and Cloudinary.
 | Language       | TypeScript 5 (strict)                      |
 | HTTP           | Express 5                                  |
 | Database       | Neon serverless Postgres + Drizzle ORM     |
-| Cache / limits | Redis (ioredis)                            |
+| Cache / limits | Upstash Redis (REST)                       |
 | Email          | Resend                                     |
 | Media          | Cloudinary                                 |
 | Validation     | Zod                                        |
@@ -57,11 +57,12 @@ is missing or malformed.
 
 Where to get the credentials:
 
-- **Neon** — <https://console.neon.tech> → project → *Connection Details*.
-  `DATABASE_URL` is the pooled string (host contains `-pooler`); `DIRECT_URL` is the
-  same string without `-pooler` and is used by drizzle-kit for migrations.
-- **Redis** — local (`redis://localhost:6379`) or Upstash
-  (<https://console.upstash.com>, `rediss://…` for TLS).
+- **Neon** — <https://console.neon.tech> → project → *Connect*. A single pooled
+  connection string (host contains `-pooler`) is all this project needs; the app
+  and drizzle-kit both use `DATABASE_URL`.
+- **Upstash Redis** — <https://console.upstash.com> → database → *REST API* tab.
+  Copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. This is the HTTP
+  API, not the `redis://` protocol.
 - **Resend** — <https://resend.com/api-keys>. Verify a domain at
   <https://resend.com/domains>, or send from `onboarding@resend.dev` while testing.
 - **Cloudinary** — <https://console.cloudinary.com> → *Dashboard*.
@@ -72,8 +73,8 @@ Where to get the credentials:
 src/
   config/       env validation (Zod) + Pino logger
   db/           Drizzle schema and Neon client
-  lib/          redis.ts, email.ts (Resend), cloudinary.ts
-  middleware/   error handling, Redis rate limiting, multer upload
+  lib/          redis.ts (Upstash), email.ts (Resend), cloudinary.ts
+  middleware/   error handling, Upstash rate limiting, multer upload
   modules/      feature routes (health, users)
   utils/        ApiError, asyncHandler
   app.ts        Express app assembly
@@ -85,9 +86,9 @@ src/
 | Method | Path                        | Description                                  |
 | ------ | --------------------------- | -------------------------------------------- |
 | GET    | `/api/v1/health`            | Liveness                                     |
-| GET    | `/api/v1/health/ready`      | Readiness — checks Neon and Redis            |
+| GET    | `/api/v1/health/ready`      | Readiness — checks Neon and Upstash          |
 | POST   | `/api/v1/users`             | Create a user, send a welcome email (Resend) |
-| GET    | `/api/v1/users/:id`         | Fetch a user through the Redis cache         |
+| GET    | `/api/v1/users/:id`         | Fetch a user through the Upstash cache       |
 | POST   | `/api/v1/users/:id/avatar`  | Upload an avatar to Cloudinary               |
 
 The `users` module is a reference implementation showing how the four services are

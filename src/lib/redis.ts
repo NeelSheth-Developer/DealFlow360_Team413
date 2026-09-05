@@ -1,57 +1,53 @@
-import { Redis } from 'ioredis';
+import { Redis } from '@upstash/redis';
 import { env } from '../config/env.js';
-import { logger } from '../config/logger.js';
 
-export const redis = new Redis(env.REDIS_URL, {
-  keyPrefix: `${env.REDIS_PREFIX}:`,
-  maxRetriesPerRequest: 3,
-  lazyConnect: true,
-  // Upstash and other managed providers require TLS on rediss:// URLs.
-  ...(env.REDIS_URL.startsWith('rediss://') ? { tls: {} } : {}),
+/**
+ * Upstash Redis over HTTP — stateless, so there is no connection to open or
+ * drain and it works from serverless/edge runtimes.
+ */
+export const redis = new Redis({
+  url: env.UPSTASH_REDIS_REST_URL,
+  token: env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-redis.on('error', (error) => logger.error({ err: error }, 'Redis error'));
-redis.on('connect', () => logger.info('Redis connected'));
+/** Namespaces every key so environments sharing a database cannot collide. */
+export const key = (name: string) => `${env.REDIS_PREFIX}:${name}`;
 
-export async function connectRedis(): Promise<void> {
-  if (redis.status === 'ready' || redis.status === 'connecting') return;
-  await redis.connect();
+/** Verifies the Upstash credentials at boot so misconfiguration fails fast. */
+export async function verifyRedisConnection(): Promise<void> {
+  await redis.ping();
 }
 
-/** Reads a JSON value from cache, returning null on a miss or malformed entry. */
-export async function cacheGet<T>(key: string): Promise<T | null> {
-  const raw = await redis.get(key);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    await redis.del(key);
-    return null;
-  }
+/**
+ * The SDK deserializes stored values automatically, so a miss and a stored
+ * `null` are indistinguishable — treat both as a miss.
+ */
+export async function cacheGet<T>(name: string): Promise<T | null> {
+  return (await redis.get<T>(key(name))) ?? null;
 }
 
 export async function cacheSet(
-  key: string,
+  name: string,
   value: unknown,
   ttlSeconds = env.REDIS_TTL_SECONDS,
 ): Promise<void> {
-  await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+  await redis.set(key(name), value, { ex: ttlSeconds });
 }
 
-export async function cacheDel(key: string): Promise<void> {
-  await redis.del(key);
+export async function cacheDel(name: string): Promise<void> {
+  await redis.del(key(name));
 }
 
 /** Fetches through the cache: returns the cached value or computes and stores it. */
 export async function cached<T>(
-  key: string,
+  name: string,
   loader: () => Promise<T>,
   ttlSeconds = env.REDIS_TTL_SECONDS,
 ): Promise<T> {
-  const hit = await cacheGet<T>(key);
+  const hit = await cacheGet<T>(name);
   if (hit !== null) return hit;
 
   const value = await loader();
-  await cacheSet(key, value, ttlSeconds);
+  await cacheSet(name, value, ttlSeconds);
   return value;
 }

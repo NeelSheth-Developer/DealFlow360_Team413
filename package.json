@@ -2,7 +2,7 @@
   "name": "team413-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Team_413 backend — Express + TypeScript, Neon Postgres, Redis, Resend, Cloudinary",
+  "description": "Team_413 backend — Express + TypeScript, Neon Postgres, Upstash Redis, Resend, Cloudinary",
   "type": "module",
   "main": "dist/server.js",
   "engines": {
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
+    "@upstash/redis": "^1.35.7",
     "cloudinary": "^2.7.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -29,7 +30,6 @@
     "drizzle-orm": "^0.44.6",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
-    "ioredis": "^5.8.1",
     "multer": "^2.0.2",
     "pino": "^9.13.1",
     "pino-http": "^10.5.0",
