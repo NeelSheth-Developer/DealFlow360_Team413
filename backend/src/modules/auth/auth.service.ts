@@ -3,7 +3,7 @@ import { env, isProduction } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { db } from '../../db/index.js';
 import { customers, refreshTokens, users, type SubjectKind } from '../../db/schema.js';
-import { generateCustomerId, toCustomerCode } from '../../lib/customer-code.js';
+import { generateCustomerId } from '../../lib/customer-id.js';
 import { sendOtpEmail } from '../../lib/email.js';
 import { generateRefreshToken, hashRefreshToken, signAccessToken } from '../../lib/jwt.js';
 import { clearOtp, isOnCooldown, issueOtp, verifyOtp, type OtpPurpose } from '../../lib/otp.js';
@@ -34,7 +34,6 @@ type Account = {
   verified: boolean;
   active: boolean;
   role?: 'sales_rep' | 'sales_manager' | 'finance' | 'admin';
-  seq?: number;
   customerId?: string;
   contactName?: string | null;
   tier?: 'bronze' | 'silver' | 'gold';
@@ -65,7 +64,6 @@ async function findAccount(type: AccountType, email: string): Promise<Account | 
     passwordHash: row.passwordHash,
     verified: row.emailVerifiedAt !== null,
     active: row.active,
-    seq: row.seq,
     customerId: row.customerId,
     contactName: row.contactName,
     tier: row.tier,
@@ -89,7 +87,6 @@ export function publicAccount(type: AccountType, account: Account) {
   return {
     customer: {
       id: account.id,
-      customerCode: toCustomerCode(account.seq ?? 0),
       customerId: account.customerId,
       name: account.name,
       contactName: account.contactName ?? null,
@@ -163,7 +160,6 @@ export type SignupResult = { status: 'otp_sent'; code: string };
 export async function signup(
   type: AccountType,
   input: { name: string; email: string; password: string },
-  meta: RequestMeta,
 ): Promise<SignupResult> {
   const existing = await findAccount(type, input.email);
 
@@ -419,7 +415,6 @@ async function findAccountById(type: AccountType, id: string): Promise<Account |
     passwordHash: row.passwordHash,
     verified: row.emailVerifiedAt !== null,
     active: row.active,
-    seq: row.seq,
     customerId: row.customerId,
     contactName: row.contactName,
     tier: row.tier,
@@ -569,7 +564,6 @@ export async function me(kind: SubjectKind, id: string) {
   return {
     kind,
     id: account.id,
-    customerCode: toCustomerCode(account.seq ?? 0),
     customerId: account.customerId,
     name: account.name,
     email: account.email,

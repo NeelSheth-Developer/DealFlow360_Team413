@@ -6,29 +6,33 @@
 > 📕 = quoted from `DealFlow360.pdf` · 📘 = from the structure doc ·
 > 🔧 = our implementation choice, not in either
 >
-> Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
-> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`03-AUTH-API.md`](./03-AUTH-API.md) ·
-> [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)
+> Companion documents: `[01-PROJECT-OVERVIEW.md](./01-PROJECT-OVERVIEW.md)` ·
+> `[02-API-REFERENCE.md](./02-API-REFERENCE.md)` · `[03-AUTH-API.md](./03-AUTH-API.md)` ·
+> `[04-ROLES-API.md](./04-ROLES-API.md)` · `[05-CUSTOMERS-API.md](./05-CUSTOMERS-API.md)`
 
 ---
 
 ## Contents
 
-| § | Section |
-|---|---|
-| 1 | [Admin in one line](#1-admin-in-one-line) |
-| 2 | [The complete tree](#2-the-complete-tree) |
-| 3 | [A2 · Catalog](#3-a2--catalog) |
-| 4 | [A3 · Discount governance](#4-a3--discount-governance) ⭐ |
-| 5 | [A4 · Warehouses & inventory](#5-a4--warehouses--inventory) |
-| 6 | [A5 · Subscription plans](#6-a5--subscription-plans) |
-| 7 | [A6 · Upsell rules](#7-a6--upsell-rules) |
-| 8 | [A7 · Reporting](#8-a7--reporting) |
-| 9 | [Users & roles](#9-users--roles) |
-| 10 | [What Admin cannot do](#10-what-admin-cannot-do) |
-| 11 | [Source table](#11-source-table) |
+
+| §   | Section                                                     |
+| --- | ----------------------------------------------------------- |
+| 1   | [Admin in one line](#1-admin-in-one-line)                   |
+| 2   | [The complete tree](#2-the-complete-tree)                   |
+| 3   | [A2 · Catalog](#3-a2--catalog)                              |
+| 4   | [A3 · Discount governance](#4-a3--discount-governance) ⭐    |
+| 5   | [A4 · Warehouses & inventory](#5-a4--warehouses--inventory) |
+| 6   | [A5 · Subscription plans](#6-a5--subscription-plans)        |
+| 7   | [A6 · Upsell rules](#7-a6--upsell-rules)                    |
+| 8   | [A7 · Reporting](#8-a7--reporting)                          |
+| 9   | [Users & roles](#9-users--roles)                            |
+| 10  | [What Admin cannot do](#10-what-admin-cannot-do)            |
+| 11  | [Source table](#11-source-table)                            |
+
 
 ---
+
+
 
 ## 1. Admin in one line
 
@@ -50,6 +54,8 @@ without anyone deciding case by case.
 ```
 
 ---
+
+
 
 ## 2. The complete tree
 
@@ -135,6 +141,8 @@ ADMIN
 
 ---
 
+
+
 ## 3. A2 · Catalog
 
 📕 *"General Info: Name, Category, Price, Unit, Tax, Product Description ·
@@ -155,7 +163,7 @@ Laptop Pro 14
 └── active        true              archived products stay on old quotes
 ```
 
-**On `costPrice`** 🔧 — the PDF's field list does not include it. But §13 requires a
+**On** `costPrice` 🔧 — the PDF's field list does not include it. But §13 requires a
 live margin indicator, and margin is impossible without cost. The PDF resolves this
 itself: *"internal cost can be entered as business configuration."* So it is a
 necessity, not an invention. It must never reach the customer portal.
@@ -201,15 +209,19 @@ Gold price       ₹87,400
 resolved         ₹99,400
 ```
 
+
+
 ### 3.4 Price lists
 
 Same product, one price per tier:
 
-| Tier | Price | Off base |
-|---|---|---|
-| bronze | ₹95,000 | 0% |
-| silver | ₹91,200 | ≈4% |
-| gold | ₹87,400 | ≈8% |
+
+| Tier   | Price   | Off base |
+| ------ | ------- | -------- |
+| bronze | ₹95,000 | 0%       |
+| silver | ₹91,200 | ≈4%      |
+| gold   | ₹87,400 | ≈8%      |
+
 
 **What this achieves:** the rep never types a price. They pick a product and the
 customer's tier resolves it automatically.
@@ -218,6 +230,8 @@ customer's tier resolves it automatically.
 > more *discount headroom*. Two separate mechanisms, both set by Admin.
 
 ---
+
+
 
 ## 4. A3 · Discount governance
 
@@ -233,6 +247,8 @@ bronze    5%
 silver   10%
 gold     15%
 ```
+
+
 
 ### 4.2 Category ceilings — by product type
 
@@ -255,6 +271,8 @@ tier says      15%  ─┐
                      ├──►  MIN  ──►  the real limit on that line
 category says  10%  ─┘
 ```
+
+
 
 ### 4.4 Approval chain
 
@@ -302,6 +320,8 @@ reason**"*
 
 ---
 
+
+
 ## 5. A4 · Warehouses & inventory
 
 📕 *"Create and manage warehouses (example: **"Main Warehouse", "East Depot"**) ·
@@ -320,6 +340,8 @@ Main Warehouse
     ├── quantity          40         how many to add
     └── lead days         7          → the backorder ETA
 ```
+
+
 
 ### Product vs inventory — different things
 
@@ -346,6 +368,8 @@ Mumbai 6 (weight 1.0) + Kolkata 4 (weight 1.4)
 
 ---
 
+
+
 ## 6. A5 · Subscription plans
 
 📕 *"Define recurring plans (**monthly, quarterly, yearly**) that can be attached to
@@ -359,6 +383,8 @@ PLAN  "Monthly Standard"
 ├── proration        what a mid-cycle qty change costs
 └── cancellation     refund unused · credit note · nothing
 ```
+
+
 
 ### A plan is not a category
 
@@ -378,6 +404,8 @@ monthly support retainer is `category: service` **with a plan on it**.
 ✅  isRecurring = (the line has a plan attached)
 ```
 
+
+
 ### Proration — 📕's own example
 
 📕 *"Monthly plan ₹3,000/month. Customer upgrades halfway through month. System should
@@ -390,6 +418,8 @@ Day 0 ─────────── Day 15 ───────────
 
 charge now = 2 × ₹3,000 × (15 ÷ 30) = ₹3,000
 ```
+
+
 
 ### Cancellation
 
@@ -405,6 +435,8 @@ no refund         →  ₹0, runs to the cycle end
 ```
 
 ---
+
+
 
 ## 7. A6 · Upsell rules
 
@@ -423,6 +455,8 @@ RULE
 └── minimum margin       20%                never suggest below  ⭐
 ```
 
+
+
 ### Why each setting exists
 
 ```
@@ -436,6 +470,8 @@ MINIMUM MARGIN  ⭐   the guard rail. Without it the engine pushes cheap
                      low-profit items to inflate deal size — the rep looks
                      good, the company is poorer.
 ```
+
+
 
 ### What the rep sees
 
@@ -456,6 +492,8 @@ immediately**."*
 
 ---
 
+
+
 ## 8. A7 · Reporting
 
 📕 *"Dashboard plus reporting menu for sales performance · Export options: **PDF /
@@ -474,6 +512,8 @@ Admin is the only role that sees **everything** — every rep, every team, every
 
 ---
 
+
+
 ## 9. Users & roles
 
 🔧 Not in 📕's Admin list, but implied: someone has to make the first Sales Manager.
@@ -485,15 +525,17 @@ ADMIN can
 └── deactivate ............ blocks login on the very next request
 ```
 
-**Admin cannot grant `admin`.** Every signup produces a `sales_rep`, and the
+**Admin cannot grant** `admin`**.** Every signup produces a `sales_rep`, and the
 assignable-role list excludes `admin`. The first one comes only from
 `npm run seed:admin`, run from the backend by someone with database access.
 
 Two self-targeting guards: an admin may rename themselves, but not change their own
 role or deactivate themselves — both are one-way doors that need a second admin to
-undo. See [`04-ROLES-API.md`](./04-ROLES-API.md).
+undo. See `[04-ROLES-API.md](./04-ROLES-API.md)`.
 
 ---
+
+
 
 ## 10. What Admin cannot do
 
@@ -532,34 +574,40 @@ trusts whoever holds `admin`. Which is exactly why that role is hard to obtain.
 
 ---
 
+
+
 ## 11. Source table
 
 What is quoted, and what is ours.
 
-| Setting | Value | Source |
-|---|---|---|
-| Roles — all five named | Rep · Manager · Finance · Customer · Admin | 📕 |
-| Admin's setup list | products, price lists, discount tiers, warehouses, subscription plans | 📕 |
-| Tier ceilings | bronze 5 · silver 10 · gold 15 | 📕 *(called an "example")* |
-| Category ceiling — hardware | 15% | 📕 |
-| Category ceiling — service | 10% | 📕 |
-| Category ceiling — subscription | 12% | 🔧 **ours** |
-| Category `accessories` and its 20% | — | 🔧 **ours** — the word never appears in 📕 |
-| Approval chain shape | three levels: none → Manager → Manager+Finance | 📕 |
-| Approval band numbers | `0` / `0–5` / `>5` | 🔧 **ours** |
-| Product fields | Name, Category, Price, Unit, Tax, Description | 📕 |
-| `costPrice` | — | 🔧 required by the margin indicator; 📕 permits it as "business configuration" |
-| Variants | Attribute, Values, Extra prices | 📕 |
-| Warehouse names | "Main Warehouse", "East Depot" | 📕 |
-| Shipping cost weighting | minimise shipment count | 📕 |
-| Plan cadences | monthly, quarterly, yearly | 📕 |
-| Proration / cancellation are configurable | yes | 📕 |
-| The three specific proration strategies | daily_prorate · full_period · next_cycle_adjust | 🔧 **ours** |
-| Upsell: pairings, promoted, margin floor | all three | 📕 |
-| Reporting filters and PDF/XLS export | all named | 📕 |
-| Users & roles management | — | 🔧 **ours** |
+
+| Setting                                   | Value                                                                 | Source                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Roles — all five named                    | Rep · Manager · Finance · Customer · Admin                            | 📕                                                                             |
+| Admin's setup list                        | products, price lists, discount tiers, warehouses, subscription plans | 📕                                                                             |
+| Tier ceilings                             | bronze 5 · silver 10 · gold 15                                        | 📕 *(called an "example")*                                                     |
+| Category ceiling — hardware               | 15%                                                                   | 📕                                                                             |
+| Category ceiling — service                | 10%                                                                   | 📕                                                                             |
+| Category ceiling — subscription           | 12%                                                                   | 🔧 **ours**                                                                    |
+| Category `accessories` and its 20%        | —                                                                     | 🔧 **ours** — the word never appears in 📕                                     |
+| Approval chain shape                      | three levels: none → Manager → Manager+Finance                        | 📕                                                                             |
+| Approval band numbers                     | `0` / `0–5` / `>5`                                                    | 🔧 **ours**                                                                    |
+| Product fields                            | Name, Category, Price, Unit, Tax, Description                         | 📕                                                                             |
+| `costPrice`                               | —                                                                     | 🔧 required by the margin indicator; 📕 permits it as "business configuration" |
+| Variants                                  | Attribute, Values, Extra prices                                       | 📕                                                                             |
+| Warehouse names                           | "Main Warehouse", "East Depot"                                        | 📕                                                                             |
+| Shipping cost weighting                   | minimise shipment count                                               | 📕                                                                             |
+| Plan cadences                             | monthly, quarterly, yearly                                            | 📕                                                                             |
+| Proration / cancellation are configurable | yes                                                                   | 📕                                                                             |
+| The three specific proration strategies   | daily_prorate · full_period · next_cycle_adjust                       | 🔧 **ours**                                                                    |
+| Upsell: pairings, promoted, margin floor  | all three                                                             | 📕                                                                             |
+| Reporting filters and PDF/XLS export      | all named                                                             | 📕                                                                             |
+| Users & roles management                  | —                                                                     | 🔧 **ours**                                                                    |
+
 
 ---
+
+
 
 ## The way to remember it
 
