@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { Kanban, List, Plus, Search } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectPipelineColumns } from '@/store/selectors';
+import { useAllRisks } from '@/hooks/useRisk';
 import { stageMeta } from '@/lib/stageMachine';
 import { money, stageLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,8 @@ export default function Pipeline() {
   const users = useAppStore((s) => s.users);
   const moveStage = useAppStore((s) => s.moveStage);
   const stallThreshold = useAppStore((s) => s.dashboardConfig.stallThresholdDays);
+
+  useAllRisks();
 
   const [search, setSearch] = useState('');
   const [ownerId, setOwnerId] = useState('');

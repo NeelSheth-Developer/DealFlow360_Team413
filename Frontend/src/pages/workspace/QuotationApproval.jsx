@@ -30,6 +30,7 @@ import { AuditTrailList } from '@/components/shared/AuditTrailList';
 import { ReasonDialog } from '@/components/shared/Dialogs';
 import { QuoteNav } from '@/components/quotation/QuoteNav';
 import { RiskBreakdownTable } from '@/components/quotation/RiskBreakdownTable';
+import { useRisk } from '@/hooks/useRisk';
 
 /** Discount approval screen (spec B4). */
 export default function QuotationApproval() {
@@ -41,8 +42,6 @@ export default function QuotationApproval() {
   const audit = useAppStore((s) => selectAuditForEntity(s, id));
   const invoice = useAppStore((s) => s.invoices.find((i) => i.quotationId === id));
 
-  const riskFor = useAppStore((s) => s.riskFor);
-  const approvalPathFor = useAppStore((s) => s.approvalPathFor);
   const approveStep = useAppStore((s) => s.approveStep);
   const rejectQuote = useAppStore((s) => s.rejectQuote);
   const returnForRevision = useAppStore((s) => s.returnForRevision);
@@ -52,11 +51,12 @@ export default function QuotationApproval() {
   const [returnOpen, setReturnOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Server-scored. The approver sees the same number the router used.
+  const { risk, approvalPath, isLoading: riskLoading, isFallback } = useRisk(id);
+
   if (!quote) return <Navigate to="/404" replace />;
 
   const totals = quoteTotals(quote);
-  const risk = riskFor(id);
-  const approvalPath = approvalPathFor(id);
   const pending = currentPendingStep(quote);
   const canAct = canUserActOnApproval(quote, currentUser);
 
@@ -183,9 +183,15 @@ export default function QuotationApproval() {
         </GlassCard>
 
         <GlassCard strong className="flex flex-col items-center justify-center p-5 lg:w-64">
-          <RiskGauge score={risk.score} label={approvalPath.label} />
+          <RiskGauge
+            score={risk.score}
+            label={riskLoading ? 'Scoring…' : approvalPath.label}
+          />
           <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-muted">
             Worst single line is {risk.worstSingleOverage.toFixed(1)} pts over its ceiling.
+          </p>
+          <p className="mt-1 text-center text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+            {isFallback ? 'Provisional local estimate' : 'Scored by the governance service'}
           </p>
         </GlassCard>
       </div>

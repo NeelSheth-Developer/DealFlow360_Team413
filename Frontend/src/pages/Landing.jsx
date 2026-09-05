@@ -85,7 +85,9 @@ const ROLES = [
 
 export default function Landing() {
   return (
-    <div className="overflow-x-hidden">
+    // `clip` rather than `hidden` — see the note in MarketingLayout: `hidden`
+    // would make this a scroll container and kill the sticky nav.
+    <div className="overflow-x-clip">
       <LandingNav />
       <Hero />
       <StatStrip />
@@ -131,7 +133,7 @@ function LandingNav() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link to="/portal/login" className="hidden sm:block">
+          <Link to="/customer/login" className="hidden sm:block">
             <Button variant="ghost" size="sm">
               Customer Portal
             </Button>
@@ -285,7 +287,7 @@ function StatStrip() {
 
 function FeatureGrid() {
   return (
-    <section id="features" className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+    <section id="features" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-16 sm:px-6">
       <SectionHeading
         center
         eyebrow="What's inside"
@@ -322,7 +324,7 @@ function FeatureGrid() {
 
 function HowItWorks() {
   return (
-    <section id="how" className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+    <section id="how" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-16 sm:px-6">
       <SectionHeading
         center
         eyebrow="End to end"
@@ -365,7 +367,7 @@ function HowItWorks() {
 
 function RiskSection() {
   return (
-    <section id="risk" className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+    <section id="risk" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-16 sm:px-6">
       <SectionHeading
         center
         eyebrow="The differentiator"
@@ -410,7 +412,7 @@ function DashboardPreview() {
   };
 
   return (
-    <section id="dashboard" className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+    <section id="dashboard" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-16 sm:px-6">
       <SectionHeading
         center
         eyebrow="Deal health"
@@ -515,7 +517,7 @@ function CtaBand() {
                 Get started
               </Button>
             </Link>
-            <Link to="/portal/login">
+            <Link to="/customer/login">
               <Button
                 size="lg"
                 variant="outline"
@@ -573,7 +575,7 @@ function LandingFooter() {
                 </li>
                 <li>
                   <Link
-                    to="/portal/login"
+                    to="/customer/login"
                     className="text-xs font-medium text-ink-soft hover:text-brand-700"
                   >
                     Customer portal login
