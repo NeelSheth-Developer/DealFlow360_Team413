@@ -38,6 +38,20 @@ export const updateStockSchema = z
   })
   .strict();
 
+export const splitOrderSchema = z
+  .object({
+    order_lines: z
+      .array(
+        z.object({
+          product_id: z.string().uuid('Invalid product id'),
+          qty: z.number().int().min(1),
+        }),
+      )
+      .min(1),
+  })
+  .strict();
+
 export type CreateWarehouseInput = z.infer<typeof createWarehouseSchema>;
 export type UpdateWarehouseInput = z.infer<typeof updateWarehouseSchema>;
 export type UpdateStockInput = z.infer<typeof updateStockSchema>;
+export type SplitOrderInput = z.infer<typeof splitOrderSchema>;

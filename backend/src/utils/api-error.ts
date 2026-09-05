@@ -19,6 +19,7 @@ export type ErrorCode =
   | 'LAST_ADMIN'
   // Catalog & config
   | 'SKU_TAKEN'
+  | 'WAREHOUSE_NAME_TAKEN'
   | 'PRODUCT_INACTIVE'
   | 'NO_PRICE_FOR_TIER'
   | 'CHAIN_NOT_CONFIGURED'
