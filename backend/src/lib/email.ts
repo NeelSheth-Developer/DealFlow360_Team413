@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 import { env, isProduction } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import type { OtpPurpose } from './otp.js';
+import type { OtpPurpose } from './otp-purpose.js';
 
 const resend = new Resend(env.RESEND_API_KEY);
 

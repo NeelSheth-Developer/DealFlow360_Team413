@@ -1,9 +1,10 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { env } from '../config/env.js';
 import { key, redis } from './redis.js';
+import type { OtpPurpose } from './otp-purpose.js';
 import type { SubjectKind } from '../db/schema.js';
 
-export type OtpPurpose = 'signup' | 'password_reset';
+export type { OtpPurpose };
 
 export type OtpVerdict =
   | { ok: true }
@@ -78,6 +79,11 @@ export async function verifyOtp(
   kind: SubjectKind,
   email: string,
   code: string,
+  /**
+   * When false the code survives a successful check, so the caller can run further
+   * validation before spending it. Attempts are still counted either way.
+   */
+  consume = true,
 ): Promise<OtpVerdict> {
   const stored = await redis.get<string>(otpKey(purpose, kind, email));
   if (!stored) return { ok: false, reason: 'expired' };
@@ -98,7 +104,7 @@ export async function verifyOtp(
     return { ok: false, reason: 'invalid' };
   }
 
-  await clearOtp(purpose, kind, email);
+  if (consume) await clearOtp(purpose, kind, email);
   return { ok: true };
 }
 

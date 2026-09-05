@@ -442,7 +442,10 @@ export async function resetPassword(
   newPassword: string,
 ): Promise<{ sessionsRevoked: number }> {
   const kind = kindOf(type);
-  const verdict = await verifyOtp('password_reset', kind, email, code);
+  // Checked WITHOUT consuming: if the new password turns out to be the current one,
+  // the user gets to retry with the same code instead of having to request another.
+  // Attempts are still counted, so this is not a free guessing window.
+  const verdict = await verifyOtp('password_reset', kind, email, code, false);
 
   if (!verdict.ok) {
     if (verdict.reason === 'expired') {

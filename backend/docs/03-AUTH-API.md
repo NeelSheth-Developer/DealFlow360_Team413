@@ -95,7 +95,10 @@ authenticate against; everything else is shared.
 
 ## 2. Conventions
 
-**Base URL** — `http://localhost:5000/api/v1` · `https://api.teamvector.space/api/v1`
+**Base URL** — `http://localhost:5050/api/v1` · `https://api.teamvector.space/api/v1`
+
+> Port 5050, not 5000 — macOS AirPlay Receiver listens on 5000 and silently
+> answers `403` to everything.
 
 **Success**
 
@@ -251,6 +254,12 @@ there is no sweeper job and no way to forget one.
 to take over an account mid-signup. The HMAC is keyed by purpose and email, so a code
 minted for a password reset cannot be spent on a signup.
 
+**If the email fails to send** the request still returns `201`. The account row exists
+and the code is live in Redis, so the signup itself succeeded — reporting failure for
+work that was actually done would leave the caller unable to tell a delivery problem
+from a real rejection. The failure is logged at `error` level; the user can request a
+new code.
+
 **OTP rules**
 
 ```
@@ -337,6 +346,19 @@ Does this email already exist in the selected table?
 
 An **unverified** account signing up again gets the identical body, so the endpoint
 cannot be used to test which addresses are registered.
+
+> ### Testing without an email provider
+>
+> With `EXPOSE_DEV_OTP=true` **and** a non-production `NODE_ENV`, the response also
+> carries the code:
+>
+> ```json
+> { "success": true, "message": "OTP sent successfully", "devOtp": "418302" }
+> ```
+>
+> Two independent guards, so a single misconfiguration cannot start leaking codes.
+> The same field appears on `resend-otp` and `forgot-password`. Defaults to `false`;
+> **must stay false in production.**
 
 ### Response `200` — existing verified account
 
@@ -632,9 +654,14 @@ Step 2. Verifies the code and sets the new password in one call.
 | Code | HTTP | Cause |
 |---|---|---|
 | `OTP_INVALID` | `400` | Wrong code |
-| `PASSWORD_REUSED` | `400` | Same as the current password |
+| `PASSWORD_REUSED` | `400` | Same as the current password — **the code is not consumed** |
 | `OTP_EXPIRED` | `410` | Older than 10 minutes |
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts |
+
+> **A reused password does not burn the code.** The OTP is checked without being
+> consumed, the new password is validated, and only then is the code spent. Typing
+> your old password by mistake would otherwise cost you the code and force a second
+> email. Attempts are still counted, so this is not a free guessing window.
 
 ---
 
@@ -1071,18 +1098,18 @@ npm run dev
 
 ### Walk the flow
 
-Outside production the OTP is printed to the server log, so the whole flow works
-without a verified sending domain.
+Set `EXPOSE_DEV_OTP=true` in `.env` and the code comes back in the response, so the
+whole flow works without a verified sending domain.
 
 ```bash
-BASE=http://localhost:5000/api/v1
+BASE=http://localhost:5050/api/v1
 
 # 1. sign up
 curl -s -X POST $BASE/auth/signup -H 'content-type: application/json' \
   -d '{"name":"Priya Sharma","email":"priya@teamvector.space","password":"S3cure!pass","type":"internal"}'
-# → {"success":true,"message":"OTP sent successfully"}
+# → {"success":true,"message":"OTP sent successfully","devOtp":"418302"}
 
-# 2. verify (read the code from the server log)
+# 2. verify (devOtp came back in step 1)
 curl -s -X POST $BASE/auth/verify-otp -H 'content-type: application/json' \
   -d '{"email":"priya@teamvector.space","otp":"418302","type":"internal"}'
 # → tokens

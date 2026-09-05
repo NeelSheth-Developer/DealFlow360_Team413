@@ -18,7 +18,20 @@ import {
   switchRoleSchema,
   verifyOtpSchema,
 } from './auth.schemas.js';
-import * as service from './auth.service.js';
+import {
+  changePassword,
+  devOtp,
+  forgotPassword,
+  login,
+  logout,
+  me,
+  publicAccount,
+  refresh,
+  resendOtp,
+  resetPassword,
+  signup,
+  verifyOtpAndSignIn,
+} from './auth.service.js';
 import type { Request } from 'express';
 
 export const authRouter = Router();
@@ -42,20 +55,24 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = signupSchema.parse(req.body);
-    const result = await service.signup(
+    const result = await signup(
       body.type,
       { name: body.name, email: body.email, password: body.password },
       meta(req),
     );
 
     if (result.status === 'otp_sent') {
-      res.status(201).json({ success: true, message: 'OTP sent successfully' });
+      res.status(201).json({
+        success: true,
+        message: 'OTP sent successfully',
+        ...devOtp(result.code),
+      });
       return;
     }
 
     res.status(200).json({
       success: true,
-      data: { ...service.publicAccount(body.type, result.account), ...result.session },
+      data: { ...publicAccount(body.type, result.account), ...result.session },
     });
   }),
 );
@@ -65,7 +82,7 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = verifyOtpSchema.parse(req.body);
-    const { account, session } = await service.verifyOtpAndSignIn(
+    const { account, session } = await verifyOtpAndSignIn(
       body.type,
       body.email,
       body.otp,
@@ -74,7 +91,7 @@ authRouter.post(
 
     res.json({
       success: true,
-      data: { ...service.publicAccount(body.type, account), ...session },
+      data: { ...publicAccount(body.type, account), ...session },
     });
   }),
 );
@@ -84,7 +101,7 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = resendOtpSchema.parse(req.body);
-    await service.resendOtp(body.type, body.email, body.purpose);
+    const code = await resendOtp(body.type, body.email, body.purpose);
 
     // Always the same answer, so this cannot be used to test which emails exist.
     res.json({
@@ -92,6 +109,7 @@ authRouter.post(
       data: {
         message: 'If that address needs a code, one has been sent.',
         retryAfterSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
+        ...(code ? devOtp(code) : {}),
       },
     });
   }),
@@ -102,7 +120,7 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = loginSchema.parse(req.body);
-    const { account, session } = await service.login(
+    const { account, session } = await login(
       body.type,
       body.email,
       body.password,
@@ -111,7 +129,7 @@ authRouter.post(
 
     res.json({
       success: true,
-      data: { ...service.publicAccount(body.type, account), ...session },
+      data: { ...publicAccount(body.type, account), ...session },
     });
   }),
 );
@@ -121,13 +139,14 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = forgotPasswordSchema.parse(req.body);
-    await service.forgotPassword(body.type, body.email);
+    const code = await forgotPassword(body.type, body.email);
 
     res.json({
       success: true,
       data: {
         message: 'If that address matches an account, a reset code has been sent.',
         retryAfterSeconds: env.OTP_RESEND_COOLDOWN_SECONDS,
+        ...(code ? devOtp(code) : {}),
       },
     });
   }),
@@ -138,7 +157,7 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = resetPasswordSchema.parse(req.body);
-    const { sessionsRevoked } = await service.resetPassword(
+    const { sessionsRevoked } = await resetPassword(
       body.type,
       body.email,
       body.otp,
@@ -164,7 +183,7 @@ authRouter.post(
 
     // Optional: when the client sends its refresh token, that one session survives.
     const keep = refreshSchema.partial().safeParse(req.body);
-    const { sessionsRevoked } = await service.changePassword(
+    const { sessionsRevoked } = await changePassword(
       req.auth.kind,
       req.auth.id,
       body.currentPassword,
@@ -183,7 +202,7 @@ authRouter.post(
   '/refresh',
   asyncHandler(async (req, res) => {
     const body = refreshSchema.parse(req.body);
-    const session = await service.refresh(body.refreshToken, meta(req));
+    const session = await refresh(body.refreshToken, meta(req));
     res.json({ success: true, data: session });
   }),
 );
@@ -192,7 +211,7 @@ authRouter.post(
   '/logout',
   asyncHandler(async (req, res) => {
     const body = logoutSchema.parse(req.body);
-    await service.logout(body.refreshToken);
+    await logout(body.refreshToken);
     res.status(204).send();
   }),
 );
@@ -202,7 +221,7 @@ authRouter.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     if (!req.auth) throw ApiError.unauthorized();
-    const profile = await service.me(req.auth.kind, req.auth.id);
+    const profile = await me(req.auth.kind, req.auth.id);
     res.json({ success: true, data: profile });
   }),
 );
