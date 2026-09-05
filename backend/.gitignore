@@ -128,5 +128,4 @@ desktop.ini
 *.pid.lock
 .node_repl_history
 
-./postman.json
 postman.json
