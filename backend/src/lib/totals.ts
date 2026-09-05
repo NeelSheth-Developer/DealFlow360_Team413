@@ -42,8 +42,7 @@ export type LineTotals = {
 
 export function lineTotals(line: LineForTotals, orderDiscountPct = 0): LineTotals {
   const gross = line.qty * line.unitPrice;
-  const effectiveDiscountPct =
-    line.discountPct + orderDiscountPct * (1 - line.discountPct / 100);
+  const effectiveDiscountPct = line.discountPct + orderDiscountPct * (1 - line.discountPct / 100);
 
   const net = gross * (1 - effectiveDiscountPct / 100);
   const savings = gross - net;

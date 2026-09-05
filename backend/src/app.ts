@@ -48,7 +48,8 @@ export function createApp() {
   app.use(
     pinoHttp({
       logger,
-      customSuccessMessage: (req, res) => `${req.method ?? '?'} ${req.url ?? '?'} ${res.statusCode}`,
+      customSuccessMessage: (req, res) =>
+        `${req.method ?? '?'} ${req.url ?? '?'} ${res.statusCode}`,
       customErrorMessage: (req, res) => `${req.method ?? '?'} ${req.url ?? '?'} ${res.statusCode}`,
       serializers: {
         req: (req: IncomingMessage) => ({ method: req.method, url: req.url }),

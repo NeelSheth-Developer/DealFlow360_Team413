@@ -1,12 +1,6 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import {
-  approvalSteps,
-  customers,
-  quotations,
-  users,
-  type Role,
-} from '../../db/schema.js';
+import { approvalSteps, customers, quotations, users, type Role } from '../../db/schema.js';
 import { audit, SYSTEM_ACTOR, type AuditActor } from '../../lib/audit.js';
 import {
   emailApprovalApproved,
@@ -67,7 +61,10 @@ export async function submitForApproval(actor: AuditActor, id: string) {
   const loaded = await loadQuotation(id);
 
   if (loaded.lines.length === 0) {
-    throw ApiError.conflict('EMPTY_QUOTATION', 'Add at least one line before submitting for approval');
+    throw ApiError.conflict(
+      'EMPTY_QUOTATION',
+      'Add at least one line before submitting for approval',
+    );
   }
 
   const submittable: string[] = ['draft', 'sent', 'under_negotiation'];
@@ -204,7 +201,7 @@ async function notifyStep(loaded: LoadedQuotation, risk: RiskResult, role: Role 
  * That is a deliberate escape hatch, and it is audited as one — the entry records that
  * an admin acted in another role's place.
  */
-async function currentStepFor(actor: AuditActor, loaded: LoadedQuotation) {
+function currentStepFor(actor: AuditActor, loaded: LoadedQuotation) {
   if (loaded.stage !== 'pending_approval') {
     throw ApiError.conflict(
       'NOT_PENDING',
@@ -214,7 +211,10 @@ async function currentStepFor(actor: AuditActor, loaded: LoadedQuotation) {
 
   const step = loaded.approvalSteps.find((candidate) => candidate.status === 'pending');
   if (!step) {
-    throw ApiError.conflict('NOT_PENDING', 'Every approval step on this quotation is already resolved.');
+    throw ApiError.conflict(
+      'NOT_PENDING',
+      'Every approval step on this quotation is already resolved.',
+    );
   }
 
   const isAdminOverride = actor.role === 'admin' && step.role !== 'admin';
@@ -230,7 +230,7 @@ async function currentStepFor(actor: AuditActor, loaded: LoadedQuotation) {
 
 export async function approveStep(actor: AuditActor, id: string, comment: string | null) {
   const loaded = await loadQuotation(id);
-  const { step, isAdminOverride } = await currentStepFor(actor, loaded);
+  const { step, isAdminOverride } = currentStepFor(actor, loaded);
 
   await db
     .update(approvalSteps)
@@ -312,7 +312,7 @@ export async function approveStep(actor: AuditActor, id: string, comment: string
 /** Rejected outright. The deal is lost; every later step is marked skipped. */
 export async function rejectStep(actor: AuditActor, id: string, reason: string) {
   const loaded = await loadQuotation(id);
-  const { step, isAdminOverride } = await currentStepFor(actor, loaded);
+  const { step, isAdminOverride } = currentStepFor(actor, loaded);
 
   await db
     .update(approvalSteps)
@@ -382,7 +382,7 @@ export async function rejectStep(actor: AuditActor, id: string, reason: string) 
  */
 export async function returnStep(actor: AuditActor, id: string, reason: string) {
   const loaded = await loadQuotation(id);
-  const { step, isAdminOverride } = await currentStepFor(actor, loaded);
+  const { step, isAdminOverride } = currentStepFor(actor, loaded);
 
   await db.delete(approvalSteps).where(eq(approvalSteps.quotationId, id));
 
@@ -448,9 +448,7 @@ export async function approvalQueue(actor: AuditActor) {
     .from(approvalSteps)
     .innerJoin(quotations, eq(quotations.id, approvalSteps.quotationId))
     .innerJoin(customers, eq(customers.id, quotations.customerId))
-    .where(
-      and(eq(approvalSteps.status, 'pending'), eq(quotations.stage, 'pending_approval')),
-    )
+    .where(and(eq(approvalSteps.status, 'pending'), eq(quotations.stage, 'pending_approval')))
     .orderBy(asc(approvalSteps.quotationId), asc(approvalSteps.stepOrder));
 
   const firstPending = new Map<string, (typeof pending)[number]>();
@@ -458,9 +456,7 @@ export async function approvalQueue(actor: AuditActor) {
     if (!firstPending.has(step.quotationId)) firstPending.set(step.quotationId, step);
   }
 
-  const mine = [...firstPending.values()].filter(
-    (step) => step.role === role || role === 'admin',
-  );
+  const mine = [...firstPending.values()].filter((step) => step.role === role || role === 'admin');
 
   const loaded = await Promise.all(mine.map((step) => loadQuotation(step.quotationId)));
 

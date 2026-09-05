@@ -198,10 +198,16 @@ export async function signup(
         .from(customers)
         .where(eq(customers.customerId, candidate))
         .limit(1);
-      if (!existing) { customerId = candidate; break; }
+      if (!existing) {
+        customerId = candidate;
+        break;
+      }
     }
-    if (!customerId) throw new ApiError(500, 'INTERNAL_ERROR', 'Could not generate a unique customer ID');
-    await db.insert(customers).values({ name: input.name, email: input.email, passwordHash, customerId });
+    if (!customerId)
+      throw new ApiError(500, 'INTERNAL_ERROR', 'Could not generate a unique customer ID');
+    await db
+      .insert(customers)
+      .values({ name: input.name, email: input.email, passwordHash, customerId });
   }
 
   const code = await sendCode('signup', type, input.email, input.name);
@@ -383,10 +389,7 @@ export async function refresh(token: string, meta: RequestMeta): Promise<Session
     throw ApiError.forbidden('ACCOUNT_DISABLED', 'This account is no longer active');
   }
 
-  await db
-    .update(refreshTokens)
-    .set({ revokedAt: new Date() })
-    .where(eq(refreshTokens.id, row.id));
+  await db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.id, row.id));
 
   return createSession(type, account, meta);
 }
@@ -427,17 +430,16 @@ export async function logout(token: string): Promise<void> {
   await db
     .update(refreshTokens)
     .set({ revokedAt: new Date() })
-    .where(and(eq(refreshTokens.tokenHash, hashRefreshToken(token)), isNull(refreshTokens.revokedAt)));
+    .where(
+      and(eq(refreshTokens.tokenHash, hashRefreshToken(token)), isNull(refreshTokens.revokedAt)),
+    );
 }
 
 // ---------------------------------------------------------------------------
 // Password reset / change
 // ---------------------------------------------------------------------------
 
-export async function forgotPassword(
-  type: AccountType,
-  email: string,
-): Promise<string | null> {
+export async function forgotPassword(type: AccountType, email: string): Promise<string | null> {
   const account = await findAccount(type, email);
   // Always report success — otherwise this endpoint confirms which emails exist.
   if (!account || !account.active) return null;

@@ -11,7 +11,7 @@ import {
   type Stage,
 } from '../../db/schema.js';
 import { num, numOrNull } from '../../lib/money.js';
-import { orderTotals, type LineForTotals } from '../../lib/totals.js';
+import { orderTotals } from '../../lib/totals.js';
 import { ApiError } from '../../utils/api-error.js';
 
 /**
@@ -190,7 +190,7 @@ export async function loadQuotation(id: string): Promise<LoadedQuotation> {
       reason: step.reason,
     })),
     lines,
-    totals: orderTotals(lines as LineForTotals[], num(row.q.orderDiscountPct)),
+    totals: orderTotals(lines, num(row.q.orderDiscountPct)),
   };
 }
 

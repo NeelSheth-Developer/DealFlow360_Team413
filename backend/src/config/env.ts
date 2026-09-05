@@ -29,6 +29,19 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(1),
 
+  /**
+   * Cloudinary — where generated quotation and invoice PDFs are stored.
+   *
+   * Optional as a group: with none of the three set, the PDF endpoints stream the file
+   * back directly instead of returning a hosted URL. That keeps the whole API usable
+   * on a machine with no Cloudinary account, and `cloudinaryConfigured` below is the
+   * single place that decides which path is taken.
+   */
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
+  CLOUDINARY_FOLDER: z.string().default('dealflow360'),
+
   // Auth / security
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   // Access tokens cannot be revoked, so keep this short (15 min).
@@ -69,4 +82,9 @@ if (!parsed.success) {
 export const env = parsed.data;
 
 export const isProduction = env.NODE_ENV === 'production';
+
+/** All three credentials present. Checked once, so no caller has to re-derive it. */
+export const cloudinaryConfigured = Boolean(
+  env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
+);
 export const isDevelopment = env.NODE_ENV === 'development';

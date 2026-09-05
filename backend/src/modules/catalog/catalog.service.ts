@@ -53,7 +53,7 @@ export async function listProducts(query: ListProductsQuery) {
   }
 
   const where = filters.length > 0 ? and(...filters) : undefined;
-  const offset = (query.page - 1) * query.limit;
+  const offset = (query.page - 1) * query.pageSize;
 
   const [rows, [totals]] = await Promise.all([
     db
@@ -61,7 +61,7 @@ export async function listProducts(query: ListProductsQuery) {
       .from(products)
       .where(where)
       .orderBy(asc(products.name))
-      .limit(query.limit)
+      .limit(query.pageSize)
       .offset(offset),
     db.select({ total: count() }).from(products).where(where),
   ]);
@@ -73,9 +73,9 @@ export async function listProducts(query: ListProductsQuery) {
     data: rows.map((row) => present(row, variants.get(row.id) ?? [])),
     meta: {
       page: query.page,
-      limit: query.limit,
+      pageSize: query.pageSize,
       total,
-      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
     },
   };
 }
