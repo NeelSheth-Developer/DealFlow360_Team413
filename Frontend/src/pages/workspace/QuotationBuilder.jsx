@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
-  Copy,
-  ExternalLink,
+  Building2,
   MessageSquare,
   Package,
   ShoppingCart,
   Sparkles,
   StickyNote,
+  UserCircle2,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import {
@@ -19,12 +19,13 @@ import {
 } from '@/store/selectors';
 import { quoteTotals } from '@/lib/pricing';
 import { isEditable } from '@/lib/stageMachine';
-import { copyToClipboard, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { dateShort } from '@/lib/format';
+import { useRisk } from '@/hooks/useRisk';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/Button';
-import { Input, Textarea } from '@/components/ui/Input';
+import { Input, Select, Textarea } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { StageBadge, TierBadge } from '@/components/shared/Indicators';
 import { QuoteNav } from '@/components/quotation/QuoteNav';
@@ -62,19 +63,21 @@ export default function QuotationBuilder() {
   const acceptSuggestion = useAppStore((s) => s.acceptSuggestion);
   const dismissSuggestion = useAppStore((s) => s.dismissSuggestion);
   const undoDismiss = useAppStore((s) => s.undoDismiss);
-  const riskFor = useAppStore((s) => s.riskFor);
-  const approvalPathFor = useAppStore((s) => s.approvalPathFor);
+  const assignOwner = useAppStore((s) => s.assignOwner);
+  const canAssign = useAppStore((s) => s.canAssignQuotations());
+  const reps = useAppStore((s) => s.users.filter((u) => ['sales_rep', 'sales_manager'].includes(u.role)));
 
   const [showUpsell, setShowUpsell] = useState(true);
   const [requestsOpen, setRequestsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Risk is fetched from the backend, never computed here.
+  const { risk, approvalPath, isLoading: riskLoading, isFallback } = useRisk(id);
+
   if (!quote) return <Navigate to="/404" replace />;
 
   const editable = isEditable(quote.stage);
   const totals = quoteTotals(quote);
-  const risk = riskFor(id);
-  const approvalPath = approvalPathFor(id);
 
   const ceilingFor = (category) => {
     const categoryCeiling = categoryCeilings[category] ?? 100;
@@ -98,7 +101,7 @@ export default function QuotationBuilder() {
 
   const handleSubmit = async () => {
     setBusy(true);
-    const result = submitForApproval(id);
+    const result = await submitForApproval(id);
     setBusy(false);
 
     if (!result.ok) {
@@ -125,19 +128,17 @@ export default function QuotationBuilder() {
       toast.error(result.error);
       return;
     }
-    const url = `${window.location.origin}/portal/${result.token}`;
-    copyToClipboard(url);
-    toast.success('Portal link copied to clipboard', {
-      description: 'Share it with the customer, or open it in a new tab to preview.',
-      action: {
-        label: 'Open',
-        onClick: () => window.open(`/portal/${result.token}`, '_blank', 'noopener'),
-      },
-    });
-  };
 
-  const handlePreview = () => {
-    window.open(`/portal/${quote.portalToken}`, '_blank', 'noopener');
+    if (result.needsRegistration) {
+      toast.success(`Shared with ${result.customer.name}`, {
+        description: `${result.customer.contactName} has not registered yet — ask them to create an account at /customer/signup using ${result.customer.email}.`,
+        duration: 8000,
+      });
+    } else {
+      toast.success(`Shared with ${result.customer.name}`, {
+        description: 'It is now visible when they sign in to their customer account.',
+      });
+    }
   };
 
   return (
@@ -278,28 +279,54 @@ export default function QuotationBuilder() {
               />
             </div>
 
-            {quote.negotiationStatus !== 'none' && (
-              <div className="mt-3.5 flex flex-wrap items-center gap-2 border-t border-brand-500/12 pt-3.5">
-                <span className="text-[11px] font-semibold text-ink-muted">Portal link:</span>
-                <code className="num rounded-lg bg-white/70 px-2 py-1 text-[11px] text-brand-700">
-                  /portal/{quote.portalToken}
-                </code>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  icon={Copy}
-                  onClick={() => {
-                    copyToClipboard(`${window.location.origin}/portal/${quote.portalToken}`);
-                    toast.success('Link copied');
-                  }}
-                >
-                  Copy
-                </Button>
-                <Button size="xs" variant="ghost" icon={ExternalLink} onClick={handlePreview}>
-                  Open
-                </Button>
+            <div className="mt-3.5 grid gap-3.5 border-t border-brand-500/12 pt-3.5 sm:grid-cols-2">
+              <div>
+                <p className="mb-1 text-xs font-semibold text-ink-soft">Assigned customer</p>
+                <div className="flex items-center gap-2 rounded-xl bg-white/60 px-3 py-2">
+                  <Building2 className="h-3.5 w-3.5 shrink-0 text-accent-teal" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink">
+                    {quote.customerName}
+                  </span>
+                  <TierBadge tier={quote.tier} showIcon={false} />
+                </div>
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  Set at creation. Start a new quotation to bill a different customer.
+                </p>
               </div>
-            )}
+
+              <div>
+                {canAssign ? (
+                  <Select
+                    label="Owning rep"
+                    value={quote.ownerId}
+                    onChange={(e) => {
+                      const result = assignOwner(id, e.target.value);
+                      if (result.ok) {
+                        toast.success(`Reassigned to ${result.owner.name}`);
+                      } else {
+                        toast.error(result.error);
+                      }
+                    }}
+                    options={reps.map((u) => ({ value: u.id, label: `${u.name} · ${u.team}` }))}
+                    hint="Only an Admin or Sales Manager can reassign."
+                  />
+                ) : (
+                  <>
+                    <p className="mb-1 text-xs font-semibold text-ink-soft">Owning rep</p>
+                    <div className="flex items-center gap-2 rounded-xl bg-white/60 px-3 py-2">
+                      <UserCircle2
+                        className="h-3.5 w-3.5 shrink-0 text-brand-600"
+                        aria-hidden="true"
+                      />
+                      <span className="truncate text-xs font-bold text-ink">{quote.ownerName}</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-ink-muted">
+                      Ask a Sales Manager to reassign this deal.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
           </GlassPanel>
         </div>
 
@@ -341,13 +368,14 @@ export default function QuotationBuilder() {
             approvalPath={approvalPath}
             editable={editable}
             busy={busy}
+            riskLoading={riskLoading}
+            riskIsFallback={isFallback}
             onSubmit={handleSubmit}
             onSaveDraft={() =>
               toast.success('Draft saved', {
                 description: 'Everything you change is saved as you go in this build.',
               })
             }
-            onPreviewAsCustomer={handlePreview}
             onSendToCustomer={handleSend}
           />
         </div>

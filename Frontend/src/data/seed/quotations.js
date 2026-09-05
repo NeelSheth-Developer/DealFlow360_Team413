@@ -65,6 +65,71 @@ function base(overrides) {
 }
 
 export const quotations = [
+  // -------------------------------------------------------------- 0a. Q-1044
+  // Acme's live one: shared, unanswered customer question, fully negotiable.
+  base({
+    id: 'Q-1044',
+    customerId: 'c-acme',
+    customerName: 'Acme Corp',
+    tier: 'gold',
+    currency: 'INR',
+    ownerId: 'u-priya',
+    ownerName: 'Priya Sharma',
+    createdById: 'u-priya',
+    createdByName: 'Priya Sharma',
+    stage: 'sent',
+    negotiationStatus: 'sent',
+    createdAt: daysAgo(4),
+    lastActivityAt: daysAgo(1),
+    validUntil: daysAhead(18),
+    promisedDeliveryDate: daysAhead(16),
+    lines: [
+      line('l-1044-1', 'p-monitor27', 'UltraSharp 27" Monitor', 'hardware', 6, 29450, 22400, 10, {
+        comments: [
+          {
+            id: 'cm-1044-1',
+            author: 'Sundar Iyer',
+            role: 'customer',
+            message:
+              'Can you confirm these are the height-adjustable stands? Our facilities team asked specifically.',
+            at: daysAgo(1),
+          },
+        ],
+      }),
+      line('l-1044-2', 'p-dock', 'Thunderbolt Docking Station', 'hardware', 6, 17000, 11800, 8),
+      line('l-1044-3', 'p-cloud-std', 'DealFlow Cloud Standard', 'subscription', 15, 1100, 380, 6, {
+        planId: 'sp-cloud-monthly',
+        subscriptionStartDate: daysAhead(14),
+      }),
+    ],
+  }),
+
+  // -------------------------------------------------------------- 0b. Q-1045
+  // Beta's live one: shared, no messages yet, clean starting point.
+  base({
+    id: 'Q-1045',
+    customerId: 'c-beta',
+    customerName: 'Beta Industries',
+    tier: 'silver',
+    currency: 'INR',
+    ownerId: 'u-kiran',
+    ownerName: 'Kiran Nair',
+    createdById: 'u-anita',
+    createdByName: 'Anita Desai',
+    stage: 'sent',
+    negotiationStatus: 'sent',
+    createdAt: daysAgo(3),
+    lastActivityAt: daysAgo(3),
+    validUntil: daysAhead(20),
+    promisedDeliveryDate: daysAhead(19),
+    internalNotes: 'Raised by Anita and assigned to Kiran to run.',
+    lines: [
+      line('l-1045-1', 'p-ap', 'WiFi 6 Access Point', 'hardware', 8, 15850, 10800, 7),
+      line('l-1045-2', 'p-switch24', 'Managed Switch 24-Port', 'hardware', 2, 40300, 29500, 6),
+      line('l-1045-3', 'p-audit', 'Infrastructure Health Audit', 'service', 1, 26900, 13500, 8),
+    ],
+  }),
+
   // ---------------------------------------------------------------- 1. Q-1042
   base({
     id: 'Q-1042',
@@ -75,7 +140,6 @@ export const quotations = [
     ownerId: 'u-priya',
     ownerName: 'Priya Sharma',
     stage: 'draft',
-    portalToken: 'acme1042negotiate',
     createdAt: daysAgo(2),
     lastActivityAt: daysAgo(2),
     validUntil: daysAhead(21),
@@ -97,8 +161,10 @@ export const quotations = [
     currency: 'INR',
     ownerId: 'u-rahul',
     ownerName: 'Rahul Mehta',
-    stage: 'draft',
-    portalToken: 'delta1041network',
+    // Shared with the customer and going stale — drives the stalled-deal alert
+    // while still giving Delta Logistics something reviewable in their portal.
+    stage: 'sent',
+    negotiationStatus: 'sent',
     createdAt: daysAgo(14),
     lastActivityAt: daysAgo(11),
     validUntil: daysAhead(7),
@@ -120,7 +186,6 @@ export const quotations = [
     ownerId: 'u-kiran',
     ownerName: 'Kiran Nair',
     stage: 'draft',
-    portalToken: 'forge1040seats',
     createdAt: daysAgo(1),
     lastActivityAt: daysAgo(1),
     validUntil: daysAhead(28),
@@ -143,7 +208,6 @@ export const quotations = [
     ownerId: 'u-rahul',
     ownerName: 'Rahul Mehta',
     stage: 'pending_approval',
-    portalToken: 'beta1039displays',
     createdAt: daysAgo(6),
     lastActivityAt: daysAgo(4),
     validUntil: daysAhead(16),
@@ -175,7 +239,6 @@ export const quotations = [
     ownerId: 'u-priya',
     ownerName: 'Priya Sharma',
     stage: 'pending_approval',
-    portalToken: 'gemini1038rollout',
     createdAt: daysAgo(8),
     lastActivityAt: daysAgo(2),
     validUntil: daysAhead(14),
@@ -217,7 +280,6 @@ export const quotations = [
     ownerId: 'u-kiran',
     ownerName: 'Kiran Nair',
     stage: 'sent',
-    portalToken: 'horizon1037campus',
     negotiationStatus: 'sent',
     createdAt: daysAgo(9),
     lastActivityAt: daysAgo(5),
@@ -245,7 +307,6 @@ export const quotations = [
     ownerId: 'u-rahul',
     ownerName: 'Rahul Mehta',
     stage: 'sent',
-    portalToken: 'everest1036usdquote',
     negotiationStatus: 'sent',
     createdAt: daysAgo(12),
     lastActivityAt: daysAgo(6),
@@ -267,9 +328,10 @@ export const quotations = [
     ownerId: 'u-kiran',
     ownerName: 'Kiran Nair',
     stage: 'under_negotiation',
-    portalToken: 'cygnus1035counter',
     negotiationStatus: 'under_negotiation',
-    awaitingSeller: true,
+    // The rep replied last (see the thread below), so the ball is back with the
+    // customer — they can message, revise their counter, or accept.
+    awaitingSeller: false,
     counterDiscountPct: 25,
     counterJustification:
       'We are comparing three vendors and the others are landing about 25% below list. Match it and we sign this week.',
@@ -322,7 +384,6 @@ export const quotations = [
     ownerId: 'u-priya',
     ownerName: 'Priya Sharma',
     stage: 'approved',
-    portalToken: 'acme1034refresh',
     negotiationStatus: 'sent',
     createdAt: daysAgo(20),
     lastActivityAt: daysAgo(10),
@@ -355,7 +416,6 @@ export const quotations = [
     ownerId: 'u-rahul',
     ownerName: 'Rahul Mehta',
     stage: 'approved',
-    portalToken: 'delta1033depot',
     negotiationStatus: 'sent',
     createdAt: daysAgo(25),
     lastActivityAt: daysAgo(12),
@@ -383,7 +443,6 @@ export const quotations = [
     ownerId: 'u-priya',
     ownerName: 'Priya Sharma',
     stage: 'fulfillment',
-    portalToken: 'gemini1032ward',
     negotiationStatus: 'confirmed',
     createdAt: daysAgo(30),
     lastActivityAt: daysAgo(8),
@@ -417,7 +476,6 @@ export const quotations = [
     ownerId: 'u-kiran',
     ownerName: 'Kiran Nair',
     stage: 'billed',
-    portalToken: 'beta1031floor',
     negotiationStatus: 'confirmed',
     createdAt: daysAgo(40),
     lastActivityAt: daysAgo(15),
@@ -443,7 +501,6 @@ export const quotations = [
     ownerId: 'u-priya',
     ownerName: 'Priya Sharma',
     stage: 'confirmed',
-    portalToken: 'acme1030annual',
     negotiationStatus: 'confirmed',
     createdAt: daysAgo(55),
     lastActivityAt: daysAgo(30),
@@ -469,7 +526,6 @@ export const quotations = [
     ownerId: 'u-rahul',
     ownerName: 'Rahul Mehta',
     stage: 'confirmed',
-    portalToken: 'horizon1029lab',
     negotiationStatus: 'confirmed',
     createdAt: daysAgo(70),
     lastActivityAt: daysAgo(45),
@@ -495,7 +551,6 @@ export const quotations = [
     ownerId: 'u-priya',
     ownerName: 'Priya Sharma',
     stage: 'lost',
-    portalToken: 'forge1028integration',
     createdAt: daysAgo(85),
     lastActivityAt: daysAgo(60),
     validUntil: daysAgo(55).slice(0, 10),

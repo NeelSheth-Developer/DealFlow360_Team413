@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
+  ArrowLeft,
   CalendarClock,
   CheckCircle2,
+  CircleDot,
   Info,
-  Lock,
   MessageSquare,
   Percent,
   Repeat,
@@ -13,49 +15,59 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import { PORTAL_STATUS_META } from '@/lib/portalView';
-import { cadenceAdverb, dateShort, money, percent, relativeTime } from '@/lib/format';
+import { useCustomerQuote } from '@/hooks/useCustomerQuotes';
+import { CUSTOMER_STATUS_META } from '@/lib/customerView';
+import { cadenceAdverb, dateShort, money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Badge, RawBadge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/shared/Dialogs';
+import { ChatThread } from '@/components/customer/ChatThread';
+
+const NOTE_TONE = {
+  info: 'border-state-info/30 bg-state-info/10 text-state-info',
+  warning: 'border-accent-amber/35 bg-accent-amber/12 text-accent-amber',
+  success: 'border-state-success/30 bg-state-success/10 text-state-success',
+  danger: 'border-state-danger/30 bg-state-danger/10 text-state-danger',
+};
 
 /**
- * Customer-facing negotiation screen (spec B8).
+ * Customer negotiation screen.
  *
- * Every value rendered here comes from `portalGetQuote`, which returns a
- * `toPortalView` projection. Internal fields (cost, margin, risk score,
- * ceilings, rep notes, approval steps) are absent from that object entirely —
- * they are not merely hidden with CSS.
+ * Everything rendered comes from a `toCustomerView` projection scoped to the
+ * signed-in customer — cost prices, margins, risk scores, ceilings, rep notes and
+ * approval detail are absent from that object entirely.
  */
-export default function PortalNegotiation() {
-  const { token } = useParams();
+export default function CustomerQuotationDetail() {
+  const { id } = useParams();
   const navigate = useNavigate();
 
-  const view = useAppStore((s) => s.portalGetQuote(token));
-  const portalAddComment = useAppStore((s) => s.portalAddComment);
-  const portalSubmitRequest = useAppStore((s) => s.portalSubmitRequest);
-  const portalConfirm = useAppStore((s) => s.portalConfirm);
+  const view = useCustomerQuote(id);
+  const customerAddComment = useAppStore((s) => s.customerAddComment);
+  const customerSubmitRequest = useAppStore((s) => s.customerSubmitRequest);
+  const customerConfirm = useAppStore((s) => s.customerConfirm);
 
   const [openThread, setOpenThread] = useState(null);
-  const [draftComment, setDraftComment] = useState('');
   const [counterPct, setCounterPct] = useState('');
   const [justification, setJustification] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  if (!view) return null;
+  // Not this customer's quotation, or not shared with them yet.
+  if (!view) return <Navigate to="/customer/quotations" replace />;
 
-  const status = PORTAL_STATUS_META[view.status] ?? PORTAL_STATUS_META.sent;
-  const locked = view.isLocked;
+  const status = CUSTOMER_STATUS_META[view.stage] ?? CUSTOMER_STATUS_META.sent;
 
-  const handleComment = (lineId) => {
-    if (!draftComment.trim()) return;
-    portalAddComment(token, lineId, draftComment);
-    setDraftComment('');
-    toast.success('Comment sent', { description: 'Your account contact has been notified.' });
+  const handleSend = (lineId) => async (message) => {
+    const result = customerAddComment(id, lineId, message);
+    if (result.ok) {
+      toast.success('Message sent', { description: 'Your account manager has been notified.' });
+    } else {
+      toast.error(result.error);
+    }
+    return result;
   };
 
   const handleSubmitRequest = () => {
@@ -64,7 +76,7 @@ export default function PortalNegotiation() {
       return;
     }
     setBusy(true);
-    const result = portalSubmitRequest(token, {
+    const result = customerSubmitRequest(id, {
       counterDiscountPct: counterPct === '' ? null : Number(counterPct),
       justification: justification.trim(),
     });
@@ -81,9 +93,9 @@ export default function PortalNegotiation() {
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setBusy(true);
-    const result = portalConfirm(token);
+    const result = await customerConfirm(id);
     setBusy(false);
     setConfirmOpen(false);
 
@@ -93,16 +105,25 @@ export default function PortalNegotiation() {
     }
 
     if (result.reapproval) {
-      toast.info('Sent for internal review', {
+      toast.info('Sent for internal approval', {
         description: 'Your agreed terms need a further sign-off. We will confirm shortly.',
+        duration: 7000,
       });
     } else {
-      navigate(`/portal/${token}/confirmed`);
+      navigate(`/customer/quotations/${id}/confirmed`);
     }
   };
 
   return (
     <div className="space-y-5">
+      <Link
+        to="/customer/quotations"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-soft transition-colors hover:text-brand-700"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+        All quotations
+      </Link>
+
       {/* ------------------------------------------------------- header */}
       <GlassCard strong className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -119,18 +140,37 @@ export default function PortalNegotiation() {
               {view.promisedDeliveryDate && (
                 <span>Target delivery {dateShort(view.promisedDeliveryDate)}</span>
               )}
+              {view.messageCount > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                  {view.messageCount} message{view.messageCount === 1 ? '' : 's'}
+                </span>
+              )}
             </div>
           </div>
 
-          <RawBadge className={cn('px-3 py-1.5 text-xs', status.bg, status.tone)} dot dotClass="bg-current">
+          <RawBadge
+            className={cn('px-3 py-1.5 text-xs', status.bg, status.tone)}
+            dot
+            dotClass="bg-current"
+          >
             {status.label}
           </RawBadge>
         </div>
 
-        {view.lockReason && (
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-brand-500/20 bg-brand-500/8 p-3">
-            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
-            <p className="text-xs leading-relaxed text-ink-soft">{view.lockReason}</p>
+        {view.statusNote && (
+          <div
+            className={cn(
+              'mt-4 flex items-start gap-2.5 rounded-xl border p-3',
+              NOTE_TONE[view.statusNote.tone],
+            )}
+          >
+            {view.statusNote.tone === 'warning' ? (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            ) : (
+              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            )}
+            <p className="text-xs leading-relaxed text-ink-soft">{view.statusNote.text}</p>
           </div>
         )}
       </GlassCard>
@@ -138,19 +178,23 @@ export default function PortalNegotiation() {
       {/* -------------------------------------------------------- lines */}
       <GlassPanel
         title="What's included"
-        description="Tap the comment icon on any line to ask a question or request a change."
+        description="Use the Ask a question button on any line to start a conversation with us."
         icon={ShieldCheck}
+        accent="teal"
       >
         <ul className="space-y-2.5">
           {view.lines.map((line) => {
             const threadOpen = openThread === line.id;
+            const lastComment = line.comments[line.comments.length - 1];
+            const awaitingYou = lastComment?.side === 'seller';
+
             return (
               <li
                 key={line.id}
                 className={cn(
                   'rounded-xl border bg-white/55 p-3.5 transition-colors',
                   line.isRecurring ? 'border-l-4 border-l-accent-indigo' : 'border-brand-500/12',
-                  threadOpen && 'border-brand-500/40',
+                  threadOpen && 'border-accent-teal/45 bg-white/70',
                 )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -162,9 +206,16 @@ export default function PortalNegotiation() {
                           Billed {cadenceAdverb(line.cadence)}
                         </Badge>
                       )}
+                      {awaitingYou && (
+                        <Badge tone="pink" size="xs" icon={CircleDot}>
+                          New reply
+                        </Badge>
+                      )}
                     </div>
                     {line.description && (
-                      <p className="mt-1 text-xs leading-relaxed text-ink-soft">{line.description}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+                        {line.description}
+                      </p>
                     )}
                     <p className="mt-1.5 text-xs text-ink-muted">
                       {line.qty} × {money(line.unitPrice, view.currency)} per {line.unit}
@@ -176,69 +227,37 @@ export default function PortalNegotiation() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col items-end gap-2">
                     <span className="num text-sm font-extrabold text-ink">
                       {money(line.lineTotal, view.currency)}
                     </span>
-                    <IconButton
+
+                    {/* Explicit labelled control — an unlabelled icon was too
+                        easy to miss, which is what made chat feel broken. */}
+                    <Button
+                      size="xs"
+                      variant={threadOpen ? 'subtle' : line.comments.length ? 'secondary' : 'ghost'}
                       icon={MessageSquare}
-                      label={`Comment on ${line.productName}`}
-                      size="sm"
-                      variant={line.comments.length ? 'subtle' : 'ghost'}
-                      onClick={() => {
-                        setOpenThread(threadOpen ? null : line.id);
-                        setDraftComment('');
-                      }}
-                    />
+                      onClick={() => setOpenThread(threadOpen ? null : line.id)}
+                      aria-expanded={threadOpen}
+                    >
+                      {threadOpen
+                        ? 'Hide'
+                        : line.comments.length
+                          ? `Messages (${line.comments.length})`
+                          : 'Ask a question'}
+                    </Button>
                   </div>
                 </div>
 
-                {/* ------------------------------------ comment thread */}
-                {(threadOpen || line.comments.length > 0) && (
-                  <div className="mt-3 border-t border-brand-500/12 pt-3">
-                    {line.comments.length > 0 && (
-                      <ul className="mb-3 space-y-2">
-                        {line.comments.map((c) => (
-                          <li
-                            key={c.id}
-                            className={cn(
-                              'max-w-[85%] rounded-xl px-3 py-2',
-                              c.side === 'customer'
-                                ? 'ml-auto bg-brand-500/12'
-                                : 'bg-white/70 border border-brand-500/12',
-                            )}
-                          >
-                            <p className="text-[11px] font-bold text-ink">
-                              {c.side === 'customer' ? 'You' : c.author}
-                              <span className="ml-2 font-normal text-ink-muted">
-                                {relativeTime(c.at)}
-                              </span>
-                            </p>
-                            <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">{c.message}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {threadOpen && !locked && (
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Textarea
-                          rows={2}
-                          placeholder="Ask about this line, or request a change…"
-                          value={draftComment}
-                          onChange={(e) => setDraftComment(e.target.value)}
-                          className="flex-1"
-                        />
-                        <Button
-                          icon={Send}
-                          onClick={() => handleComment(line.id)}
-                          disabled={!draftComment.trim()}
-                          className="shrink-0 self-end"
-                        >
-                          Send
-                        </Button>
-                      </div>
-                    )}
+                {threadOpen && (
+                  <div className="mt-3">
+                    <ChatThread
+                      line={line}
+                      canMessage={view.canMessage}
+                      onSend={handleSend(line.id)}
+                      autoFocus
+                    />
                   </div>
                 )}
               </li>
@@ -246,7 +265,6 @@ export default function PortalNegotiation() {
           })}
         </ul>
 
-        {/* ------------------------------------------------- totals */}
         <dl className="mt-4 space-y-1.5 border-t border-brand-500/12 pt-4">
           <Row label="Subtotal" value={money(view.totals.subtotal, view.currency)} />
           {view.totals.savings > 0 && (
@@ -274,7 +292,7 @@ export default function PortalNegotiation() {
       </GlassPanel>
 
       {/* --------------------------------------------- counter discount */}
-      {!locked && (
+      {view.canProposeTerms && (
         <GlassPanel
           title="Propose different terms"
           description="Tell us what would work and we'll review it internally."
@@ -305,11 +323,18 @@ export default function PortalNegotiation() {
           {view.counterDiscountPct != null && (
             <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-accent-amber/10 p-3">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent-amber" aria-hidden="true" />
-              <p className="text-xs leading-relaxed text-ink-soft">
-                You previously requested{' '}
-                <span className="font-bold text-ink">{view.counterDiscountPct}%</span>. Submitting
-                again will replace that request.
-              </p>
+              <div className="min-w-0">
+                <p className="text-xs leading-relaxed text-ink-soft">
+                  You previously requested{' '}
+                  <span className="font-bold text-ink">{view.counterDiscountPct}%</span>. Submitting
+                  again replaces that request.
+                </p>
+                {view.counterJustification && (
+                  <p className="mt-1 text-[11px] italic leading-relaxed text-ink-muted">
+                    “{view.counterJustification}”
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </GlassPanel>
@@ -319,33 +344,33 @@ export default function PortalNegotiation() {
       <GlassCard strong className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-sm font-bold text-ink">Ready to move forward?</p>
-            <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">
-              {locked
-                ? 'No action is needed from you right now.'
-                : 'Confirming accepts the terms above. If they need internal sign-off, we handle that automatically.'}
+            <p className="text-sm font-bold text-ink">
+              {view.canConfirm ? 'Ready to move forward?' : 'Nothing to action right now'}
+            </p>
+            <p className="mt-0.5 max-w-lg text-xs leading-relaxed text-ink-soft">
+              {view.canConfirm
+                ? 'Confirming accepts the terms above. If they need internal sign-off we handle that automatically — you won’t need to do anything else.'
+                : view.isDecided
+                  ? 'Terms are agreed. Your account manager will be in touch with next steps.'
+                  : 'Your request is with our team. You can keep messaging on any line while you wait.'}
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              icon={Send}
-              disabled={locked || busy}
-              onClick={handleSubmitRequest}
-              loading={busy}
-            >
-              Submit Request
-            </Button>
-            <Button
-              size="md"
-              icon={CheckCircle2}
-              disabled={locked || busy}
-              onClick={() => setConfirmOpen(true)}
-            >
-              Confirm Quotation
-            </Button>
-          </div>
+          {view.canConfirm && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                icon={Send}
+                disabled={busy}
+                onClick={handleSubmitRequest}
+              >
+                Submit Request
+              </Button>
+              <Button icon={CheckCircle2} disabled={busy} onClick={() => setConfirmOpen(true)}>
+                Confirm Quotation
+              </Button>
+            </div>
+          )}
         </div>
       </GlassCard>
 
@@ -353,7 +378,7 @@ export default function PortalNegotiation() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Confirm this quotation?"
-        description={`${money(view.totals.grandTotal, view.currency)} across ${view.lines.length} line(s).`}
+        description={`${money(view.totals.grandTotal, view.currency)} across ${view.lineCount} line(s).`}
         confirmLabel="Yes, confirm"
         loading={busy}
         onConfirm={handleConfirm}
@@ -365,9 +390,8 @@ export default function PortalNegotiation() {
           <div className="flex items-start gap-2.5 rounded-xl bg-brand-500/8 p-3">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
             <p className="text-xs leading-relaxed text-ink-soft">
-              If the agreed terms need an additional internal approval, this will move to review
-              automatically and we&apos;ll confirm as soon as it clears — you won&apos;t need to do
-              anything else.
+              If the agreed terms need an additional internal approval, this moves to review
+              automatically and we&apos;ll confirm as soon as it clears.
             </p>
           </div>
         </div>

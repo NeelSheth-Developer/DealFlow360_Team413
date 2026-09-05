@@ -25,8 +25,8 @@ export function CustomerRequestsDrawer({ open, onOpenChange, quote, requests, ed
     toast.success('Reply sent to the customer portal');
   };
 
-  const handleApplyCounter = () => {
-    const result = applyCounterDiscount(quote.id);
+  const handleApplyCounter = async () => {
+    const result = await applyCounterDiscount(quote.id);
     if (!result.ok) {
       toast.error(result.error);
       return;

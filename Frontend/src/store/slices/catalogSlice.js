@@ -99,58 +99,43 @@ export function createCatalogSlice(set, get) {
       });
     },
 
-    upsertCustomer(payload) {
-      const isNew = !payload.id;
-      const customer = {
-        id: payload.id ?? nextId('c'),
-        name: payload.name,
-        tier: payload.tier ?? 'bronze',
-        contactName: payload.contactName ?? '',
-        email: payload.email ?? '',
-        currency: payload.currency ?? 'INR',
-        industry: payload.industry ?? '',
-      };
+    /**
+     * Promotes or demotes a customer's pricing tier.
+     *
+     * This is deliberately the ONLY mutation the app offers on a customer record.
+     * Accounts are created solely by customer self-signup — no role, including
+     * admin, can create or edit someone else's account. Tier is different: it is
+     * a commercial setting that decides which price list applies and what
+     * discount ceiling every line is measured against, so a Sales Manager or
+     * Admin must own it.
+     */
+    setCustomerTier(customerId, tier) {
+      if (!get().hasRole('admin', 'sales_manager')) {
+        return { ok: false, error: 'Only an Admin or Sales Manager can change a customer tier.' };
+      }
 
+      const customer = get().customers.find((c) => c.id === customerId);
+      if (!customer) return { ok: false, error: 'Customer not found.' };
+      if (customer.tier === tier) return { ok: true, customer };
+
+      const previous = customer.tier;
       set((state) => ({
-        customers: isNew
-          ? [...state.customers, customer]
-          : state.customers.map((c) => (c.id === customer.id ? customer : c)),
+        customers: state.customers.map((c) => (c.id === customerId ? { ...c, tier } : c)),
       }));
 
       get().logAudit({
         entityType: 'customer',
-        entityId: customer.id,
-        action: `${isNew ? 'Customer created' : 'Customer updated'}: ${customer.name} (${customer.tier})`,
+        entityId: customerId,
+        action: `${customer.name} tier changed from ${previous} to ${tier}`,
+        meta: { from: previous, to: tier },
       });
 
-      return customer;
-    },
+      // Existing quotations keep the tier they were written against, but any
+      // future scoring for this customer changes, so drop cached scores.
+      get().invalidateRisk();
+      get().recomputeAlerts();
 
-    upsertUser(payload) {
-      const isNew = !payload.id;
-      const user = {
-        id: payload.id ?? nextId('u'),
-        name: payload.name,
-        email: payload.email,
-        role: payload.role,
-        team: payload.team ?? 'Unassigned',
-        avatarColor: payload.avatarColor ?? 'from-brand-500 to-accent-indigo',
-      };
-
-      set((state) => ({
-        users: isNew
-          ? [...state.users, user]
-          : state.users.map((u) => (u.id === user.id ? user : u)),
-      }));
-
-      get().logAudit({
-        entityType: 'user',
-        entityId: user.id,
-        action: `${isNew ? 'User created' : 'User updated'}: ${user.name}`,
-        meta: { role: user.role },
-      });
-
-      return user;
+      return { ok: true, customer: { ...customer, tier } };
     },
   };
 }

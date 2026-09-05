@@ -1,5 +1,5 @@
 import { nextId, nowISO, round2 } from '@/lib/utils';
-import { money, paymentMethodLabel } from '@/lib/format';
+import { money, paymentMethodLabel, roleLabel } from '@/lib/format';
 import {
   computeCancellation,
   computeProration,
@@ -217,6 +217,13 @@ export function createBillingSlice(set, get) {
 
     // -------------------------------------------------- invoice & payments
     sendInvoice(invoiceId) {
+      if (!get().canRecordPayments()) {
+        return {
+          ok: false,
+          error: 'Only Finance or an Admin can issue an invoice.',
+        };
+      }
+
       const invoice = get().getInvoice(invoiceId);
       if (!invoice) return { ok: false, error: 'Invoice not found.' };
       if (invoice.status !== 'draft') return { ok: false, error: 'This invoice has already been sent.' };
@@ -238,10 +245,29 @@ export function createBillingSlice(set, get) {
       return { ok: true };
     },
 
+    /**
+     * Records a payment against an invoice.
+     *
+     * Settling money is restricted to Finance and Admin. A sales rep or manager
+     * can see the invoice and its balance but cannot mark it paid — separating
+     * whoever sold the deal from whoever confirms the cash arrived.
+     */
     recordPayment(invoiceId, { amount, method, reference, date, notes }) {
-      const invoice = get().getInvoice(invoiceId);
       const me = get().currentUser;
+
+      if (!me) return { ok: false, error: 'You are not signed in.' };
+      if (!get().canRecordPayments()) {
+        return {
+          ok: false,
+          error: `${roleLabel(me.role)} cannot record payments. Only Finance or an Admin can confirm a payment has been received.`,
+        };
+      }
+
+      const invoice = get().getInvoice(invoiceId);
       if (!invoice) return { ok: false, error: 'Invoice not found.' };
+      if (invoice.status === 'draft') {
+        return { ok: false, error: 'Issue the invoice before recording a payment against it.' };
+      }
 
       const value = round2(Number(amount) || 0);
       if (value <= 0) return { ok: false, error: 'Enter a payment amount greater than zero.' };

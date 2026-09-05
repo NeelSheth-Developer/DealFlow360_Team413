@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectReportData } from '@/store/selectors';
+import { useAllRisks } from '@/hooks/useRisk';
 import { exportTableToPdf, exportToXlsx } from '@/lib/exporters';
 import { FUNNEL_ORDER } from '@/lib/stageMachine';
 import {
@@ -60,6 +61,8 @@ const CHART_COLORS = ['#8b5cf6', '#6366f1', '#14b8a6', '#ec4899', '#f59e0b', '#e
 
 /** Reporting dashboard (spec A7). */
 export default function Reports() {
+  useAllRisks();
+
   const users = useAppStore((s) => s.users);
   const categoryCeilings = useAppStore((s) => s.categoryCeilings);
 

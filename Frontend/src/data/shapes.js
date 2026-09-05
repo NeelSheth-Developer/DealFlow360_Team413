@@ -25,6 +25,7 @@
  * @property {Role} role
  * @property {string} team
  * @property {string} avatarColor Tailwind-ish gradient class pair for the avatar
+ * @property {string} password demo build only — a real deployment hashes this server-side
  */
 
 /**
@@ -120,7 +121,9 @@
  * @property {QuoteLine[]} lines
  * @property {number} orderDiscountPct
  * @property {ApprovalStep[]} approvalSteps
- * @property {string} portalToken used for /portal/:token
+ * @property {string} createdById who raised it
+ * @property {string} createdByName
+ * @property {string|null} sharedAt when it became visible to the customer
  * @property {'none'|'sent'|'under_negotiation'|'pending_reapproval'|'confirmed'} negotiationStatus
  * @property {boolean} awaitingSeller customer submitted a request, seller hasn't replied
  * @property {number|null} counterDiscountPct

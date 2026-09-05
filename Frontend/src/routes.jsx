@@ -3,8 +3,13 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import MarketingLayout from '@/layouts/MarketingLayout';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout';
 import BackendLayout from '@/layouts/BackendLayout';
-import PortalLayout from '@/layouts/PortalLayout';
-import { RequireAuth, RequirePortalToken, RequireRole } from '@/guards/Guards';
+import CustomerLayout from '@/layouts/CustomerLayout';
+import {
+  RedirectIfAuthenticated,
+  RequireCustomerAuth,
+  RequireRole,
+  RequireStaffAuth,
+} from '@/guards/Guards';
 
 import Landing from '@/pages/Landing';
 import Login from '@/pages/Login';
@@ -27,29 +32,83 @@ import DiscountTiers from '@/pages/backend/DiscountTiers';
 import Warehouses from '@/pages/backend/Warehouses';
 import Subscriptions from '@/pages/backend/Subscriptions';
 import UpsellRules from '@/pages/backend/UpsellRules';
-import UsersPage from '@/pages/backend/Users';
+import Directory from '@/pages/backend/Directory';
 import AuditLog from '@/pages/backend/AuditLog';
 
-import PortalLogin from '@/pages/portal/PortalLogin';
-import PortalNegotiation from '@/pages/portal/PortalNegotiation';
-import PortalConfirmed from '@/pages/portal/PortalConfirmed';
+import CustomerLogin from '@/pages/customer/CustomerLogin';
+import CustomerSignup from '@/pages/customer/CustomerSignup';
+import CustomerQuotations from '@/pages/customer/CustomerQuotations';
+import CustomerQuotationDetail from '@/pages/customer/CustomerQuotationDetail';
+import CustomerConfirmed from '@/pages/customer/CustomerConfirmed';
 
 const BACKEND_ROLES = ['admin', 'sales_manager', 'finance'];
 
+/**
+ * Three separate route trees:
+ *
+ *   /            public marketing and staff auth
+ *   /app/*       internal workspace, staff session required
+ *   /customer/*  customer area, customer session required
+ *
+ * The two authenticated trees share no layout, no guard and no session.
+ */
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* ------------------------------------------------------- public */}
+      {/* ---------------------------------------------- public + staff auth */}
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/portal/login" element={<PortalLogin />} />
+        <Route
+          path="/login"
+          element={
+            <RedirectIfAuthenticated>
+              <Login />
+            </RedirectIfAuthenticated>
+          }
+        />
+        <Route
+          path="/signup"
+          element={
+            <RedirectIfAuthenticated>
+              <Signup />
+            </RedirectIfAuthenticated>
+          }
+        />
         <Route path="/403" element={<Forbidden />} />
       </Route>
 
+      {/* ------------------------------------------------- customer auth */}
+      <Route element={<MarketingLayout />}>
+        <Route
+          path="/customer/login"
+          element={
+            <RedirectIfAuthenticated>
+              <CustomerLogin />
+            </RedirectIfAuthenticated>
+          }
+        />
+        <Route
+          path="/customer/signup"
+          element={
+            <RedirectIfAuthenticated>
+              <CustomerSignup />
+            </RedirectIfAuthenticated>
+          }
+        />
+      </Route>
+
+      {/* ---------------------------------------------- customer area */}
+      <Route element={<RequireCustomerAuth />}>
+        <Route path="/customer" element={<CustomerLayout />}>
+          <Route index element={<Navigate to="/customer/quotations" replace />} />
+          <Route path="quotations" element={<CustomerQuotations />} />
+          <Route path="quotations/:id" element={<CustomerQuotationDetail />} />
+          <Route path="quotations/:id/confirmed" element={<CustomerConfirmed />} />
+        </Route>
+      </Route>
+
       {/* --------------------------------------------- internal workspace */}
-      <Route element={<RequireAuth />}>
+      <Route element={<RequireStaffAuth />}>
         <Route path="/app" element={<WorkspaceLayout />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
@@ -63,7 +122,7 @@ export default function AppRoutes() {
           <Route path="quotations/:id/invoice" element={<QuotationInvoice />} />
           <Route path="reports" element={<Reports />} />
 
-          {/* ----------------------------------- backend configuration */}
+          {/* --------------------------------- backend configuration */}
           <Route element={<RequireRole allow={BACKEND_ROLES} />}>
             <Route path="backend" element={<BackendLayout />}>
               <Route index element={<Navigate to="/app/backend/products" replace />} />
@@ -72,20 +131,15 @@ export default function AppRoutes() {
               <Route path="warehouses" element={<Warehouses />} />
               <Route path="subscriptions" element={<Subscriptions />} />
               <Route path="upsell-rules" element={<UpsellRules />} />
-              <Route path="users" element={<UsersPage />} />
+              <Route path="directory" element={<Directory />} />
               <Route path="audit-log" element={<AuditLog />} />
             </Route>
           </Route>
         </Route>
       </Route>
 
-      {/* ------------------------------- customer portal (isolated shell) */}
-      <Route element={<PortalLayout />}>
-        <Route element={<RequirePortalToken />}>
-          <Route path="/portal/:token" element={<PortalNegotiation />} />
-          <Route path="/portal/:token/confirmed" element={<PortalConfirmed />} />
-        </Route>
-      </Route>
+      {/* Legacy token links now land on the customer sign-in. */}
+      <Route path="/portal/*" element={<Navigate to="/customer/login" replace />} />
 
       <Route path="/404" element={<NotFound />} />
       <Route path="*" element={<NotFound />} />
