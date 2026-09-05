@@ -24,8 +24,8 @@
  * @property {string} email
  * @property {Role} role
  * @property {string} team
- * @property {string} avatarColor Tailwind-ish gradient class pair for the avatar
- * @property {string} password demo build only — a real deployment hashes this server-side
+ * @property {string} [avatarColor] derived by avatarGradient(), never stored
+ * // No password field: credentials live server-side only, behind POST /auth/login.
  */
 
 /**

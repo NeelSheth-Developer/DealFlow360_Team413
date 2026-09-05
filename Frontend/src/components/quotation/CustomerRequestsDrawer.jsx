@@ -42,7 +42,7 @@ export function CustomerRequestsDrawer({ open, onOpenChange, quote, requests, ed
       open={open}
       onOpenChange={onOpenChange}
       title="Customer requests"
-      description={`Negotiation activity from the portal on ${quote.id}.`}
+      description={`Negotiation activity from the portal on ${quote.reference ?? quote.id}.`}
     >
       <div className="space-y-4">
         {/* ------------------------------------------- counter discount */}

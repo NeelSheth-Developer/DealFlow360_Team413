@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -12,7 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import { splitByLine, validateOverride } from '@/lib/warehouseSplit';
+import { groupAllocationsByLine } from '@/services/fulfillmentService';
 import { dateShort, money } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
@@ -21,6 +21,8 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { StageBadge } from '@/components/shared/Indicators';
 import { QuoteNav } from '@/components/quotation/QuoteNav';
+import { QuoteLoading } from '@/components/quotation/QuoteLoading';
+import { useQuotation } from '@/hooks/useQuotation';
 import {
   SplitOverrideEditor,
   WarehouseSplitTable,
@@ -31,7 +33,7 @@ export default function QuotationFulfillment() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const quote = useAppStore((s) => s.quotations.find((q) => q.id === id));
+  const { quote, resolving, missing } = useQuotation(id);
   const warehouses = useAppStore((s) => s.warehouses);
   const plan = useAppStore((s) => s.fulfillmentPlans[id]);
   const invoice = useAppStore((s) => s.invoices.find((i) => i.quotationId === id));
@@ -39,7 +41,6 @@ export default function QuotationFulfillment() {
   const computeFulfillment = useAppStore((s) => s.computeFulfillment);
   const acceptSplit = useAppStore((s) => s.acceptSplit);
   const saveOverride = useAppStore((s) => s.saveOverride);
-  const suggestionFor = useAppStore((s) => s.suggestionFor);
   const simulateRestock = useAppStore((s) => s.simulateRestock);
   const buildBilling = useAppStore((s) => s.buildBilling);
   const moveStage = useAppStore((s) => s.moveStage);
@@ -47,20 +48,36 @@ export default function QuotationFulfillment() {
   const [overrideMode, setOverrideMode] = useState(false);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
+  /**
+   * Per-cell errors from a rejected override (422 INVALID_ALLOCATION).
+   *
+   * Validation is the server's — it is the only thing that knows current stock and what
+   * is already promised to other orders. A local pre-check would either duplicate that
+   * badly or disagree with it.
+   */
+  const [cellErrors, setCellErrors] = useState([]);
+
+  // The plan is recomputed from live stock on every read, so fetch it on entry rather
+  // than trusting whatever a previous visit cached.
+  useEffect(() => {
+    computeFulfillment(id);
+  }, [id, computeFulfillment]);
 
   const shippableLines = useMemo(
     () => (quote?.lines ?? []).filter((l) => !l.isSubscription && l.category !== 'service'),
     [quote],
   );
 
-  if (!quote) return <Navigate to="/404" replace />;
+  if (resolving && !quote) return <QuoteLoading />;
+  if (missing || !quote) return <Navigate to="/404" replace />;
 
-  const activePlan = plan ?? computeFulfillment(id);
-  const suggestion = suggestionFor(id);
-  const rows = splitByLine(activePlan, quote.lines, warehouses);
+  const activePlan = plan ?? null;
+  // The suggestion and the saved plan are one object now — the server returns
+  // `costDelta` on an override, which is the only figure the old client-side diff
+  // between the two existed to produce.
+  const rows = groupAllocationsByLine(activePlan, quote.lines);
 
   const backorderQty = (activePlan?.backorders ?? []).reduce((s, b) => s + b.qty, 0);
-  const costDelta = (activePlan?.estimatedCost ?? 0) - (suggestion?.estimatedCost ?? 0);
 
   const draftAllocations = Object.entries(draft)
     .map(([key, qty]) => {
@@ -68,10 +85,6 @@ export default function QuotationFulfillment() {
       return { lineId, warehouseId, qty: Number(qty) || 0 };
     })
     .filter((a) => a.qty > 0);
-
-  const overrideErrors = overrideMode
-    ? validateOverride(draftAllocations, quote.lines, warehouses)
-    : [];
 
   const enterOverride = () => {
     const seeded = {};
@@ -82,9 +95,12 @@ export default function QuotationFulfillment() {
     setOverrideMode(true);
   };
 
-  const resetToSuggestion = () => {
+  /** Re-reads the server's plan and seeds the editor from it. */
+  const resetToSuggestion = async () => {
+    setCellErrors([]);
+    const result = await computeFulfillment(id);
     const seeded = {};
-    for (const a of suggestion?.allocations ?? []) {
+    for (const a of result.plan?.allocations ?? []) {
       seeded[`${a.lineId}:${a.warehouseId}`] = a.qty;
     }
     setDraft(seeded);
@@ -93,7 +109,7 @@ export default function QuotationFulfillment() {
 
   const handleAccept = async () => {
     setBusy(true);
-    const result = acceptSplit(id);
+    const result = await acceptSplit(id);
     setBusy(false);
 
     if (!result.ok) {
@@ -105,43 +121,56 @@ export default function QuotationFulfillment() {
     });
   };
 
-  const handleSaveOverride = () => {
+  const handleSaveOverride = async () => {
     setBusy(true);
-    const result = saveOverride(id, draftAllocations);
+    setCellErrors([]);
+    const result = await saveOverride(id, draftAllocations);
     setBusy(false);
 
     if (!result.ok) {
-      toast.error('Fix the highlighted allocations first');
+      setCellErrors(result.cellErrors ?? []);
+      toast.error(result.error ?? 'Fix the highlighted allocations first');
       return;
     }
+
     setOverrideMode(false);
     toast.success('Manual override saved', {
       description:
-        result.costDelta === 0
+        !result.costDelta || result.costDelta === 0
           ? 'Same shipping cost as the suggestion.'
           : `${result.costDelta > 0 ? '+' : ''}${money(result.costDelta, quote.currency)} vs the suggested split.`,
     });
   };
 
-  const handleRestock = () => {
-    // Restocking the warehouse with the deepest shortfall is the most useful
-    // demo action — it is what makes the consolidation prompt appear.
+  const handleRestock = async () => {
+    // Restocking the warehouse with the deepest shortfall is the most useful action
+    // here — it is what makes the consolidation prompt appear.
     const target = warehouses.find((w) =>
-      Object.entries(w.stock).some(([, qty]) => qty <= w.replenishThreshold),
+      Object.entries(w.stock ?? {}).some(([, qty]) => qty <= w.replenishThreshold),
     );
     if (!target) {
       toast.info('Nothing is below its replenishment threshold right now.');
       return;
     }
-    const result = simulateRestock(target.id);
-    toast.success(`Stock arrived at ${result.warehouseName}`, {
-      description: `${result.restocked} product(s) replenished. Any open backorder can now be consolidated.`,
+
+    const result = await simulateRestock(target.id);
+    if (!result.ok) {
+      toast.error('Could not restock', { description: result.error });
+      return;
+    }
+
+    toast.success(`Stock arrived at ${result.warehouseName ?? target.name}`, {
+      description: `${result.restocked} product(s) replenished. ${
+        result.affectedQuotationIds?.length
+          ? 'An open backorder can now be consolidated.'
+          : 'No open backorder was affected.'
+      }`,
     });
   };
 
-  const handleProceedToBilling = () => {
-    buildBilling(id);
-    if (quote.stage === 'fulfillment') moveStage(id, 'billed');
+  const handleProceedToBilling = async () => {
+    await buildBilling(id);
+    if (quote.stage === 'fulfillment') await moveStage(id, 'billed');
     navigate(`/app/quotations/${id}/invoice`);
   };
 
@@ -152,7 +181,7 @@ export default function QuotationFulfillment() {
         description="Allocation minimises shipment count first, then shipping cost. Override any line if you know better."
         breadcrumbs={[
           { label: 'Quotations', to: '/app/quotations' },
-          { label: quote.id, to: `/app/quotations/${quote.id}` },
+          { label: quote.reference ?? quote.id, to: `/app/quotations/${quote.id}` },
           { label: 'Fulfillment' },
         ]}
         badge={<StageBadge stage={quote.stage} />}
@@ -173,15 +202,16 @@ export default function QuotationFulfillment() {
           hint={`${(activePlan?.warehousesUsed ?? []).length} warehouse(s) involved`}
           icon={Truck}
         />
+        {/*
+          No "vs suggested" delta here any more. The server returns `costDelta` only in
+          the response to an override, and it is surfaced in that toast. There is no
+          second plan to diff against on a plain read.
+        */}
         <SummaryTile
           label="Shipping cost"
           value={money(activePlan?.estimatedCost ?? 0, quote.currency)}
-          hint={
-            costDelta === 0
-              ? 'matches the suggestion'
-              : `${costDelta > 0 ? '+' : ''}${money(costDelta, quote.currency)} vs suggested`
-          }
-          tone={costDelta > 0 ? 'text-accent-amber' : undefined}
+          hint={activePlan?.isOverride ? 'manual override in effect' : 'suggested allocation'}
+          tone={activePlan?.isOverride ? 'text-accent-amber' : undefined}
           icon={PackageCheck}
         />
         <SummaryTile
@@ -224,17 +254,21 @@ export default function QuotationFulfillment() {
               lines={shippableLines}
               warehouses={warehouses}
               draft={draft}
-              errors={overrideErrors}
-              onChange={(key, value) => setDraft((d) => ({ ...d, [key]: value }))}
+              errors={cellErrors}
+              onChange={(key, value) => {
+                setDraft((d) => ({ ...d, [key]: value }));
+                // Last save's complaints no longer describe what is on screen.
+                if (cellErrors.length > 0) setCellErrors([]);
+              }}
             />
 
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-brand-500/12 pt-4">
-              <Button
-                icon={Save}
-                loading={busy}
-                disabled={overrideErrors.length > 0}
-                onClick={handleSaveOverride}
-              >
+              {/*
+                Save is never pre-disabled. The server validates against live stock and
+                what other orders have already claimed, so the only honest way to know an
+                allocation is invalid is to submit it and read the per-cell errors back.
+              */}
+              <Button icon={Save} loading={busy} onClick={handleSaveOverride}>
                 Save Override
               </Button>
               <Button variant="secondary" icon={RotateCcw} onClick={resetToSuggestion}>
@@ -244,9 +278,9 @@ export default function QuotationFulfillment() {
                 Cancel
               </Button>
 
-              {overrideErrors.length > 0 && (
+              {cellErrors.length > 0 && (
                 <span className="text-[11px] font-semibold text-state-danger">
-                  {overrideErrors.length} problem(s) to fix before saving
+                  {cellErrors.length} problem(s) to fix before saving
                 </span>
               )}
             </div>

@@ -10,7 +10,7 @@ import {
   useSensors,
 } from '@dnd-kit/core';
 import { toast } from 'sonner';
-import { Kanban, List, Plus, Search } from 'lucide-react';
+import { Kanban, List, Plus, RefreshCw, Search } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectPipelineColumns } from '@/store/selectors';
 import { useAllRisks } from '@/hooks/useRisk';
@@ -32,6 +32,9 @@ export default function Pipeline() {
   const users = useAppStore((s) => s.users);
   const moveStage = useAppStore((s) => s.moveStage);
   const stallThreshold = useAppStore((s) => s.dashboardConfig.stallThresholdDays);
+  const isLoading = useAppStore((s) => s.quotationsLoading);
+  const loadError = useAppStore((s) => s.quotationsError);
+  const loadQuotations = useAppStore((s) => s.loadQuotations);
 
   useAllRisks();
 
@@ -53,7 +56,7 @@ export default function Pipeline() {
     return null;
   }, [activeId, columns]);
 
-  const handleDragEnd = (event) => {
+  const handleDragEnd = async (event) => {
     setActiveId(null);
     const { active, over } = event;
     if (!over) return;
@@ -63,11 +66,12 @@ export default function Pipeline() {
     const card = columns.flatMap((c) => c.cards).find((c) => c.id === quoteId);
     if (!card || card.stage === toStage) return;
 
-    const result = moveStage(quoteId, toStage);
+    const result = await moveStage(quoteId, toStage);
     if (result.ok) {
-      toast.success(`${quoteId} moved to ${stageLabel(toStage)}`);
+      toast.success(`${card.reference ?? quoteId} moved to ${stageLabel(toStage)}`);
     } else {
-      // Blocked moves explain themselves rather than silently snapping back.
+      // The server writes these 409 messages for a salesperson, so show it verbatim
+      // rather than composing our own explanation of a rule we no longer own.
       toast.error('That move is not allowed', { description: result.error });
     }
   };
@@ -118,6 +122,34 @@ export default function Pipeline() {
           />
         </div>
       </GlassCard>
+
+      {/*
+        An empty board and a board that has not loaded yet look identical once the
+        columns render, so say which one this is before drawing seven empty columns.
+      */}
+      {isLoading && totalCount === 0 && (
+        <GlassCard className="mb-4 flex items-center justify-center gap-3 px-4 py-14">
+          <span
+            className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-600"
+            aria-hidden="true"
+          />
+          <p className="text-xs font-semibold text-ink-soft" role="status">
+            Loading pipeline…
+          </p>
+        </GlassCard>
+      )}
+
+      {loadError && totalCount === 0 && (
+        <GlassCard className="mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-ink">Couldn&apos;t load the pipeline</p>
+            <p className="mt-0.5 text-[11px] text-ink-soft">{loadError}</p>
+          </div>
+          <Button icon={RefreshCw} size="sm" onClick={() => loadQuotations()}>
+            Try again
+          </Button>
+        </GlassCard>
+      )}
 
       <DndContext
         sensors={sensors}
@@ -208,7 +240,7 @@ function Card({ card, threshold, dragging = false }) {
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="num text-[11px] font-bold text-brand-700">{card.id}</span>
+        <span className="num text-[11px] font-bold text-brand-700">{card.reference}</span>
         <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', meta.dot)} />
       </div>
 

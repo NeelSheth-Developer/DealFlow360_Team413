@@ -60,7 +60,11 @@ export function AuditTrailList({ entries = [], className, limit = null, showEnti
             <p className="mt-0.5 text-sm leading-snug text-ink-soft">{entry.action}</p>
 
             {showEntity && (
-              <p className="mt-0.5 text-[11px] font-medium text-brand-600">{entry.entityId}</p>
+              // `entityRef` is the human reference ("Q-1038"); `entityId` is the uuid.
+              // They are different fields, and only the first means anything on screen.
+              <p className="mt-0.5 text-[11px] font-medium text-brand-600">
+                {entry.entityType} · {entry.entityRef ?? entry.entityId}
+              </p>
             )}
 
             {entry.reason && (

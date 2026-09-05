@@ -131,3 +131,33 @@ export async function copyToClipboard(text) {
     return false;
   }
 }
+
+/**
+ * Deterministic avatar gradient.
+ *
+ * Seeded accounts used to carry a hand-picked `avatarColor`. Accounts now come
+ * from the API, which has no opinion on styling, so the gradient is derived from
+ * a stable seed (user id or email) instead. Same input always yields the same
+ * gradient, so an avatar never changes colour between renders or sessions.
+ */
+const AVATAR_GRADIENTS = [
+  'from-brand-500 to-accent-indigo',
+  'from-accent-indigo to-accent-teal',
+  'from-accent-teal to-brand-400',
+  'from-brand-600 to-accent-pink',
+  'from-accent-amber to-accent-pink',
+  'from-brand-700 to-brand-400',
+  'from-accent-pink to-brand-500',
+  'from-state-info to-accent-teal',
+];
+
+export function avatarGradient(seed = '') {
+  const key = String(seed);
+  if (!key) return AVATAR_GRADIENTS[0];
+
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+}

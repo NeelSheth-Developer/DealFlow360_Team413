@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Ban, CalendarClock, Info, Receipt, Repeat, ScrollText, Wallet } from 'lucide-react';
@@ -23,6 +23,8 @@ import { EmptyState, QtyStepper } from '@/components/ui/Misc';
 import { Table, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/Table';
 import { StageBadge } from '@/components/shared/Indicators';
 import { QuoteNav } from '@/components/quotation/QuoteNav';
+import { QuoteLoading } from '@/components/quotation/QuoteLoading';
+import { useQuotation } from '@/hooks/useQuotation';
 
 const OCC_TONE = {
   scheduled: 'neutral',
@@ -36,9 +38,9 @@ const OCC_TONE = {
 export default function QuotationBilling() {
   const { id } = useParams();
 
-  const quote = useAppStore((s) => s.quotations.find((q) => q.id === id));
+  const { quote, resolving, missing } = useQuotation(id);
   const view = useAppStore((s) => (quote ? selectBillingView(s, id) : null));
-  const buildBilling = useAppStore((s) => s.buildBilling);
+  const loadBilling = useAppStore((s) => s.loadBilling);
   const previewSubscriptionChange = useAppStore((s) => s.previewSubscriptionChange);
   const applySubscriptionChange = useAppStore((s) => s.applySubscriptionChange);
   const previewCancellation = useAppStore((s) => s.previewCancellation);
@@ -47,43 +49,91 @@ export default function QuotationBilling() {
   const [changeTarget, setChangeTarget] = useState(null);
   const [changeQty, setChangeQty] = useState(1);
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [proration, setProration] = useState(null);
+  const [cancellation, setCancellation] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  if (!quote) return <Navigate to="/404" replace />;
-  if (!view) return null;
+  // The view is a server payload now, so fetch it on entry.
+  useEffect(() => {
+    loadBilling(id);
+  }, [id, loadBilling]);
 
-  // Schedules are built lazily — opening this screen guarantees they exist.
-  if (view.recurringRows.length > 0 && view.recurringRows.every((r) => r.occurrences.length === 0)) {
-    buildBilling(id);
-  }
+  /**
+   * Proration is priced by the server, so the preview is a request rather than a
+   * calculation — it cannot happen during render.
+   *
+   * Debounced because the quantity stepper fires on every click, and each change is a
+   * round trip. `cancelled` guards against an older reply landing after a newer one.
+   */
+  useEffect(() => {
+    if (!changeTarget) {
+      setProration(null);
+      return undefined;
+    }
 
-  const proration = changeTarget
-    ? previewSubscriptionChange(id, changeTarget.line.id, changeQty)
-    : null;
-  const cancellation = cancelTarget ? previewCancellation(id, cancelTarget.line.id) : null;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const result = await previewSubscriptionChange(id, changeTarget.line.id, changeQty);
+      if (!cancelled) setProration(result.ok ? result.preview : null);
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [id, changeTarget, changeQty, previewSubscriptionChange]);
+
+  /** Same reasoning: the refund or credit amount is the server's to compute. */
+  useEffect(() => {
+    if (!cancelTarget) {
+      setCancellation(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    previewCancellation(id, cancelTarget.line.id).then((result) => {
+      if (!cancelled) setCancellation(result.ok ? result.preview : null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, cancelTarget, previewCancellation]);
+
+  if (resolving && !quote) return <QuoteLoading />;
+  if (missing || !quote) return <Navigate to="/404" replace />;
+  if (!view) return <QuoteLoading />;
 
   const openChange = (row) => {
     setChangeTarget(row);
     setChangeQty(row.line.qty);
   };
 
-  const handleApplyChange = () => {
-    const result = applySubscriptionChange(id, changeTarget.line.id, changeQty);
+  const handleApplyChange = async () => {
+    setBusy(true);
+    const result = await applySubscriptionChange(id, changeTarget.line.id, changeQty);
+    setBusy(false);
     setChangeTarget(null);
-    if (result.ok) {
-      toast.success('Subscription updated', { description: result.preview.explanation });
-    } else {
-      toast.error(result.error);
+
+    if (!result.ok) {
+      toast.error('Could not apply the change', { description: result.error });
+      return;
     }
+    // `explanation` is written by the server in plain language — show it as-is.
+    toast.success('Subscription updated', { description: result.proration?.explanation });
   };
 
-  const handleCancel = () => {
-    const result = cancelSubscription(id, cancelTarget.line.id);
+  const handleCancel = async () => {
+    setBusy(true);
+    const result = await cancelSubscription(id, cancelTarget.line.id);
+    setBusy(false);
     setCancelTarget(null);
-    if (result.ok) {
-      toast.success('Subscription cancelled', { description: result.preview.explanation });
-    } else {
-      toast.error(result.error);
+
+    if (!result.ok) {
+      toast.error('Could not cancel', { description: result.error });
+      return;
     }
+    toast.success('Subscription cancelled', { description: cancellation?.explanation });
   };
 
   return (
@@ -93,7 +143,7 @@ export default function QuotationBilling() {
         description="One-time charges and recurring charges are tracked separately, on this same order."
         breadcrumbs={[
           { label: 'Quotations', to: '/app/quotations' },
-          { label: quote.id, to: `/app/quotations/${quote.id}` },
+          { label: quote.reference ?? quote.id, to: `/app/quotations/${quote.id}` },
           { label: 'Billing' },
         ]}
         badge={<StageBadge stage={quote.stage} />}
@@ -387,7 +437,11 @@ export default function QuotationBilling() {
             <Button variant="secondary" onClick={() => setChangeTarget(null)}>
               Cancel
             </Button>
-            <Button onClick={handleApplyChange} disabled={changeQty === changeTarget?.line.qty}>
+            <Button
+              onClick={handleApplyChange}
+              loading={busy}
+              disabled={changeQty === changeTarget?.line.qty}
+            >
               Apply change
             </Button>
           </>
@@ -463,7 +517,7 @@ export default function QuotationBilling() {
             <Button variant="secondary" onClick={() => setCancelTarget(null)}>
               Keep it
             </Button>
-            <Button variant="danger" onClick={handleCancel}>
+            <Button variant="danger" onClick={handleCancel} loading={busy}>
               Cancel subscription
             </Button>
           </>

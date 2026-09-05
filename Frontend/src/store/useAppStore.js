@@ -1,11 +1,10 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { buildInitialState } from '@/data';
 import { createAuditSlice } from './slices/auditSlice';
 import { createNotificationSlice } from './slices/notificationSlice';
 import { createAuthSlice } from './slices/authSlice';
 import { createCatalogSlice } from './slices/catalogSlice';
 import { createConfigSlice } from './slices/configSlice';
+import { createDirectorySlice } from './slices/directorySlice';
 import { createRiskSlice } from './slices/riskSlice';
 import { createQuotationSlice } from './slices/quotationSlice';
 import { createFulfillmentSlice } from './slices/fulfillmentSlice';
@@ -13,25 +12,95 @@ import { createBillingSlice } from './slices/billingSlice';
 import { createCustomerSlice } from './slices/customerSlice';
 import { createDashboardSlice } from './slices/dashboardSlice';
 
-const PERSIST_KEY = 'dealflow360';
-const PERSIST_VERSION = 2;
-
 /**
  * The single application store.
  *
- * Business data lives here. Discount risk scoring does NOT — that is fetched
- * from the backend through `src/services/riskService.js` and cached in
- * `riskCache` by the risk slice, so the UI always renders a server-decided
- * score rather than one it invented.
+ * IT IS A CACHE OF THE API, NOT A DATABASE. Every collection here is filled by a
+ * `load…()` action from `src/services/*` and every mutation goes through the server.
+ * Nothing is computed locally that the server computes: totals, risk scores, alerts and
+ * invoice balances are all read from responses.
+ *
+ * THERE IS NO PERSIST MIDDLEWARE. It used to mirror the whole store into sessionStorage,
+ * which made sense when the data was seeded locally. Now that the server owns it,
+ * persisting would show stale rows on refresh and would keep a signed-out user's data
+ * readable. The session itself survives a refresh through the token cookies in
+ * `src/services/tokenStore.js`, and `boot()` re-reads everything else.
  *
  * Two separate identity spaces coexist: `currentUser` for internal staff and
  * `customerUser` for external customers. Signing into one clears the other.
  */
 export const useAppStore = create(
-  persist(
     (set, get) => ({
-      // ------------------------------------------------------- seeded state
-      ...buildInitialState(),
+      /**
+       * Empty until the API answers.
+       *
+       * These were seeded from `src/data/seed/*` before the backend existed. They are
+       * now caches of server responses, so they start empty and every screen shows a
+       * loading or empty state until its `load…()` resolves. Seeding them would put
+       * fabricated rows on screen for the first few hundred milliseconds, which is
+       * exactly the dummy data this integration removes.
+       */
+      users: [],
+      usersMeta: null,
+      teams: [],
+      roles: [],
+      directoryLoading: false,
+      directoryError: null,
+      customers: [],
+      products: [],
+      priceLists: [],
+      warehouses: [],
+      subscriptionPlans: [],
+      upsellRules: [],
+      quotations: [],
+      invoices: [],
+      creditNotes: [],
+      // Audit is read-only: `auditLog` is the paginated platform screen, `auditByEntity`
+      // is the trail shown under one quotation. Kept apart so a filter on the first
+      // cannot evict the second.
+      auditLog: [],
+      auditByEntity: {},
+      auditMeta: null,
+      auditLoading: false,
+      auditError: null,
+
+      // Notifications are scoped to the caller server-side, so these rows are already
+      // "mine" and nothing filters by currentUser. unreadCount comes from meta and
+      // counts everything unread, not just what fits in the fetched limit.
+      notifications: [],
+      notificationUnreadCount: 0,
+      notificationsLoading: false,
+
+      // Alerts and KPIs are computed by the server on every read from live data, so
+      // re-fetching IS the recompute. There is no local detector.
+      alerts: [],
+      alertsLoading: false,
+      dealHealth: null,
+      dealHealthLoading: false,
+      dashboardError: null,
+
+      // Customer portal. These hold the SERVER'S allow-list projection, keyed by
+      // quotation reference — not internal quotations with fields removed.
+      myQuotations: [],
+      myQuotationViews: {},
+      portalLoading: false,
+      portalError: null,
+
+      // Governance config — populated by loadDiscountConfig(), which no-ops for a rep.
+      tierCeilings: {},
+      categoryCeilings: {},
+      approvalChain: [],
+      dashboardConfig: {
+        stallThresholdDays: 5,
+        anomalySensitivity: 1.8,
+        approvalSlaHours: 24,
+      },
+
+      // Server payloads cached per quotation id, filled by computeFulfillment()
+      // and loadBilling(). Not derived here — these ARE the server's answers.
+      fulfillmentPlans: {},
+      billingViews: {},
+      invoicesMeta: null,
 
       // ------------------------------------------------------- runtime flags
       isReloading: false,
@@ -45,6 +114,7 @@ export const useAppStore = create(
       ...createAuthSlice(set, get),
       ...createCatalogSlice(set, get),
       ...createConfigSlice(set, get),
+      ...createDirectorySlice(set, get),
       ...createRiskSlice(set, get),
       ...createQuotationSlice(set, get),
       ...createFulfillmentSlice(set, get),
@@ -53,100 +123,75 @@ export const useAppStore = create(
       ...createDashboardSlice(set, get),
 
       /**
-       * One-time boot: builds fulfillment plans and billing schedules for
-       * quotations already past approval, fetches risk scores for everything,
-       * then runs anomaly detection. Doing this at boot rather than baking
-       * results into the seed keeps backorder ETAs and stall counters accurate
-       * relative to today.
+       * One-time boot: restore the session from the token cookie, then fetch whatever
+       * that identity is actually allowed to read.
        */
       async boot() {
         if (get().isBooted) return;
         set({ isBooted: true });
 
-        get().refreshFulfillmentPlans();
-        for (const quote of get().quotations) {
-          if (['fulfillment', 'billed', 'confirmed'].includes(quote.stage)) {
-            get().buildBilling(quote.id);
-          }
-        }
+        // Restore the signed-in session from the token cookie BEFORE anything else,
+        // so guards and role-gated screens resolve on the first render instead of
+        // flashing a redirect to /login.
+        await get().restoreSession();
 
-        await get().refreshAllRisks();
-        get().recomputeAlerts();
+        // Nothing else is fetchable without a session, and every request would 401.
+        if (!get().currentUser && !get().customerUser) return;
+
+        await get().loadReferenceData();
       },
 
-      /** Wipes persisted state and re-seeds. Exposed in the user menu. */
-      async resetDemoData() {
-        const fresh = buildInitialState();
-        set({
-          ...fresh,
-          currentUser: get().currentUser,
-          customerUser: get().customerUser,
-          riskCache: {},
-          isBooted: false,
-          isReloading: false,
-          lastReloadedAt: null,
-          consolidationCandidates: [],
-        });
-        await get().boot();
+      /**
+       * Fetch everything the workspace needs to render.
+       *
+       * Run in parallel because none of these depend on each other, and each swallows
+       * its own failure — one 403 on governance config (which a sales_rep cannot read)
+       * must not stop the catalogue from loading.
+       */
+      async loadReferenceData() {
+        if (get().customerUser) {
+          // A customer has no access to any internal collection — a staff route answers
+          // a customer token with 403 WRONG_KIND. Their screens read from /customer/*
+          // instead, so loading staff reference data here would fire a row of 403s.
+          await get().loadMyQuotations();
+          return { ok: true, portal: true };
+        }
+
+        await Promise.allSettled([
+          get().loadProducts(),
+          get().loadCustomers(),
+          get().loadWarehouses(),
+          get().loadSubscriptionPlans(),
+          get().loadUpsellRules(),
+          get().loadDiscountConfig(),
+          get().loadDashboardConfig(),
+          get().loadQuotations(),
+          get().loadNotifications(),
+          get().loadUsers(),
+          get().loadTeams(),
+        ]);
+        return { ok: true };
+      },
+
+      /**
+       * The "Reload Data" button.
+       *
+       * Alerts and risk scores are computed server-side on read, so this is a re-fetch
+       * rather than a recompute — there is no client-side engine left to re-run.
+       */
+      async reloadData() {
+        set({ isReloading: true });
+        try {
+          await get().loadReferenceData();
+          if (get().currentUser) {
+            get().invalidateRisk?.();
+            await Promise.allSettled([get().loadAlerts(), get().loadDealHealth()]);
+          }
+          set({ lastReloadedAt: new Date().toISOString() });
+          return { ok: true, alerts: get().alerts.length };
+        } finally {
+          set({ isReloading: false });
+        }
       },
     }),
-    {
-      name: PERSIST_KEY,
-      version: PERSIST_VERSION,
-      storage: {
-        getItem: (name) => {
-          try {
-            const value = sessionStorage.getItem(name);
-            return value ? JSON.parse(value) : null;
-          } catch {
-            return null;
-          }
-        },
-        setItem: (name, value) => {
-          try {
-            sessionStorage.setItem(name, JSON.stringify(value));
-          } catch {
-            // Storage full or blocked. The app still works, it just won't
-            // survive a refresh — not worth interrupting the user over.
-          }
-        },
-        removeItem: (name) => {
-          try {
-            sessionStorage.removeItem(name);
-          } catch {
-            // ignore
-          }
-        },
-      },
-      // Only data is persisted, never functions. Risk scores are intentionally
-      // excluded: they are the server's answer and get refetched on boot.
-      partialize: (state) => ({
-        currentUser: state.currentUser,
-        customerUser: state.customerUser,
-        users: state.users,
-        customers: state.customers,
-        products: state.products,
-        priceLists: state.priceLists,
-        tierCeilings: state.tierCeilings,
-        categoryCeilings: state.categoryCeilings,
-        approvalChain: state.approvalChain,
-        warehouses: state.warehouses,
-        subscriptionPlans: state.subscriptionPlans,
-        upsellRules: state.upsellRules,
-        dashboardConfig: state.dashboardConfig,
-        quotations: state.quotations,
-        invoices: state.invoices,
-        creditNotes: state.creditNotes,
-        auditLog: state.auditLog,
-        notifications: state.notifications,
-      }),
-      // Rehydrated data needs its derived caches rebuilt.
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.isBooted = false;
-          state.riskCache = {};
-        }
-      },
-    },
-  ),
 );

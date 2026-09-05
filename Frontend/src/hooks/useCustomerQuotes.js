@@ -1,51 +1,77 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { isSharedWithCustomer, toCustomerView } from '@/lib/customerView';
 
 /**
- * Stable customer-scoped read models.
+ * Customer-scoped read models.
  *
- * `toCustomerView` builds a fresh object every call, so running it *inside* a
- * zustand selector would hand React a new snapshot on every store change. React
- * 18's useSyncExternalStore requires a cached snapshot — an uncached one causes
- * render churn and can trigger the "getSnapshot should be cached" warning, which
- * is what made the chat panel feel unresponsive.
+ * These used to project internal quotations through `toCustomerView` inside a useMemo.
+ * That is gone: the server returns the allow-list projection, so what these hooks return
+ * is the payload itself. Nothing is recomputed, so nothing can drift out of step with
+ * what the server decided the customer may see — and the "getSnapshot should be cached"
+ * churn the old version worked around cannot happen, because the object is a stable
+ * reference from the store rather than one rebuilt on every read.
  *
- * These hooks therefore select only raw slices and do the projection in a
- * useMemo, so the result is referentially stable until its real inputs change.
+ * Ownership is not checked here either. Every `/customer/*` query is scoped by the
+ * session's own customer id server-side, and another customer's record answers 404
+ * rather than 403 — so a list can only ever contain this customer's own quotations.
  */
+
+/**
+ * One state object rather than two, so a resolve and a not-found never land in separate
+ * renders and briefly describe an impossible situation.
+ */
+function useLoadState() {
+  const [state, set] = useState({ resolving: true, missing: false });
+  const update = useCallback((next) => set(next), []);
+  return [state, update];
+}
 
 /** Every quotation shared with the signed-in customer, newest activity first. */
 export function useCustomerQuotes() {
-  const quotations = useAppStore((s) => s.quotations);
-  const products = useAppStore((s) => s.products);
-  const plans = useAppStore((s) => s.subscriptionPlans);
+  const quotes = useAppStore((s) => s.myQuotations);
+  const loading = useAppStore((s) => s.portalLoading);
+  const loadMyQuotations = useAppStore((s) => s.loadMyQuotations);
   const customerUser = useAppStore((s) => s.customerUser);
 
-  return useMemo(() => {
-    if (!customerUser) return [];
-    return quotations
-      .filter((q) => q.customerId === customerUser.id && isSharedWithCustomer(q))
-      .sort((a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt))
-      .map((q) => toCustomerView(q, { products, plans }));
-  }, [quotations, products, plans, customerUser]);
+  useEffect(() => {
+    if (customerUser) loadMyQuotations();
+  }, [customerUser, loadMyQuotations]);
+
+  return { quotes, loading };
 }
 
-/** One quotation, or null when it is not this customer's to see. */
+/**
+ * One quotation.
+ *
+ * `missing` is kept separate from "not loaded yet": a portal deep link renders before the
+ * fetch resolves, and redirecting on the first frame would bounce a customer away from a
+ * quotation that exists.
+ */
 export function useCustomerQuote(quoteId) {
-  const quotations = useAppStore((s) => s.quotations);
-  const products = useAppStore((s) => s.products);
-  const plans = useAppStore((s) => s.subscriptionPlans);
+  const view = useAppStore((s) => (quoteId ? s.myQuotationViews[quoteId] : null)) ?? null;
+  const loadMyQuotation = useAppStore((s) => s.loadMyQuotation);
   const customerUser = useAppStore((s) => s.customerUser);
 
-  return useMemo(() => {
-    if (!customerUser || !quoteId) return null;
-    const quote = quotations.find((q) => q.id === quoteId);
-    if (!quote) return null;
-    // Ownership check mirrors the store's — a customer can only ever read a
-    // quotation addressed to their own organisation, and only once shared.
-    if (quote.customerId !== customerUser.id) return null;
-    if (!isSharedWithCustomer(quote)) return null;
-    return toCustomerView(quote, { products, plans });
-  }, [quotations, products, plans, customerUser, quoteId]);
+  const [state, setState] = useLoadState();
+
+  useEffect(() => {
+    if (!customerUser || !quoteId) {
+      setState({ resolving: false, missing: !quoteId });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setState({ resolving: true, missing: false });
+
+    loadMyQuotation(quoteId).then((result) => {
+      if (cancelled) return;
+      setState({ resolving: false, missing: Boolean(result.notFound) });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customerUser, quoteId, loadMyQuotation, setState]);
+
+  return { view, resolving: state.resolving, missing: state.missing };
 }

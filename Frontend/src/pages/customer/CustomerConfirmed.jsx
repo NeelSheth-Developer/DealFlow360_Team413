@@ -1,19 +1,31 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, FileText, Package, Repeat } from 'lucide-react';
-import { useAppStore } from '@/store/useAppStore';
+import { useCustomerQuote } from '@/hooks/useCustomerQuotes';
 import { cadenceAdverb, dateShort, money } from '@/lib/format';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Misc';
 
 /** Post-confirmation success screen for the customer. */
 export default function CustomerConfirmed() {
   const { id } = useParams();
-  const view = useAppStore((s) => s.customerGetQuote(id));
+  const { view, resolving, missing } = useCustomerQuote(id);
 
-  if (!view) return <Navigate to="/customer/quotations" replace />;
+  // Reached straight after a confirm, so the fetch is usually already warm — but a
+  // reload or a bookmark lands here cold and must not bounce.
+  if (resolving && !view) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-56" />
+        <Skeleton className="h-48" />
+      </div>
+    );
+  }
+  if (missing || !view) return <Navigate to="/customer/quotations" replace />;
 
-  const recurring = view.lines.filter((l) => l.isRecurring);
-  const oneTime = view.lines.filter((l) => !l.isRecurring);
+  const lines = view.lines ?? [];
+  const recurring = lines.filter((l) => l.isRecurring);
+  const oneTime = lines.filter((l) => !l.isRecurring);
 
   return (
     <div className="space-y-5">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -29,15 +29,17 @@ import { StageBadge, TierBadge } from '@/components/shared/Indicators';
 import { AuditTrailList } from '@/components/shared/AuditTrailList';
 import { ReasonDialog } from '@/components/shared/Dialogs';
 import { QuoteNav } from '@/components/quotation/QuoteNav';
+import { QuoteLoading } from '@/components/quotation/QuoteLoading';
 import { RiskBreakdownTable } from '@/components/quotation/RiskBreakdownTable';
 import { useRisk } from '@/hooks/useRisk';
+import { useQuotation } from '@/hooks/useQuotation';
 
 /** Discount approval screen (spec B4). */
 export default function QuotationApproval() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const quote = useAppStore((s) => s.quotations.find((q) => q.id === id));
+  const { quote, resolving, missing } = useQuotation(id);
   const currentUser = useAppStore((s) => s.currentUser);
   const audit = useAppStore((s) => selectAuditForEntity(s, id));
   const invoice = useAppStore((s) => s.invoices.find((i) => i.quotationId === id));
@@ -45,6 +47,7 @@ export default function QuotationApproval() {
   const approveStep = useAppStore((s) => s.approveStep);
   const rejectQuote = useAppStore((s) => s.rejectQuote);
   const returnForRevision = useAppStore((s) => s.returnForRevision);
+  const loadEntityAudit = useAppStore((s) => s.loadEntityAudit);
 
   const [comment, setComment] = useState('');
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -54,7 +57,17 @@ export default function QuotationApproval() {
   // Server-scored. The approver sees the same number the router used.
   const { risk, approvalPath, isLoading: riskLoading, isFallback } = useRisk(id);
 
-  if (!quote) return <Navigate to="/404" replace />;
+  /**
+   * The trail is fetched here rather than assumed to be in the store: an approver
+   * usually arrives from a notification link, which is a cold load, and nothing else has
+   * put this quotation's audit entries in the cache.
+   */
+  useEffect(() => {
+    if (id) loadEntityAudit('quotation', id);
+  }, [id, loadEntityAudit]);
+
+  if (resolving && !quote) return <QuoteLoading />;
+  if (missing || !quote) return <Navigate to="/404" replace />;
 
   const totals = quoteTotals(quote);
   const pending = currentPendingStep(quote);
@@ -106,7 +119,9 @@ export default function QuotationApproval() {
 
   const handleApprove = async () => {
     setBusy(true);
-    const result = approveStep(id, comment.trim() || null);
+    const result = await approveStep(id, comment.trim() || null);
+    // The server writes the audit entry, so the trail is only current after a re-read.
+    await loadEntityAudit('quotation', id);
     setBusy(false);
 
     if (!result.ok) {
@@ -134,7 +149,7 @@ export default function QuotationApproval() {
         description={`Requested by ${quote.ownerName} · ${dateMedium(quote.createdAt)}`}
         breadcrumbs={[
           { label: 'Quotations', to: '/app/quotations' },
-          { label: quote.id, to: `/app/quotations/${quote.id}` },
+          { label: quote.reference ?? quote.id, to: `/app/quotations/${quote.id}` },
           { label: 'Approval' },
         ]}
         badge={
@@ -322,14 +337,17 @@ export default function QuotationApproval() {
         open={rejectOpen}
         onOpenChange={setRejectOpen}
         title="Reject this quotation"
-        description={`${quote.id} will be marked as lost.`}
+        description={`${quote.reference ?? quote.id} will be marked as lost.`}
         label="Why are you rejecting it?"
         placeholder="e.g. Bronze tier caps at 5% and the service ceiling is 10% — resubmit at 5% or upgrade the account first."
         confirmLabel="Reject quotation"
         variant="danger"
         onConfirm={async (reason) => {
-          const result = rejectQuote(id, reason);
-          if (result.ok) toast.success('Quotation rejected', { description: 'The rep has been notified.' });
+          const result = await rejectQuote(id, reason);
+          if (result.ok) {
+            await loadEntityAudit('quotation', id);
+            toast.success('Quotation rejected', { description: 'The rep has been notified.' });
+          }
           return result;
         }}
       />
@@ -338,14 +356,15 @@ export default function QuotationApproval() {
         open={returnOpen}
         onOpenChange={setReturnOpen}
         title="Return for revision"
-        description={`${quote.id} goes back to draft so the rep can adjust it.`}
+        description={`${quote.reference ?? quote.id} goes back to draft so the rep can adjust it.`}
         label="What needs to change?"
         placeholder="e.g. Bring the Setup Service line down to 10% and I'll approve it straight away."
         confirmLabel="Return to rep"
         variant="warning"
         onConfirm={async (reason) => {
-          const result = returnForRevision(id, reason);
+          const result = await returnForRevision(id, reason);
           if (result.ok) {
+            await loadEntityAudit('quotation', id);
             toast.success('Returned for revision', { description: 'The rep has been notified.' });
           }
           return result;

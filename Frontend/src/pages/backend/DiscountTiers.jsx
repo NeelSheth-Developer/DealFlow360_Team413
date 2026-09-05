@@ -59,16 +59,30 @@ export default function DiscountTiers() {
     setScoring(true);
 
     const timer = setTimeout(async () => {
-      const result = await scoreLines({
-        lines: sandboxLines,
-        categoryCeilings,
-        tierCeiling: tierCeilings[sandboxTier] ?? 0,
-        orderDiscountPct: 0,
-        approvalChain,
-      });
-      if (!cancelled) {
-        setScored(result);
-        setScoring(false);
+      try {
+        // The ceiling overrides below are honoured only for admin and sales_manager,
+        // which is exactly who can reach this screen — that is what makes the sandbox
+        // able to preview an unsaved change.
+        const result = await scoreLines({
+          lines: sandboxLines,
+          categoryCeilings,
+          tierCeiling: tierCeilings[sandboxTier] ?? 0,
+          orderDiscountPct: 0,
+        });
+        if (!cancelled) setScored(result);
+      } catch (error) {
+        // No local fallback: showing an invented score in the tool people use to
+        // reason about the real one would be worse than showing nothing.
+        if (!cancelled) {
+          setScored({
+            ...PENDING_RISK,
+            status: 'error',
+            error: error.message,
+            approvalPath: { approvers: [], ruleId: null, label: 'Score unavailable' },
+          });
+        }
+      } finally {
+        if (!cancelled) setScoring(false);
       }
     }, 220);
 

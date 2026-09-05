@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -24,9 +24,14 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import { selectAlerts, selectDealHealth, selectStageFunnel } from '@/store/selectors';
+import {
+  selectAgingBuckets,
+  selectAlerts,
+  selectDealHealth,
+  selectStageFunnel,
+} from '@/store/selectors';
 import { useAllRisks } from '@/hooks/useRisk';
-import { agingBuckets, alertTargetRoute, SEVERITY_META } from '@/lib/anomalyEngine';
+import { alertTargetRoute, SEVERITY_META } from '@/services/dashboardService';
 import { moneyCompact, percent, relativeTime, stageLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
@@ -67,9 +72,17 @@ export default function Dashboard() {
   useAllRisks();
 
   const health = useAppStore(selectDealHealth);
-  const quotations = useAppStore((s) => s.quotations);
   const funnel = useAppStore(selectStageFunnel);
+  const buckets = useAppStore(selectAgingBuckets);
   const config = useAppStore((s) => s.dashboardConfig);
+  const alertsLoading = useAppStore((s) => s.alertsLoading);
+  // Nudge, escalate and the threshold PUT are manager/admin only (§17.3, §17.4, §5.9).
+  // Hiding them for a rep is kinder than letting them click into a guaranteed 403.
+  const hasRole = useAppStore((s) => s.hasRole);
+  const canManageAlerts = hasRole('sales_manager', 'admin');
+
+  const loadDealHealth = useAppStore((s) => s.loadDealHealth);
+  const loadAlerts = useAppStore((s) => s.loadAlerts);
   const setDashboardConfig = useAppStore((s) => s.setDashboardConfig);
   const nudgeRep = useAppStore((s) => s.nudgeRep);
   const escalateAlert = useAppStore((s) => s.escalateAlert);
@@ -77,24 +90,61 @@ export default function Dashboard() {
   const [typeFilter, setTypeFilter] = useState('');
   const alerts = useAppStore((s) => selectAlerts(s, { type: typeFilter || null }));
 
-  const buckets = agingBuckets(quotations);
+  // The thresholds detection actually used come back on the deal-health payload. A rep
+  // cannot read /config/dashboard, so `dashboardConfig` stays at its defaults for them —
+  // quoting it in the hints would state a number that is not the one in force.
+  const thresholds = health.thresholds ?? config;
 
-  const handleNudge = (alertId) => {
-    const result = nudgeRep(alertId);
+  // Thresholds are edited as a local draft and applied on demand. Wiring the sliders
+  // straight to setDashboardConfig would PUT /config/dashboard on every pixel of drag.
+  const [draft, setDraft] = useState(config);
+  const [savingThresholds, setSavingThresholds] = useState(false);
+
+  useEffect(() => setDraft(config), [config]);
+
+  useEffect(() => {
+    loadDealHealth();
+  }, [loadDealHealth]);
+
+  // Filtering is a re-fetch: the server recomputes the feed from live data on every
+  // read, so the rows and the KPI counts always come from the same pass.
+  useEffect(() => {
+    loadAlerts({ type: typeFilter || null });
+  }, [loadAlerts, typeFilter]);
+
+  const handleApplyThresholds = async () => {
+    setSavingThresholds(true);
+    const result = await setDashboardConfig(draft);
+    if (!result.ok) {
+      toast.error(result.error ?? 'Could not save the thresholds.');
+      setSavingThresholds(false);
+      return;
+    }
+    // Detection re-runs against the new thresholds on the next read, so both have to
+    // be re-fetched or the tiles would disagree with the feed.
+    await Promise.all([loadAlerts({ type: typeFilter || null }), loadDealHealth()]);
+    setSavingThresholds(false);
+    toast.success('Thresholds saved', { description: 'Detection re-ran against the new values.' });
+  };
+
+  const handleNudge = async (alertId) => {
+    const result = await nudgeRep(alertId);
     if (result.ok) {
-      toast.success(`${result.repName} nudged`, {
-        description: 'A notification was sent and the action logged to the audit trail.',
+      toast.success(result.repName ? `${result.repName} nudged` : 'Rep nudged', {
+        description: 'They were notified and emailed, and the action is on the audit trail.',
       });
     } else {
       toast.error(result.error);
     }
   };
 
-  const handleEscalate = (alertId) => {
-    const result = escalateAlert(alertId);
+  const handleEscalate = async (alertId) => {
+    const result = await escalateAlert(alertId);
     if (result.ok) {
       toast.success('Escalated to Sales Manager', {
-        description: 'Severity raised so it stays at the top of the feed.',
+        description: result.notified
+          ? `${result.notified} manager(s) notified. Severity raised to high.`
+          : 'Severity raised so it stays at the top of the feed.',
       });
     } else {
       toast.error(result.error);
@@ -107,52 +157,65 @@ export default function Dashboard() {
         title="Deal health"
         description="Anomalies are computed against each rep's own rolling 90-day history, not a global threshold."
         actions={
-          <Popover
-            trigger={
-              <Button variant="secondary" size="sm" icon={Settings2}>
-                Thresholds
-              </Button>
-            }
-          >
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-bold text-ink">Detection thresholds</p>
-                <p className="mt-0.5 text-[11px] text-ink-muted">
-                  Changes apply immediately and re-run detection.
-                </p>
+          canManageAlerts && (
+            <Popover
+              trigger={
+                <Button variant="secondary" size="sm" icon={Settings2}>
+                  Thresholds
+                </Button>
+              }
+            >
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-bold text-ink">Detection thresholds</p>
+                  <p className="mt-0.5 text-[11px] text-ink-muted">
+                    Saved to the server, then detection re-runs for everyone.
+                  </p>
+                </div>
+
+                <Slider
+                  label="Stall threshold"
+                  value={draft.stallThresholdDays}
+                  min={1}
+                  max={30}
+                  step={1}
+                  valueLabel={`${draft.stallThresholdDays} days`}
+                  onValueChange={(v) => setDraft((d) => ({ ...d, stallThresholdDays: v }))}
+                />
+
+                <Slider
+                  label="Anomaly sensitivity"
+                  value={draft.anomalySensitivity}
+                  min={1.1}
+                  max={4}
+                  step={0.1}
+                  valueLabel={`${Number(draft.anomalySensitivity).toFixed(1)}× rep average`}
+                  onValueChange={(v) => setDraft((d) => ({ ...d, anomalySensitivity: v }))}
+                />
+
+                <Input
+                  label="Approval SLA"
+                  type="number"
+                  min={1}
+                  max={240}
+                  suffix="hrs"
+                  value={draft.approvalSlaHours}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, approvalSlaHours: Number(e.target.value) }))
+                  }
+                />
+
+                <Button
+                  size="sm"
+                  className="w-full"
+                  loading={savingThresholds}
+                  onClick={handleApplyThresholds}
+                >
+                  Save thresholds
+                </Button>
               </div>
-
-              <Slider
-                label="Stall threshold"
-                value={config.stallThresholdDays}
-                min={1}
-                max={30}
-                step={1}
-                valueLabel={`${config.stallThresholdDays} days`}
-                onValueChange={(v) => setDashboardConfig({ stallThresholdDays: v })}
-              />
-
-              <Slider
-                label="Anomaly sensitivity"
-                value={config.anomalySensitivity}
-                min={1.1}
-                max={4}
-                step={0.1}
-                valueLabel={`${config.anomalySensitivity.toFixed(1)}× rep average`}
-                onValueChange={(v) => setDashboardConfig({ anomalySensitivity: v })}
-              />
-
-              <Input
-                label="Approval SLA"
-                type="number"
-                min={1}
-                max={240}
-                suffix="hrs"
-                value={config.approvalSlaHours}
-                onChange={(e) => setDashboardConfig({ approvalSlaHours: Number(e.target.value) })}
-              />
-            </div>
-          </Popover>
+            </Popover>
+          )
         }
       />
 
@@ -170,7 +233,7 @@ export default function Dashboard() {
           label="Stalled"
           value={health.stalledCount}
           format={(v) => Math.round(v)}
-          hint={`over ${config.stallThresholdDays} days idle`}
+          hint={`over ${thresholds.stallThresholdDays} days idle`}
           icon={Clock}
           tone="amber"
         />
@@ -229,7 +292,11 @@ export default function Dashboard() {
           }
           bodyClassName="px-0 py-0 sm:px-0"
         >
-          {alerts.length === 0 ? (
+          {alertsLoading && alerts.length === 0 ? (
+            <p className="px-5 py-10 text-center text-xs text-ink-muted">
+              Running detection…
+            </p>
+          ) : alerts.length === 0 ? (
             <EmptyState
               icon={ShieldAlert}
               title="Nothing needs attention"
@@ -268,8 +335,10 @@ export default function Dashboard() {
                           >
                             {ALERT_LABEL[alert.type]}
                           </Badge>
+                          {/* The reference, never the uuid — `id` and `reference` are
+                              different fields (§0) and only one is readable. */}
                           <span className="num text-[11px] font-bold text-brand-700">
-                            {alert.quotationId}
+                            {alert.reference}
                           </span>
                           {alert.escalated && (
                             <Badge tone="danger" size="xs">
@@ -292,12 +361,24 @@ export default function Dashboard() {
                           >
                             Open
                           </Button>
-                          <Button size="xs" variant="ghost" onClick={() => handleNudge(alert.id)}>
-                            Nudge Rep
-                          </Button>
-                          <Button size="xs" variant="ghost" onClick={() => handleEscalate(alert.id)}>
-                            Escalate
-                          </Button>
+                          {canManageAlerts && (
+                            <>
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => handleNudge(alert.id)}
+                              >
+                                Nudge Rep
+                              </Button>
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => handleEscalate(alert.id)}
+                              >
+                                Escalate
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -374,7 +455,7 @@ export default function Dashboard() {
               Each rep&apos;s average effective discount over the last 90 days is computed, then any
               quotation more than{' '}
               <span className="font-bold text-brand-700">
-                {config.anomalySensitivity.toFixed(1)}×
+                {Number(thresholds.anomalySensitivity).toFixed(1)}×
               </span>{' '}
               that average is flagged. Comparing a rep against themselves means a naturally
               aggressive discounter doesn&apos;t drown out the signal from a conservative one.
