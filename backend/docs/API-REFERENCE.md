@@ -7,7 +7,7 @@ relative to it.
 
 | | |
 |---|---|
-| **Endpoints** | 113 across 17 modules |
+| **Endpoints** | 116 across 17 modules |
 | **Data model** | [§24](#24-data-model) — 31 tables, ER diagrams and the full DBML |
 | **Postman** | [`../postman/`](../postman) — importable collection covering every endpoint |
 | **Browser tester** | `npm run dev`, then <http://localhost:5050> |
@@ -24,7 +24,7 @@ relative to it.
 | [2](#2-authentication) | Authentication | 10 |
 | [3](#3-users-roles-and-teams) | Users, roles and teams | 5 |
 | [4](#4-customers) | Customers | 5 |
-| [5](#5-governance-configuration) | Governance configuration | 10 |
+| [5](#5-governance-configuration) | Governance configuration | 13 |
 | [6](#6-catalog-and-pricing) | Catalog and pricing | 8 |
 | [7](#7-warehouses) | Warehouses | 6 |
 | [8](#8-subscription-plans) | Subscription plans | 4 |
@@ -42,7 +42,7 @@ relative to it.
 | [20](#20-transactional-emails) | Transactional emails | — |
 | [21](#21-quick-test-flow-api-calls) | Quick Test Flow → API calls | — |
 | [22](#22-role-permission-matrix) | Role permission matrix | — |
-| [23](#23-endpoint-index) | **Numbered endpoint index** | 113 |
+| [23](#23-endpoint-index) | **Numbered endpoint index** | 116 |
 | [24](#24-data-model) | Data model — ER diagrams + DBML | 31 tables |
 
 
@@ -705,6 +705,9 @@ tier at creation. Audited with the before and after values.
 | 5.8 | `PUT` | `/config/approval-chain/order` | manager, admin |
 | 5.9 | `GET` | `/config/dashboard` | manager, finance, admin |
 | 5.10 | `PUT` | `/config/dashboard` | manager, admin |
+| 5.11 | `PATCH` | `/config/discount/tier-ceilings` | manager, admin |
+| 5.12 | `PATCH` | `/config/discount/category-ceilings` | manager, admin |
+| 5.13 | `PATCH` | `/config/dashboard` | manager, admin |
 
 **A `sales_rep` can read none of it.** Knowing the exact trip points makes it trivial
 to price a quotation to sit one basis point under one, which is the behaviour the
@@ -828,6 +831,37 @@ migration; if it is ever deleted the defaults above are returned rather than fai
 
 All three required. `anomalySensitivity` is a multiplier against each rep's own rolling
 average, so a value below 1 would flag every quotation — the floor is 1.
+
+### 5.11 `PATCH /config/discount/tier-ceilings`
+
+```jsonc
+{ "gold": 18 }   // any subset of bronze / silver / gold
+```
+
+The partial form of §5.2. `PUT` requires all three and stays the safer default,
+because sending the set together is what keeps the tiers ordered relative to one
+another. `PATCH` is for a screen that edits one tier at a time, where re-sending the
+others would overwrite a change someone else had just made.
+
+Returns the full §5.1 payload. Audited with the before and after values.
+
+### 5.12 `PATCH /config/discount/category-ceilings`
+
+```jsonc
+{ "service": 12 }   // any subset of the four categories
+```
+
+The partial form of §5.3, for the same reason.
+
+### 5.13 `PATCH /config/dashboard`
+
+```jsonc
+{ "stallThresholdDays": 7 }   // any subset
+```
+
+The partial form of §5.10. Useful where a settings screen saves each threshold on
+change rather than the whole form on submit.
+
 
 ---
 
@@ -2906,7 +2940,7 @@ That is a wall between two identity spaces, not a permission level.
 
 ## 23. Endpoint index
 
-All **113** endpoints. Every row links to the heading that documents that exact
+All **116** endpoints. Every row links to the heading that documents that exact
 request and response — not to the top of its area.
 
 ### §1 · Health — 2
@@ -2951,7 +2985,7 @@ request and response — not to the top of its area.
 | 21 | 4.4 | `GET` | [`/customer-tiers/:tier`](#44-get-customer-tierstier) | The discount ceiling for a whole tier, not for one customer | admin, sales_manager |
 | 22 | 4.5 | `PATCH` | [`/customer-tiers/:tier`](#45-patch-customer-tierstier) | Moving this changes what the blended risk score flags on every future quotation for ever… | admin, sales_manager |
 
-### §5 · Governance configuration — 10
+### §5 · Governance configuration — 13
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
@@ -2965,149 +2999,152 @@ request and response — not to the top of its area.
 | 30 | 5.8 | `PUT` | [`/config/approval-chain/order`](#58-put-configapproval-chainorder) | A partial list is rejected with 400 rather than silently reordering a subset | manager, admin |
 | 31 | 5.9 | `GET` | [`/config/dashboard`](#59-get-configdashboard) | The thresholds the deal-health alerts (§17) are measured against | manager, finance, admin |
 | 32 | 5.10 | `PUT` | [`/config/dashboard`](#510-put-configdashboard) | All three required | manager, admin |
+| 33 | 5.11 | `PATCH` | [`/config/discount/tier-ceilings`](#511-patch-configdiscounttier-ceilings) | The partial form of §5.2 | manager, admin |
+| 34 | 5.12 | `PATCH` | [`/config/discount/category-ceilings`](#512-patch-configdiscountcategory-ceilings) | The partial form of §5.3, for the same reason | manager, admin |
+| 35 | 5.13 | `PATCH` | [`/config/dashboard`](#513-patch-configdashboard) | The partial form of §5.10 | manager, admin |
 
 ### §6 · Catalog and pricing — 8
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 33 | 6.1 | `GET` | [`/products`](#61-get-products) | Product catalogue, filterable by category, status and search | any staff |
-| 34 | 6.2 | `GET` | [`/products/:id`](#62-get-productsid) | One product with its variants, in the §6.1 shape | any staff |
-| 35 | 6.3 | `POST` | [`/products`](#63-post-products) | Tier price rows are generated on create so the product is immediately quotable: bronze =… | admin |
-| 36 | 6.4 | `PUT` | [`/products/:id`](#64-put-productsid) | Body is the §6.3 shape with every field optional; sku is not accepted, because quotation… | admin |
-| 37 | 6.5 | `PATCH` | [`/products/:id/active`](#65-patch-productsidactive) | Archive or restore | admin |
-| 38 | 6.6 | `POST` | [`/products/:id/duplicate`](#66-post-productsidduplicate) | Copies the product, its variants and its prices under a derived SKU (HW-LP14-COPY) | admin |
-| 39 | 6.7 | `GET` | [`/price-lists`](#67-get-price-lists) | Tier pricing is not a discount | any staff |
-| 40 | 6.8 | `PUT` | [`/price-lists`](#68-put-price-lists) | Upserts one tier/currency price and returns every price for that product | admin, sales_manager |
+| 36 | 6.1 | `GET` | [`/products`](#61-get-products) | Product catalogue, filterable by category, status and search | any staff |
+| 37 | 6.2 | `GET` | [`/products/:id`](#62-get-productsid) | One product with its variants, in the §6.1 shape | any staff |
+| 38 | 6.3 | `POST` | [`/products`](#63-post-products) | Tier price rows are generated on create so the product is immediately quotable: bronze =… | admin |
+| 39 | 6.4 | `PUT` | [`/products/:id`](#64-put-productsid) | Body is the §6.3 shape with every field optional; sku is not accepted, because quotation… | admin |
+| 40 | 6.5 | `PATCH` | [`/products/:id/active`](#65-patch-productsidactive) | Archive or restore | admin |
+| 41 | 6.6 | `POST` | [`/products/:id/duplicate`](#66-post-productsidduplicate) | Copies the product, its variants and its prices under a derived SKU (HW-LP14-COPY) | admin |
+| 42 | 6.7 | `GET` | [`/price-lists`](#67-get-price-lists) | Tier pricing is not a discount | any staff |
+| 43 | 6.8 | `PUT` | [`/price-lists`](#68-put-price-lists) | Upserts one tier/currency price and returns every price for that product | admin, sales_manager |
 
 ### §7 · Warehouses — 6
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 41 | 7.1 | `GET` | [`/warehouses`](#71-get-warehouses) | shippingCostWeight is the split algorithm's cost tie-breaker: a higher weight means the … | any staff |
-| 42 | 7.2 | `GET` | [`/warehouses/:id`](#72-get-warehousesid) | One warehouse with its stock map, in the §7.1 shape | any staff |
-| 43 | 7.3 | `POST` | [`/warehouses`](#73-post-warehouses) | Names are unique | admin, finance |
-| 44 | 7.4 | `PUT` | [`/warehouses/:id`](#74-put-warehousesid) | Same body as §7.3, every field optional, plus active | admin, finance |
-| 45 | 7.5 | `PUT` | [`/warehouses/:id/stock`](#75-put-warehousesidstock) | A partial map — only the products being changed | admin, finance |
-| 46 | 7.6 | `POST` | [`/warehouses/:id/restock`](#76-post-warehousesidrestock) | Applies replenishQty to every product at or below replenishThreshold | admin, finance |
+| 44 | 7.1 | `GET` | [`/warehouses`](#71-get-warehouses) | shippingCostWeight is the split algorithm's cost tie-breaker: a higher weight means the … | any staff |
+| 45 | 7.2 | `GET` | [`/warehouses/:id`](#72-get-warehousesid) | One warehouse with its stock map, in the §7.1 shape | any staff |
+| 46 | 7.3 | `POST` | [`/warehouses`](#73-post-warehouses) | Names are unique | admin, finance |
+| 47 | 7.4 | `PUT` | [`/warehouses/:id`](#74-put-warehousesid) | Same body as §7.3, every field optional, plus active | admin, finance |
+| 48 | 7.5 | `PUT` | [`/warehouses/:id/stock`](#75-put-warehousesidstock) | A partial map — only the products being changed | admin, finance |
+| 49 | 7.6 | `POST` | [`/warehouses/:id/restock`](#76-post-warehousesidrestock) | Applies replenishQty to every product at or below replenishThreshold | admin, finance |
 
 ### §8 · Subscription plans — 4
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 47 | 8.1 | `GET` | [`/subscription-plans`](#81-get-subscription-plans) | --- | any staff |
-| 48 | 8.2 | `GET` | [`/subscription-plans/:id`](#82-get-subscription-plansid) | One plan, in the §8.1 shape | any staff |
-| 49 | 8.3 | `POST` | [`/subscription-plans`](#83-post-subscription-plans) | Create a plan with its proration and cancellation rules | admin, finance |
-| 50 | 8.4 | `PUT` | [`/subscription-plans/:id`](#84-put-subscription-plansid) | Same body, every field optional, plus active | admin, finance |
+| 50 | 8.1 | `GET` | [`/subscription-plans`](#81-get-subscription-plans) | --- | any staff |
+| 51 | 8.2 | `GET` | [`/subscription-plans/:id`](#82-get-subscription-plansid) | One plan, in the §8.1 shape | any staff |
+| 52 | 8.3 | `POST` | [`/subscription-plans`](#83-post-subscription-plans) | Create a plan with its proration and cancellation rules | admin, finance |
+| 53 | 8.4 | `PUT` | [`/subscription-plans/:id`](#84-put-subscription-plansid) | Same body, every field optional, plus active | admin, finance |
 
 ### §9 · Upsell rules — 5
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 51 | 9.1 | `GET` | [`/upsell-rules`](#91-get-upsell-rules) | List the configured product pairings | any staff |
-| 52 | 9.2 | `POST` | [`/upsell-rules`](#92-post-upsell-rules) | Create a pairing; a product cannot suggest itself | admin, sales_manager |
-| 53 | 9.3 | `PUT` | [`/upsell-rules/:id`](#93-put-upsell-rulesid) | Any subset | admin, sales_manager |
-| 54 | 9.4 | `DELETE` | [`/upsell-rules/:id`](#94-delete-upsell-rulesid) | A pairing is configuration, not history: deleting one loses nothing recoverable, so this… | admin, sales_manager |
-| 55 | 9.5 | `POST` | [`/upsell-rules/suggest`](#95-post-upsell-rulessuggest) | Ranking is coPurchaseScore + (promoted ? 25 : 0) + marginPct × 0.3 | any staff |
+| 54 | 9.1 | `GET` | [`/upsell-rules`](#91-get-upsell-rules) | List the configured product pairings | any staff |
+| 55 | 9.2 | `POST` | [`/upsell-rules`](#92-post-upsell-rules) | Create a pairing; a product cannot suggest itself | admin, sales_manager |
+| 56 | 9.3 | `PUT` | [`/upsell-rules/:id`](#93-put-upsell-rulesid) | Any subset | admin, sales_manager |
+| 57 | 9.4 | `DELETE` | [`/upsell-rules/:id`](#94-delete-upsell-rulesid) | A pairing is configuration, not history: deleting one loses nothing recoverable, so this… | admin, sales_manager |
+| 58 | 9.5 | `POST` | [`/upsell-rules/suggest`](#95-post-upsell-rulessuggest) | Ranking is coPurchaseScore + (promoted ? 25 : 0) + marginPct × 0.3 | any staff |
 
 ### §10 · Risk scoring — 3
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 56 | 10.1 | `POST` | [`/risk/score`](#101-post-riskscore) | Score one quotation, or ad-hoc lines from the admin sandbox | any staff |
-| 57 | 10.2 | `POST` | [`/risk/score-batch`](#102-post-riskscore-batch) | Config is loaded once for the whole batch — that is most of the saving, and it also guar… | any staff |
-| 58 | 10.3 | `GET` | [`/risk/config`](#103-get-riskconfig) | The starting state for the admin risk sandbox | manager, finance, admin |
+| 59 | 10.1 | `POST` | [`/risk/score`](#101-post-riskscore) | Score one quotation, or ad-hoc lines from the admin sandbox | any staff |
+| 60 | 10.2 | `POST` | [`/risk/score-batch`](#102-post-riskscore-batch) | Config is loaded once for the whole batch — that is most of the saving, and it also guar… | any staff |
+| 61 | 10.3 | `GET` | [`/risk/config`](#103-get-riskconfig) | The starting state for the admin risk sandbox | manager, finance, admin |
 
 ### §11 · Quotations — 15
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 59 | 11.1 | `GET` | [`/quotations`](#111-get-quotations) | Quotation list, filtered; a rep never sees another rep's drafts | any staff |
-| 60 | 11.2 | `GET` | [`/quotations/:id`](#112-get-quotationsid) | The full §11.0 object | any staff |
-| 61 | 11.3 | `POST` | [`/quotations`](#113-post-quotations) | - The customer must already exist | any staff |
-| 62 | 11.4 | `PATCH` | [`/quotations/:id`](#114-patch-quotationsid) | Any subset; only while draft or under_negotiation, else 409 STAGE_LOCKED naming the curr… | owner, manager, admin |
-| 63 | 11.5 | `POST` | [`/quotations/:id/lines`](#115-post-quotationsidlines) | Add a line; the server resolves price, cost, tax and category | owner, manager, admin |
-| 64 | 11.6 | `PATCH` | [`/quotations/:id/lines/:lineId`](#116-patch-quotationsidlineslineid) | unitPrice is accepted here, unlike on create | owner, manager, admin |
-| 65 | 11.7 | `DELETE` | [`/quotations/:id/lines/:lineId`](#117-delete-quotationsidlineslineid) | Removes the line and returns the full quotation | owner, manager, admin |
-| 66 | 11.8 | `POST` | [`/quotations/:id/lines/:lineId/comments`](#118-post-quotationsidlineslineidcomments) | Sets awaitingSeller: false, bumps lastActivityAt, and emails the customer | owner, manager, admin |
-| 67 | 11.9 | `PATCH` | [`/quotations/:id/owner`](#119-patch-quotationsidowner) | admin / sales_manager only, and the target must be a sales_rep or sales_manager — never … | manager, admin |
-| 68 | 11.10 | `POST` | [`/quotations/:id/share`](#1110-post-quotationsidshare) | Empty body | owner, manager, admin |
-| 69 | 11.11 | `POST` | [`/quotations/:id/stage`](#1111-post-quotationsidstage) | Three gates beyond the graph: | owner, manager, admin |
-| 70 | 11.12 | `POST` | [`/quotations/:id/lost`](#1112-post-quotationsidlost) | Reason required, minimum 5 characters | owner, manager, admin |
-| 71 | 11.13 | `POST` | [`/quotations/:id/apply-counter`](#1113-post-quotationsidapply-counter) | Applies the customer's counterDiscountPct to every line, then re-scores | owner, manager, admin |
-| 72 | 11.14 | `POST` | [`/quotations/:id/dismiss-suggestion`](#1114-post-quotationsiddismiss-suggestion) | Records that the rep dismissed an upsell suggestion so it stops resurfacing on this quot… | owner, manager, admin |
-| 73 | 11.15 | `GET` | [`/quotations/:id/pdf`](#1115-get-quotationsidpdf) | Renders a customer-facing PDF: no costs, no margins, no risk data | any staff |
+| 62 | 11.1 | `GET` | [`/quotations`](#111-get-quotations) | Quotation list, filtered; a rep never sees another rep's drafts | any staff |
+| 63 | 11.2 | `GET` | [`/quotations/:id`](#112-get-quotationsid) | The full §11.0 object | any staff |
+| 64 | 11.3 | `POST` | [`/quotations`](#113-post-quotations) | - The customer must already exist | any staff |
+| 65 | 11.4 | `PATCH` | [`/quotations/:id`](#114-patch-quotationsid) | Any subset; only while draft or under_negotiation, else 409 STAGE_LOCKED naming the curr… | owner, manager, admin |
+| 66 | 11.5 | `POST` | [`/quotations/:id/lines`](#115-post-quotationsidlines) | Add a line; the server resolves price, cost, tax and category | owner, manager, admin |
+| 67 | 11.6 | `PATCH` | [`/quotations/:id/lines/:lineId`](#116-patch-quotationsidlineslineid) | unitPrice is accepted here, unlike on create | owner, manager, admin |
+| 68 | 11.7 | `DELETE` | [`/quotations/:id/lines/:lineId`](#117-delete-quotationsidlineslineid) | Removes the line and returns the full quotation | owner, manager, admin |
+| 69 | 11.8 | `POST` | [`/quotations/:id/lines/:lineId/comments`](#118-post-quotationsidlineslineidcomments) | Sets awaitingSeller: false, bumps lastActivityAt, and emails the customer | owner, manager, admin |
+| 70 | 11.9 | `PATCH` | [`/quotations/:id/owner`](#119-patch-quotationsidowner) | admin / sales_manager only, and the target must be a sales_rep or sales_manager — never … | manager, admin |
+| 71 | 11.10 | `POST` | [`/quotations/:id/share`](#1110-post-quotationsidshare) | Empty body | owner, manager, admin |
+| 72 | 11.11 | `POST` | [`/quotations/:id/stage`](#1111-post-quotationsidstage) | Three gates beyond the graph: | owner, manager, admin |
+| 73 | 11.12 | `POST` | [`/quotations/:id/lost`](#1112-post-quotationsidlost) | Reason required, minimum 5 characters | owner, manager, admin |
+| 74 | 11.13 | `POST` | [`/quotations/:id/apply-counter`](#1113-post-quotationsidapply-counter) | Applies the customer's counterDiscountPct to every line, then re-scores | owner, manager, admin |
+| 75 | 11.14 | `POST` | [`/quotations/:id/dismiss-suggestion`](#1114-post-quotationsiddismiss-suggestion) | Records that the rep dismissed an upsell suggestion so it stops resurfacing on this quot… | owner, manager, admin |
+| 76 | 11.15 | `GET` | [`/quotations/:id/pdf`](#1115-get-quotationsidpdf) | Renders a customer-facing PDF: no costs, no margins, no risk data | any staff |
 
 ### §12 · Approvals — 5
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 74 | 12.1 | `POST` | [`/quotations/:id/submit-approval`](#121-post-quotationsidsubmit-approval) | An auto-approval is audited as a system action, not as the submitter's — the server made… | owner, manager, admin |
-| 75 | 12.2 | `POST` | [`/quotations/:id/approve`](#122-post-quotationsidapprove) | complete: true and nextRole: null when the chain is finished, at which point stage → app… | the step's role (admin may unblock) |
-| 76 | 12.3 | `POST` | [`/quotations/:id/reject`](#123-post-quotationsidreject) | Reason required, minimum 10 characters | the step's role (admin may unblock) |
-| 77 | 12.4 | `POST` | [`/quotations/:id/return`](#124-post-quotationsidreturn) | Same body and the same 10-character minimum | the step's role (admin may unblock) |
-| 78 | 12.5 | `GET` | [`/approvals/queue`](#125-get-approvalsqueue) | Only quotations whose current step matches the caller's role | manager, finance, admin |
+| 77 | 12.1 | `POST` | [`/quotations/:id/submit-approval`](#121-post-quotationsidsubmit-approval) | An auto-approval is audited as a system action, not as the submitter's — the server made… | owner, manager, admin |
+| 78 | 12.2 | `POST` | [`/quotations/:id/approve`](#122-post-quotationsidapprove) | complete: true and nextRole: null when the chain is finished, at which point stage → app… | the step's role (admin may unblock) |
+| 79 | 12.3 | `POST` | [`/quotations/:id/reject`](#123-post-quotationsidreject) | Reason required, minimum 10 characters | the step's role (admin may unblock) |
+| 80 | 12.4 | `POST` | [`/quotations/:id/return`](#124-post-quotationsidreturn) | Same body and the same 10-character minimum | the step's role (admin may unblock) |
+| 81 | 12.5 | `GET` | [`/approvals/queue`](#125-get-approvalsqueue) | Only quotations whose current step matches the caller's role | manager, finance, admin |
 
 ### §13 · Fulfillment — 5
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 79 | 13.1 | `GET` | [`/quotations/:id/fulfillment`](#131-get-quotationsidfulfillment) | Recomputed from live stock on every read — unless acceptedAt is set | any staff |
-| 80 | 13.2 | `POST` | [`/quotations/:id/fulfillment/accept`](#132-post-quotationsidfulfillmentaccept) | Empty body | rep, manager, finance, admin |
-| 81 | 13.3 | `POST` | [`/quotations/:id/fulfillment/override`](#133-post-quotationsidfulfillmentoverride) | Validated server-side, with per-cell errors so the UI can highlight the exact input | rep, manager, finance, admin |
-| 82 | 13.4 | `POST` | [`/quotations/:id/fulfillment/consolidate`](#134-post-quotationsidfulfillmentconsolidate) | 409 NOTHING_TO_CONSOLIDATE when there is no open backorder | rep, manager, finance, admin |
-| 83 | 13.5 | `POST` | [`/quotations/:id/fulfillment/backorder-policy`](#135-post-quotationsidfulfillmentbackorder-policy) | Ship what is available, or hold until the order is complete | rep, manager, finance, admin |
+| 82 | 13.1 | `GET` | [`/quotations/:id/fulfillment`](#131-get-quotationsidfulfillment) | Recomputed from live stock on every read — unless acceptedAt is set | any staff |
+| 83 | 13.2 | `POST` | [`/quotations/:id/fulfillment/accept`](#132-post-quotationsidfulfillmentaccept) | Empty body | rep, manager, finance, admin |
+| 84 | 13.3 | `POST` | [`/quotations/:id/fulfillment/override`](#133-post-quotationsidfulfillmentoverride) | Validated server-side, with per-cell errors so the UI can highlight the exact input | rep, manager, finance, admin |
+| 85 | 13.4 | `POST` | [`/quotations/:id/fulfillment/consolidate`](#134-post-quotationsidfulfillmentconsolidate) | 409 NOTHING_TO_CONSOLIDATE when there is no open backorder | rep, manager, finance, admin |
+| 86 | 13.5 | `POST` | [`/quotations/:id/fulfillment/backorder-policy`](#135-post-quotationsidfulfillmentbackorder-policy) | Ship what is available, or hold until the order is complete | rep, manager, finance, admin |
 
 ### §14 · Billing and subscriptions — 8
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 84 | 14.1 | `GET` | [`/quotations/:id/billing`](#141-get-quotationsidbilling) | Twelve forward occurrences are kept per active recurring line: enough for a year's visib… | any staff |
-| 85 | 14.2 | `POST` | [`/quotations/:id/billing/build`](#142-post-quotationsidbillingbuild) | Generates the invoice for one-time lines and the schedules for recurring ones | any staff |
-| 86 | 14.3 | `POST` | [`/quotations/:id/lines/:lineId/proration-preview`](#143-post-quotationsidlineslineidproration-preview) | No mutation | any staff |
-| 87 | 14.4 | `PATCH` | [`/quotations/:id/lines/:lineId/subscription`](#144-patch-quotationsidlineslineidsubscription) | Applies the change, regenerates the schedule, and when the proration is negative issues … | any staff |
-| 88 | 14.5 | `GET` | [`/quotations/:id/lines/:lineId/cancellation-preview`](#145-get-quotationsidlineslineidcancellation-preview) | DELETE sets subscriptionStatus → cancelled, flips every future scheduled occurrence to c… | any staff |
-| 89 | 14.6 | `DELETE` | [`/quotations/:id/lines/:lineId/subscription`](#146-delete-quotationsidlineslineidsubscription) | See §14 above | any staff |
-| 90 | 14.7 | `GET` | [`/quotations/:id/credit-notes`](#147-get-quotationsidcredit-notes) | The credit-note ledger for this quotation, in the §14.1 creditNotes shape | any staff |
-| 91 | 14.8 | `POST` | [`/quotations/:id/credit-notes`](#148-post-quotationsidcredit-notes) | Issue a credit note or refund against the quotation | finance, admin |
+| 87 | 14.1 | `GET` | [`/quotations/:id/billing`](#141-get-quotationsidbilling) | Twelve forward occurrences are kept per active recurring line: enough for a year's visib… | any staff |
+| 88 | 14.2 | `POST` | [`/quotations/:id/billing/build`](#142-post-quotationsidbillingbuild) | Generates the invoice for one-time lines and the schedules for recurring ones | any staff |
+| 89 | 14.3 | `POST` | [`/quotations/:id/lines/:lineId/proration-preview`](#143-post-quotationsidlineslineidproration-preview) | No mutation | any staff |
+| 90 | 14.4 | `PATCH` | [`/quotations/:id/lines/:lineId/subscription`](#144-patch-quotationsidlineslineidsubscription) | Applies the change, regenerates the schedule, and when the proration is negative issues … | any staff |
+| 91 | 14.5 | `GET` | [`/quotations/:id/lines/:lineId/cancellation-preview`](#145-get-quotationsidlineslineidcancellation-preview) | DELETE sets subscriptionStatus → cancelled, flips every future scheduled occurrence to c… | any staff |
+| 92 | 14.6 | `DELETE` | [`/quotations/:id/lines/:lineId/subscription`](#146-delete-quotationsidlineslineidsubscription) | See §14 above | any staff |
+| 93 | 14.7 | `GET` | [`/quotations/:id/credit-notes`](#147-get-quotationsidcredit-notes) | The credit-note ledger for this quotation, in the §14.1 creditNotes shape | any staff |
+| 94 | 14.8 | `POST` | [`/quotations/:id/credit-notes`](#148-post-quotationsidcredit-notes) | Issue a credit note or refund against the quotation | finance, admin |
 
 ### §15 · Invoices and payments — 5
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 92 | 15.1 | `GET` | [`/invoices`](#151-get-invoices) | Invoice list; each row is the full detail object | any staff |
-| 93 | 15.2 | `GET` | [`/invoices/:id`](#152-get-invoicesid) | lines contains one-time lines only — recurring charges bill on their own schedule | any staff |
-| 94 | 15.3 | `POST` | [`/invoices/:id/send`](#153-post-invoicesidsend) | Empty body | **finance, admin** |
-| 95 | 15.4 | `POST` | [`/invoices/:id/payments`](#154-post-invoicesidpayments) | replayed: true means the idempotency key had been seen before and the original payment i… | **finance, admin** |
-| 96 | 15.5 | `GET` | [`/invoices/:id/pdf`](#155-get-invoicesidpdf) | Renders the invoice as a PDF | any staff |
+| 95 | 15.1 | `GET` | [`/invoices`](#151-get-invoices) | Invoice list; each row is the full detail object | any staff |
+| 96 | 15.2 | `GET` | [`/invoices/:id`](#152-get-invoicesid) | lines contains one-time lines only — recurring charges bill on their own schedule | any staff |
+| 97 | 15.3 | `POST` | [`/invoices/:id/send`](#153-post-invoicesidsend) | Empty body | **finance, admin** |
+| 98 | 15.4 | `POST` | [`/invoices/:id/payments`](#154-post-invoicesidpayments) | replayed: true means the idempotency key had been seen before and the original payment i… | **finance, admin** |
+| 99 | 15.5 | `GET` | [`/invoices/:id/pdf`](#155-get-invoicesidpdf) | Renders the invoice as a PDF | any staff |
 
 ### §16 · Customer portal — 7
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 97 | 16.1 | `GET` | [`/customer/quotations`](#161-get-customerquotations) | Only quotations where customerId matches the session and the quotation has been shared (… | customer |
-| 98 | 16.2 | `GET` | [`/customer/quotations/:id`](#162-get-customerquotationsid) | The full §16.0 projection for one quotation | customer |
-| 99 | 16.3 | `POST` | [`/customer/quotations/:id/lines/:lineId/comments`](#163-post-customerquotationsidlineslineidcomments) | Permitted whenever canMessage | customer |
-| 100 | 16.4 | `POST` | [`/customer/quotations/:id/request`](#164-post-customerquotationsidrequest) | Either field may be omitted, but not both — a request with neither a number nor a senten… | customer |
-| 101 | 16.5 | `POST` | [`/customer/quotations/:id/confirm`](#165-post-customerquotationsidconfirm) | Empty body | customer |
-| 102 | 16.6 | `GET` | [`/customer/quotations/:id/pdf`](#166-get-customerquotationsidpdf) | Ownership is re-checked against the session's own customer id before anything is rendere… | customer |
-| 103 | 16.7 | `GET` | [`/customer/invoices/:id/pdf`](#167-get-customerinvoicesidpdf) | The customer's own invoice as a PDF | customer |
+| 100 | 16.1 | `GET` | [`/customer/quotations`](#161-get-customerquotations) | Only quotations where customerId matches the session and the quotation has been shared (… | customer |
+| 101 | 16.2 | `GET` | [`/customer/quotations/:id`](#162-get-customerquotationsid) | The full §16.0 projection for one quotation | customer |
+| 102 | 16.3 | `POST` | [`/customer/quotations/:id/lines/:lineId/comments`](#163-post-customerquotationsidlineslineidcomments) | Permitted whenever canMessage | customer |
+| 103 | 16.4 | `POST` | [`/customer/quotations/:id/request`](#164-post-customerquotationsidrequest) | Either field may be omitted, but not both — a request with neither a number nor a senten… | customer |
+| 104 | 16.5 | `POST` | [`/customer/quotations/:id/confirm`](#165-post-customerquotationsidconfirm) | Empty body | customer |
+| 105 | 16.6 | `GET` | [`/customer/quotations/:id/pdf`](#166-get-customerquotationsidpdf) | Ownership is re-checked against the session's own customer id before anything is rendere… | customer |
+| 106 | 16.7 | `GET` | [`/customer/invoices/:id/pdf`](#167-get-customerinvoicesidpdf) | The customer's own invoice as a PDF | customer |
 
 ### §17 · Dashboard, reports, audit, notifications — 10
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 104 | 17.1 | `GET` | [`/dashboard/deal-health`](#171-get-dashboarddeal-health) | KPI summary — active value, win rate, cycle time, alert counts | any staff |
-| 105 | 17.2 | `GET` | [`/dashboard/alerts`](#172-get-dashboardalerts) | Alert ids are synthetic and stable (stall-, disc-, slip-, appr- + the quotation id), not… | any staff |
-| 106 | 17.3 | `POST` | [`/dashboard/alerts/:id/nudge`](#173-post-dashboardalertsidnudge) | Empty bodies | manager, admin |
-| 107 | 17.4 | `POST` | [`/dashboard/alerts/:id/escalate`](#174-post-dashboardalertsidescalate) | Empty body | manager, admin |
-| 108 | 17.5 | `GET` | [`/reports/summary`](#175-get-reportssummary) | These are the four filters the brief names: Period, Sales Team / Rep, Approval Status (v… | manager, finance, admin |
-| 109 | 17.6 | `GET` | [`/reports/products`](#176-get-reportsproducts) | Same filters as §17.5 | manager, finance, admin |
-| 110 | 17.7 | `GET` | [`/audit-log`](#177-get-audit-log) | Entries are written only from inside the services, and the actor is always the server's … | manager, finance, admin |
-| 111 | 17.8 | `GET` | [`/notifications`](#178-get-notifications) | The caller's own notifications, with an unread count | any staff |
-| 112 | 17.9 | `PATCH` | [`/notifications/:id/read`](#179-patch-notificationsidread) | 204 | any staff |
-| 113 | 17.10 | `PATCH` | [`/notifications/read-all`](#1710-patch-notificationsread-all) | 204 | any staff |
+| 107 | 17.1 | `GET` | [`/dashboard/deal-health`](#171-get-dashboarddeal-health) | KPI summary — active value, win rate, cycle time, alert counts | any staff |
+| 108 | 17.2 | `GET` | [`/dashboard/alerts`](#172-get-dashboardalerts) | Alert ids are synthetic and stable (stall-, disc-, slip-, appr- + the quotation id), not… | any staff |
+| 109 | 17.3 | `POST` | [`/dashboard/alerts/:id/nudge`](#173-post-dashboardalertsidnudge) | Empty bodies | manager, admin |
+| 110 | 17.4 | `POST` | [`/dashboard/alerts/:id/escalate`](#174-post-dashboardalertsidescalate) | Empty body | manager, admin |
+| 111 | 17.5 | `GET` | [`/reports/summary`](#175-get-reportssummary) | These are the four filters the brief names: Period, Sales Team / Rep, Approval Status (v… | manager, finance, admin |
+| 112 | 17.6 | `GET` | [`/reports/products`](#176-get-reportsproducts) | Same filters as §17.5 | manager, finance, admin |
+| 113 | 17.7 | `GET` | [`/audit-log`](#177-get-audit-log) | Entries are written only from inside the services, and the actor is always the server's … | manager, finance, admin |
+| 114 | 17.8 | `GET` | [`/notifications`](#178-get-notifications) | The caller's own notifications, with an unread count | any staff |
+| 115 | 17.9 | `PATCH` | [`/notifications/:id/read`](#179-patch-notificationsidread) | 204 | any staff |
+| 116 | 17.10 | `PATCH` | [`/notifications/read-all`](#1710-patch-notificationsread-all) | 204 | any staff |
 
-**Total: 113 endpoints.**
+**Total: 116 endpoints.**
 
 ---
 
