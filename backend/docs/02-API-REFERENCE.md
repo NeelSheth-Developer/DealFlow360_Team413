@@ -76,6 +76,70 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 Content-Type: application/json
 ```
 
+### 0.2.1 Token lifetimes
+
+Two tokens, two jobs. The access token is a signed JWT the server never looks up —
+so it **cannot be revoked**, and must be short. The refresh token is a random string
+stored in the database and checked on every use, so it **can** be revoked and may live
+much longer.
+
+| | Access token | Refresh token |
+|---|---|---|
+| **Internal (`kind: "staff"`)** | **15 min** (`900`) | **7 days** (`604800`) |
+| **Customer (`kind: "customer"`)** | **15 min** (`900`) | **7 days** (`604800`) |
+| Sent on | every request | only `POST /auth/refresh` |
+| Format | signed JWT | opaque random string |
+| Stored server-side | ❌ no | ✅ yes |
+| Revocable | ❌ **no** | ✅ yes, instantly |
+
+`expiresIn` in every auth response is the **access** token's life in seconds. The
+refresh token's lifetime is not returned — the client cannot act on it. It simply uses
+the refresh token until `POST /auth/refresh` answers `401`, then sends the user to
+login.
+
+```
+ login
+   │
+   ├─ accessToken   ──────── 15 min ────────►│ expired
+   │                                          │
+   │                          POST /auth/refresh
+   │                          { refreshToken }
+   │                                          │
+   ├─ accessToken (new) ───── 15 min ────────►│  … repeats
+   │
+   └─ refreshToken ──────────── 7 days, both kinds ──────────► must log in again
+```
+
+**Why 15 minutes for both.** An access token cannot be cancelled. If a laptop is
+stolen, a rep is fired, or a password is reset, any access token already issued keeps
+working until it expires. Fifteen minutes bounds that window. The user never notices —
+the client refreshes silently in the background.
+
+**Same 7 days for both.** One value to configure, one behaviour to test, and a
+customer returning to check a quotation a few days later is not forced to log in
+again. If you later want to tighten the portal, shorten the customer refresh token
+rather than the access token — the access token is not revocable, so its 15 minutes
+should stay short regardless.
+
+**What the client does.** Call `POST /auth/refresh` when a request returns `401`, or
+pre-emptively at about 80% of `expiresIn` (~12 min). If the refresh itself returns
+`401`, the refresh token is expired or revoked — send the user back to login.
+
+**What revocation actually affects.**
+
+```
+logout            → refresh token deleted. The current access token still works
+                    for up to 15 minutes. This is expected, and is why it is short.
+reset-password    → ALL refresh tokens deleted (`sessionsRevoked`)
+change-password   → all refresh tokens except the caller's (`currentSessionKept`)
+user deactivated  → all refresh tokens deleted
+```
+
+For an instant kill, also check `active` on the user or customer row inside the auth
+middleware — that closes the 15-minute gap at the cost of one lookup per request.
+
+---
+
 ### 0.3 Response envelope
 
 Every successful response:
@@ -357,7 +421,7 @@ Internal:
     },
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_4c8a91e0...",
-    "expiresIn": 604800
+    "expiresIn": 900
   }
 }
 ```
@@ -379,7 +443,7 @@ Customer:
     },
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_2f81c003...",
-    "expiresIn": 86400
+    "expiresIn": 900
   }
 }
 ```
@@ -449,7 +513,7 @@ Internal:
     },
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_4c8a91e0...",
-    "expiresIn": 604800
+    "expiresIn": 900
   }
 }
 ```
@@ -471,7 +535,7 @@ Customer — this is where `customerCode` becomes active:
     },
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_2f81c003...",
-    "expiresIn": 86400
+    "expiresIn": 900
   }
 }
 ```
@@ -675,7 +739,7 @@ Content-Type: application/json
     },
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_9d21b4f7...",
-    "expiresIn": 604800
+    "expiresIn": 900
   }
 }
 ```
@@ -713,7 +777,7 @@ Token payload: `{ "sub": "usr_2b77de", "kind": "staff", "role": "sales_manager" 
     },
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_2f81c003...",
-    "expiresIn": 86400
+    "expiresIn": 900
   }
 }
 ```
@@ -758,7 +822,7 @@ inside the JWT — the response body stays minimal.
 ```json
 {
   "success": true,
-  "data": { "accessToken": "eyJ...", "expiresIn": 604800 }
+  "data": { "accessToken": "eyJ...", "expiresIn": 900 }
 }
 ```
 
