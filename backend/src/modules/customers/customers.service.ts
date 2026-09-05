@@ -1,14 +1,12 @@
 import { desc, eq, ilike, or } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { customers, tierConfig, type Tier } from '../../db/schema.js';
-import { parseCustomerCode, toCustomerCode } from '../../lib/customer-code.js';
 import { ApiError } from '../../utils/api-error.js';
 import type { FindCustomersQuery } from './customers.schemas.js';
 
 /** Never selects `password_hash`. */
 const publicColumns = {
   id: customers.id,
-  seq: customers.seq,
   customerId: customers.customerId,
   name: customers.name,
   contactName: customers.contactName,
@@ -21,21 +19,19 @@ const publicColumns = {
 };
 
 /**
- * Look a customer up by the code they read out, or by part of their name or email.
+ * Look a customer up by the ID they read out, or by part of their name or email.
  *
- * A `CUST-0001` term is resolved to the identity column and matched exactly — that is
- * the intended path, and it returns at most one row. Anything else falls back to a
- * partial match, which is why the result is always an array.
+ * A `DF-CMC827` term is matched exactly — that is the intended path, and it returns at
+ * most one row. Anything else falls back to a partial match on name and email, which
+ * is why the result is always an array.
  */
 export async function findCustomers(query: FindCustomersQuery) {
-  const seq = parseCustomerCode(query.q);
-  const isCustomerId = /^DF-[A-Z]{3}\d{3}$/i.test(query.q.trim());
+  const term = query.q.trim();
+  const isCustomerId = /^DF-[A-Z]{3}\d{3}$/i.test(term);
 
-  const where = seq
-    ? eq(customers.seq, seq)
-    : isCustomerId
-      ? eq(customers.customerId, query.q.trim().toUpperCase())
-      : or(ilike(customers.name, `%${query.q}%`), ilike(customers.email, `%${query.q}%`));
+  const where = isCustomerId
+    ? eq(customers.customerId, term.toUpperCase())
+    : or(ilike(customers.name, `%${term}%`), ilike(customers.email, `%${term}%`));
 
   const rows = await db
     .select(publicColumns)
@@ -86,7 +82,6 @@ export async function updateTierCeiling(tier: Tier, maxDiscountPct: number) {
  */
 function present(row: {
   id: string;
-  seq: number;
   customerId: string;
   name: string;
   contactName: string | null;
@@ -99,7 +94,6 @@ function present(row: {
 }) {
   return {
     id: row.id,
-    customerCode: toCustomerCode(row.seq),
     customerId: row.customerId,
     name: row.name,
     contactName: row.contactName,

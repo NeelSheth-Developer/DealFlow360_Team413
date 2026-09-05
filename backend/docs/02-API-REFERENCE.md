@@ -237,7 +237,7 @@ SIGNUP (both kinds)             POST /auth/signup      → OTP emailed, no token
                                 POST /auth/verify-otp  → email proved, TOKEN issued
 
                                 Customers self-register too. They get a
-                                CUSTOMER CODE (CUST-0001) which they give
+                                CUSTOMER ID (DF-CMC827) which they give
                                 to their sales rep, who then quotes them.
 
                                 Signup takes ONLY name + email + password.
@@ -369,21 +369,22 @@ is written to. Customers are never created by a rep.
 ### Signup behaviour
 
 ```
-POST /auth/signup
-        ↓
-  Does this email already exist?
+Does this email already exist in the selected table?
         │
-        ├── NO ──────────────→ create the row, email an OTP
-        │                      201  { message: "OTP sent successfully" }
+        ├── NO ─────────────────────→ create row, email an OTP
+        │                             201 { message: "OTP sent successfully" }
         │
-        └── YES ── password correct?
-                     │
-                     ├── YES, already verified ──→ 200  tokens issued
-                     │                                  (behaves as a login)
-                     ├── YES, not yet verified ──→ 201  new OTP emailed
-                     │                                  { message: "OTP sent successfully" }
-                     └── NO ─────────────────────→ 401  Invalid email or password
+        └── YES ── already verified ─→ 409 EMAIL_ALREADY_REGISTERED
+                 │                       "…already exists. Please log in instead."
+                 ├── not verified ───→ 409 EMAIL_ALREADY_REGISTERED
+                 │                       "…pending verification. Check your inbox
+                 │                        or request a new code."
+                 └── deactivated ────→ 403 ACCOUNT_DISABLED
 ```
+
+**Signup never signs anyone in.** It only creates an account and sends a code — a
+token comes from `verify-otp` or `login`, never from here. An address already taken
+is turned away with a message saying which of those two to use instead.
 
 ---
 
@@ -404,63 +405,13 @@ nothing about which emails are registered.
 
 ---
 
-#### Response `200` — existing verified account
-
-The credentials were correct, so tokens are issued and the user goes straight in.
-
-Internal:
-
-```json
-{
-  "success": true,
-  "data": {
-    "user": {
-      "id": "usr_8f21c3",
-      "name": "Priya Sharma",
-      "email": "priya@teamvector.space",
-      "role": "sales_rep"
-    },
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "rt_4c8a91e0...",
-    "expiresIn": 900
-  }
-}
-```
-
-Customer:
-
-```json
-{
-  "success": true,
-  "data": {
-    "customer": {
-      "id": "cus_9f2c1a44",
-      "customerCode": "CUST-0001",
-      "name": "Acme Corp",
-      "contactName": null,
-      "email": "buyer@acmecorp.com",
-      "tier": "bronze",
-      "currency": "INR"
-    },
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "rt_2f81c003...",
-    "expiresIn": 900
-  }
-}
-```
-
-> `kind` is **not** in the response body. It lives inside the JWT, where the server
-> reads it to authorise every request. The client already knows which app to open —
-> it sent `type` in the request — and the payload carries either `user` or `customer`.
-
----
-
 **Errors**
 
 | Code | Cause |
 |---|---|
 | `400` | Validation failed, or a server-assigned field was sent (`FIELD_NOT_ALLOWED`) |
-| `401` | Email exists but the password is wrong — same wording as login: *"Invalid email or password"* |
+| `403` | `ACCOUNT_DISABLED` — the account exists but is deactivated |
+| `409` | `EMAIL_ALREADY_REGISTERED` — the address is taken, verified or pending |
 
 ---
 
@@ -468,7 +419,7 @@ Customer:
 
 Signup does **not** create a usable account on its own. The address must be proved
 first: signup emails a 6-digit code, and this endpoint checks it. For a customer,
-this is also where the `customerCode` becomes active.
+this is also where the `customerId` becomes active.
 
 ```
 POST /auth/signup          account created, emailVerified = false
@@ -519,16 +470,16 @@ Internal:
 }
 ```
 
-Customer — this is where `customerCode` becomes active:
+Customer — this is where `customerId` becomes active:
 
 ```json
 {
   "success": true,
   "data": {
     "customer": {
-      "id": "cus_9f2c1a44",
-      "customerCode": "CUST-0001",
-      "name": "Acme Corp",
+      "id": "0abcb337-0417-4d1b-aa3d-b7d3df6d049b",
+      "customerId": "DF-CMC827",
+      "name": "Acme Corporation",
       "contactName": null,
       "email": "buyer@acmecorp.com",
       "tier": "bronze",
@@ -768,9 +719,9 @@ Token payload: `{ "sub": "usr_2b77de", "kind": "staff", "role": "sales_manager" 
   "success": true,
   "data": {
     "customer": {
-      "id": "cus_acme01",
-      "customerCode": "CUST-0001",
-      "name": "Acme Corp",
+      "id": "0abcb337-0417-4d1b-aa3d-b7d3df6d049b",
+      "customerId": "DF-CMC827",
+      "name": "Acme Corporation",
       "contactName": "R. Iyer",
       "email": "buyer@acmecorp.com",
       "tier": "gold",
@@ -875,7 +826,6 @@ Who am I, and what may I do. Call this on page load to restore a session.
   "data": {
     "kind": "customer",
     "id": "cus_acme01",
-    "customerCode": "CUST-0001",
     "name": "Acme Corp",
     "tier": "gold",
     "openQuotationCount": 2
@@ -1105,18 +1055,19 @@ GET /api/v1/roles
 | Method | Path | Roles |
 |---|---|---|
 | `GET` | `/customers?q=` | any internal |
+| `GET` | `/customer-tiers/:tier` | admin, sales_manager |
 | `PATCH` | `/customer-tiers/:tier` | admin, sales_manager |
 
 > ### There is no `POST /customers` and no browse-all list
 >
 > Customers **self-register** at [`POST /auth/signup`](#post-authsignup) with
-> `type: "customer"`, which assigns them a `customerCode` (`CUST-0001`). They give
+> `type: "customer"`, which assigns them a `customerId` (`DF-CMC827`). They give
 > that code to their sales rep, who looks them up with it.
 >
 > ```
-> Customer signs up      →  CUST-0001, tier = bronze  (forced)
+> Customer signs up      →  DF-CMC827, tier = bronze  (forced)
 >          ↓  reads the code out to their rep
-> Rep looks them up      →  GET /customers?q=CUST-0001
+> Rep looks them up      →  GET /customers?q=DF-CMC827
 >          ↓
 > Rep quotes them        →  POST /quotations { customerId }
 >
@@ -1130,11 +1081,12 @@ GET /api/v1/roles
 
 **In this section** — full detail in [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)
 
-1. [`GET /customers?q=`](#31-get-customersq) — look up by code, name, or email
-2. [`PATCH /customer-tiers/:tier`](#32-patch-customer-tierstier) — the tier-wide ceiling
+1. [`GET /customers?q=`](#31-get-customersq) — look up by id, name, or email
+2. [`GET /customer-tiers/:tier`](#32-get-customer-tierstier) — read the tier ceiling
+3. [`PATCH /customer-tiers/:tier`](#33-patch-customer-tierstier) — move it
 
-Two endpoints, and no more. There is no `POST`, no browse-all list, no per-customer
-`PATCH`, and no `DELETE`.
+Three endpoints, and no more. There is no `POST`, no browse-all list, no per-customer
+`PATCH`, and no `DELETE`. Customers self-register; a rep only ever looks them up.
 
 ---
 
@@ -1143,16 +1095,16 @@ Two endpoints, and no more. There is no `POST`, no browse-all list, no per-custo
 Look a customer up by the code they gave you.
 
 ```http
-GET /api/v1/customers?q=CUST-0001
+GET /api/v1/customers?q=DF-CMC827
 ```
 
 | Query | Type | Required | Description |
 |---|---|:---:|---|
-| `q` | string | ✅ | matches `customerCode`, company name, or email |
+| `q` | string | ✅ | matches `customerId` (`DF-CMC827`), company name, or email |
 
 - **`q` is required.** Omitting it returns `400`, not every customer — the customer
   book is not enumerable by anyone who can sign in.
-- Matching is case-insensitive and partial on name and email; a `CUST-` code is exact.
+- Matching is case-insensitive and partial on name and email; a `DF-` id is exact.
 
 **Response `200`**
 
@@ -1161,9 +1113,9 @@ GET /api/v1/customers?q=CUST-0001
   "success": true,
   "data": [
     {
-      "id": "cus_9f2c1a44",
-      "customerCode": "CUST-0001",
-      "name": "Acme Corp",
+      "id": "0abcb337-0417-4d1b-aa3d-b7d3df6d049b",
+      "customerId": "DF-CMC827",
+      "name": "Acme Corporation",
       "contactName": "R. Iyer",
       "email": "buyer@acmecorp.com",
       "tier": "bronze",
@@ -1177,7 +1129,7 @@ GET /api/v1/customers?q=CUST-0001
 ```
 
 - Always an **array** — a name or email fragment can match several customers, while a
-  `CUST-` code matches at most one.
+  `DF-` id matches at most one.
 - Empty `data` means no match. That is a `200`, not a `404`: the search ran fine and
   found nothing.
 - No `meta` block. There is no paging here because a lookup is expected to return a
@@ -1187,7 +1139,34 @@ GET /api/v1/customers?q=CUST-0001
 
 ---
 
-### 3.2 `PATCH /customer-tiers/:tier`
+### 3.2 `GET /customer-tiers/:tier`
+
+Read the current ceiling for one tier.
+
+**Auth** — admin or sales_manager.
+
+```http
+GET /api/v1/customer-tiers/gold
+```
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "tier": "gold",
+    "maxDiscountPct": 15,
+    "updatedAt": "2026-03-01T09:00:00.000Z"
+  }
+}
+```
+
+**Errors** — `400` unknown tier · `403 FORBIDDEN` for any other role
+
+---
+
+### 3.3 `PATCH /customer-tiers/:tier`
 
 The discount ceiling attached to a **tier**, not to any one customer.
 
@@ -4526,6 +4505,7 @@ Types — `approval_request` · `approval_result` · `negotiation_reply` · `ano
 | `QUOTATION_EXPIRED` | `410` | Quotation past its `validUntil` |
 | `QUOTATION_LOCKED` | `409` | Customer edit attempted while awaiting a rep response |
 | `PLAN_REQUIRED` | `400` | Subscription product added without `planId` |
+| `EMAIL_ALREADY_REGISTERED` | `409` | Signup on an address that already has an account |
 | `LAST_ADMIN` | `409` | Demoting or deactivating the only active admin |
 | `EMAIL_NOT_VERIFIED` | `403` | Login attempted before the signup OTP was verified |
 | `OTP_INVALID` | `400` | Wrong 6-digit code |
@@ -4563,8 +4543,9 @@ USERS & ROLES
   GET    /roles                           assignable roles (admin excluded)
 
 CUSTOMERS
-  GET    /customers?q=                    lookup by CUST- code, name or email
-  PATCH  /customer-tiers/:tier            tier-wide ceiling (admin/manager)
+  GET    /customers?q=                    lookup by DF- id, name or email
+  GET    /customer-tiers/:tier            read the tier-wide ceiling
+  PATCH  /customer-tiers/:tier            move it (admin/manager)
 
 CATALOG                                     A2
   GET    /products
@@ -4725,7 +4706,7 @@ AUDIT & NOTIFICATIONS
 
 </details>
 
-**Total: 138 endpoints across 20 groups.**
+**Total: 139 endpoints across 20 groups.**
 
 ---
 
@@ -4763,9 +4744,9 @@ AUDIT & NOTIFICATIONS
    GET  /quotations/Q-1042/billing
    → oneTime {...} and recurring {...} as separate objects
 
-7  POST /auth/signup                       { type: "customer" }  → CUST-0001
+7  POST /auth/signup                       { type: "customer" }  → DF-CMC827
    POST /auth/verify-otp                   → token issued
-   (customer gives CUST-0001 to the rep, who quotes them)
+   (customer gives DF-CMC827 to the rep, who quotes them)
    POST /auth/login                        { type: "customer" }
    GET  /portal/quotations/Q-1042                        ← no cost/margin/risk present
    POST /portal/quotations/Q-1042/request  { counterDiscountPct: 25 }

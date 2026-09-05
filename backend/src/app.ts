@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import compression from 'compression';
 import cors from 'cors';
@@ -38,15 +39,20 @@ export function createApp() {
   app.use(compression());
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
-  // app.use(pinoHttp({ logger }));
+  /**
+   * One line per request instead of pino's full req/res dump. The serializers are
+   * typed against pino's own IncomingMessage/ServerResponse rather than left as
+   * `any`, so a rename in a future pino version fails the build instead of silently
+   * logging `undefined`.
+   */
   app.use(
     pinoHttp({
       logger,
-      customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
-      customErrorMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+      customSuccessMessage: (req, res) => `${req.method ?? '?'} ${req.url ?? '?'} ${res.statusCode}`,
+      customErrorMessage: (req, res) => `${req.method ?? '?'} ${req.url ?? '?'} ${res.statusCode}`,
       serializers: {
-        req: (req) => ({ method: req.method, url: req.url }),
-        res: (res) => ({ statusCode: res.statusCode }),
+        req: (req: IncomingMessage) => ({ method: req.method, url: req.url }),
+        res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
       },
     }),
   );
