@@ -29,18 +29,28 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(1),
 
-  // Cloudinary
-  CLOUDINARY_CLOUD_NAME: z.string().min(1),
-  CLOUDINARY_API_KEY: z.string().min(1),
-  CLOUDINARY_API_SECRET: z.string().min(1),
-  CLOUDINARY_FOLDER: z.string().default('team413'),
-  MAX_UPLOAD_MB: z.coerce.number().positive().default(10),
-
   // Auth / security
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
-  JWT_EXPIRES_IN: z.string().default('7d'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+  // Access tokens cannot be revoked, so keep this short (15 min).
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  // Refresh tokens are looked up and revocable, so they can live longer (7 days).
+  REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(604800),
+
+  // One-time passwords
+  OTP_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
+
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
+  // Tighter bucket for credential endpoints, which are what gets brute-forced.
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+
+  // Demo-only role switching. Must stay false in production.
+  ENABLE_ROLE_SWITCH: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 const parsed = envSchema.safeParse(process.env);
