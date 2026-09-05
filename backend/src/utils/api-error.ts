@@ -17,6 +17,36 @@ export type ErrorCode =
   | 'NOT_FOUND'
   | 'RATE_LIMITED'
   | 'LAST_ADMIN'
+  // Catalog & config
+  | 'SKU_TAKEN'
+  | 'PRODUCT_INACTIVE'
+  | 'NO_PRICE_FOR_TIER'
+  | 'CHAIN_NOT_CONFIGURED'
+  | 'INVALID_RANGE'
+  // Quotation workflow
+  | 'STAGE_LOCKED'
+  | 'INVALID_TRANSITION'
+  | 'EMPTY_QUOTATION'
+  | 'NOT_QUOTATION_OWNER'
+  | 'NO_COUNTER_PROPOSED'
+  | 'NOT_SHAREABLE'
+  // Approvals
+  | 'NOT_PENDING'
+  | 'WRONG_APPROVER'
+  | 'REASON_TOO_SHORT'
+  // Fulfillment
+  | 'INVALID_ALLOCATION'
+  | 'NOTHING_TO_SHIP'
+  | 'NOTHING_TO_CONSOLIDATE'
+  // Billing & invoicing
+  | 'NOT_SUBSCRIPTION_LINE'
+  | 'SUBSCRIPTION_CANCELLED'
+  | 'INVOICE_NOT_ISSUED'
+  | 'INVOICE_ALREADY_SENT'
+  | 'OVERPAYMENT'
+  | 'ALREADY_BILLED'
+  // Portal
+  | 'ACTION_NOT_AVAILABLE'
   | 'INTERNAL_ERROR';
 
 export class ApiError extends Error {
@@ -61,6 +91,10 @@ export class ApiError extends Error {
 
   static gone(code: ErrorCode, message: string) {
     return new ApiError(410, code, message);
+  }
+
+  static unprocessable(code: ErrorCode, message: string, details?: unknown) {
+    return new ApiError(422, code, message, details);
   }
 
   static tooManyRequests(code: ErrorCode = 'RATE_LIMITED', message = 'Too many requests') {

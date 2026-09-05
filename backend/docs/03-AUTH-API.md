@@ -200,7 +200,7 @@ Three tables. Generated migration: `drizzle/0000_auth_tables.sql`.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `seq` | `integer` identity | **unique**; `CUST-0001` is derived from it |
+| `customer_id` | `varchar(12)` | **unique**; the public id, e.g. `DF-CMC827` |
 | `name` | `varchar(200)` | company / account name |
 | `contact_name` | `varchar(120)` | nullable, rep fills in later |
 | `email` | `varchar(255)` | **unique**, lower-cased |
@@ -209,9 +209,9 @@ Three tables. Generated migration: `drizzle/0000_auth_tables.sql`.
 | `currency` | `varchar(3)` | default `INR` |
 | `email_verified_at` · `active` · timestamps | | as above |
 
-> **Why `CUST-0001` is derived, not stored.** The code comes from the database
-> identity column, so two concurrent signups can never be handed the same one. A
-> `SELECT max()+1` would race.
+> **Why `DF-CMC827` and not a sequential code.** A sequential id leaks how many
+> customers exist and is awkward to read down a phone. This one is generated from the
+> name and email, made unique by the index, and reveals nothing.
 
 ### `refresh_tokens`
 
@@ -341,14 +341,21 @@ Creates an account. **Both kinds self-register** — `type` selects the table.
 ```
 Does this email already exist in the selected table?
         │
-        ├── NO ──────────────────→ create row, email an OTP
-        │                          201 { message: "OTP sent successfully" }
+        ├── NO ─────────────────────→ create row, email an OTP
+        │                             201 { message: "OTP sent successfully" }
         │
-        └── YES ── password correct?
-                     ├── YES, verified ─────→ 200  tokens issued (acts as login)
-                     ├── YES, not verified ─→ 201  fresh OTP emailed, same body
-                     └── NO ────────────────→ 401  Invalid email or password
+        └── YES ── already verified ─→ 409 EMAIL_ALREADY_REGISTERED
+                 │                       "…already exists. Please log in instead."
+                 ├── not verified ───→ 409 EMAIL_ALREADY_REGISTERED
+                 │                       "…pending verification. Check your inbox
+                 │                        or request a new code."
+                 └── deactivated ────→ 403 ACCOUNT_DISABLED
 ```
+
+**Signup never signs anyone in.** It only creates an account and sends a code — a
+token comes from `verify-otp` or `login`, never from here. An address already taken
+is turned away with a message saying which of those two to use instead.
+
 
 ### Response `201` — new signup
 
@@ -359,8 +366,7 @@ Does this email already exist in the selected table?
 }
 ```
 
-An **unverified** account signing up again gets the identical body, so the endpoint
-cannot be used to test which addresses are registered.
+This `201` is the **only** success. Anything else is a `409` or `403`.
 
 > ### Testing without an email provider
 >
@@ -375,61 +381,14 @@ cannot be used to test which addresses are registered.
 > The same field appears on `resend-otp` and `forgot-password`. Defaults to `false`;
 > **must stay false in production.**
 
-### Response `200` — existing verified account
-
-Internal:
-
-```json
-{
-  "success": true,
-  "data": {
-    "user": {
-      "id": "3f6c1a44-7b3e-4a91-b2d8-5e6f0c1a2b3d",
-      "name": "Priya Sharma",
-      "email": "priya@teamvector.space",
-      "role": "sales_rep"
-    },
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "8Kd2n_QpVx1mR7sT4uY9wZ0aB3cE6fG8hJ1kL4mN7pQ",
-    "expiresIn": 900
-  }
-}
-```
-
-Customer:
-
-```json
-{
-  "success": true,
-  "data": {
-    "customer": {
-      "id": "9f2c1a44-8d3e-4b12-a7c5-1e2f3a4b5c6d",
-      "customerCode": "CUST-0001",
-      "name": "Acme Corp",
-      "contactName": null,
-      "email": "buyer@acmecorp.com",
-      "tier": "bronze",
-      "currency": "INR"
-    },
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "5Hf9k_LmNo2pQ3rS6tU8vW1xY4zA7bC0dE3fG6hJ9kL",
-    "expiresIn": 900
-  }
-}
-```
-
-`kind` is not in the body — it lives inside the JWT, where the server reads it. The
-client already knows which app to open, and the payload carries either `user` or
-`customer`.
-
 ### Errors
 
 | Code | HTTP | Cause |
 |---|---|---|
 | `VALIDATION_FAILED` | `400` | Bad email, short password, missing field |
 | `FIELD_NOT_ALLOWED` | `400` | A server-assigned field was sent |
-| `INVALID_CREDENTIALS` | `401` | Email exists, password wrong |
 | `ACCOUNT_DISABLED` | `403` | `active = false` |
+| `EMAIL_ALREADY_REGISTERED` | `409` | Address is taken — verified **or** pending |
 | `OTP_RESEND_TOO_SOON` | `429` | Signed up again within 60s |
 | `RATE_LIMITED` | `429` | More than 10 attempts / 60s for this IP + email |
 
@@ -464,7 +423,7 @@ usable account.
 ### Response `200`
 
 Identical in shape to the signup response for an existing account, so the frontend
-handles one payload either way. For a customer this is where `customerCode` becomes
+handles one payload either way. For a customer this is where `customerId` becomes
 active.
 
 ```json
@@ -472,9 +431,9 @@ active.
   "success": true,
   "data": {
     "customer": {
-      "id": "9f2c1a44-8d3e-4b12-a7c5-1e2f3a4b5c6d",
-      "customerCode": "CUST-0001",
-      "name": "Acme Corp",
+      "id": "0abcb337-0417-4d1b-aa3d-b7d3df6d049b",
+      "customerId": "DF-CMC827",
+      "name": "Acme Corporation",
       "contactName": null,
       "email": "buyer@acmecorp.com",
       "tier": "bronze",
@@ -495,6 +454,7 @@ active.
 | `OTP_EXPIRED` | `410` | Older than 10 min, or already used |
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong tries — the code is destroyed |
 | `ACCOUNT_DISABLED` | `403` | `active = false` |
+| `EMAIL_ALREADY_REGISTERED` | `409` | Address is taken — verified **or** pending |
 
 ---
 
@@ -584,6 +544,7 @@ A customer token is `{ "sub": "9f2c1a44-…", "kind": "customer" }` — **no `ro
 | `INVALID_CREDENTIALS` | `401` | Unknown email, wrong password, **or the address exists only in the other table** |
 | `EMAIL_NOT_VERIFIED` | `403` | Correct credentials, OTP never confirmed |
 | `ACCOUNT_DISABLED` | `403` | `active = false` |
+| `EMAIL_ALREADY_REGISTERED` | `409` | Address is taken — verified **or** pending |
 | `RATE_LIMITED` | `429` | > 10 attempts / 60s for this IP + email |
 
 ```json
@@ -826,7 +787,6 @@ Session restore. **Requires** `Authorization: Bearer <access token>`.
   "data": {
     "kind": "customer",
     "id": "9f2c1a44-8d3e-4b12-a7c5-1e2f3a4b5c6d",
-    "customerCode": "CUST-0001",
     "name": "Acme Corp",
     "email": "buyer@acmecorp.com",
     "tier": "bronze",
@@ -933,6 +893,7 @@ reason to skip output encoding — they defend different things.
 | `INVALID_REFRESH_TOKEN` | `401` | Unknown, expired, or revoked refresh token |
 | `EMAIL_NOT_VERIFIED` | `403` | Correct credentials, OTP never confirmed |
 | `ACCOUNT_DISABLED` | `403` | `active = false` |
+| `EMAIL_ALREADY_REGISTERED` | `409` | Address is taken — verified **or** pending |
 | `WRONG_KIND` | `403` | Staff token on a portal route, or the reverse |
 | `FORBIDDEN` | `403` | Role does not permit the action |
 | `NOT_FOUND` | `404` | Unknown route or account |

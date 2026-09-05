@@ -4,7 +4,8 @@
 > one field that affects money.
 >
 > **Status:** implemented and tested against the live database —
-> `src/modules/customers/`, `src/db/schema.ts`.
+> `src/modules/customers/`, `src/lib/customer-code.ts`, `src/db/schema.ts`.
+> Migrations `0002_tier_config` and `0003_customer_id` are applied.
 >
 > Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
 > [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`03-AUTH-API.md`](./03-AUTH-API.md) ·
@@ -17,14 +18,15 @@
 | § | Section |
 |---|---|
 | 1 | [The model in one page](#1-the-model-in-one-page) |
-| 2 | [The customer code](#2-the-customer-code) |
+| 2 | [The customer ID](#2-the-customer-id) |
 | 3 | [Tiers, and what they control](#3-tiers-and-what-they-control) |
 | 4 | [`GET /customers?q=`](#4-get-customersq) |
-| 5 | [`PATCH /customer-tiers/:tier`](#5-patch-customer-tierstier) |
-| 6 | [What a customer never sees](#6-what-a-customer-never-sees) |
-| 7 | [Guards](#7-guards) |
-| 8 | [Error catalogue](#8-error-catalogue) |
-| 9 | [Worked flow](#9-worked-flow) |
+| 5 | [`GET /customer-tiers/:tier`](#5-get-customer-tierstier) |
+| 6 | [`PATCH /customer-tiers/:tier`](#6-patch-customer-tierstier) |
+| 7 | [What a customer never sees](#7-what-a-customer-never-sees) |
+| 8 | [Guards](#8-guards) |
+| 9 | [Error catalogue](#9-error-catalogue) |
+| 10 | [Worked flow](#10-worked-flow) |
 
 ---
 
@@ -42,14 +44,14 @@
          ▼
   POST /auth/verify-otp
          │
-         │  CUST-0001 assigned
+         │  DF-CMC827 assigned
          ▼
   ┌────────────────────┐
   │  Your Customer ID  │
-  │     CUST-0001      │ ──── reads it out over the phone ────┐
+  │     DF-CMC827      │ ──── reads it out over the phone ────┐
   └────────────────────┘                                      │
                                                               ▼
-                                            GET /customers?q=CUST-0001
+                                            GET /customers?q=DF-CMC827
                                                               │
                                             POST /quotations { customerId }
                                                               │
@@ -74,28 +76,47 @@
 
 ---
 
-## 2. The customer code
+## 2. The customer ID
+
+Each customer has an internal UUID and one public identifier.
 
 ```
-CUST-0001
-────┬──── ──┬─
-    │       └── the database identity column, zero-padded to 4
-    └────────── fixed prefix
+id           0abcb337-0417-4d1b-aa3d-b7d3df6d049b    internal, never shown
+customerId   DF-CMC827                               the public one
 ```
 
-- **Derived, never stored.** It comes from the `seq` identity column on `customers`,
-  so two concurrent signups can never be handed the same code. A `SELECT max()+1`
-  would race.
-- **Stable for the life of the account.** Nothing an admin or the customer can edit
-  changes it, which is what makes it safe to quote in an email or read down a phone.
-- **Says nothing about the customer.** No tier, no region, no revenue — a code that
-  encodes attributes leaks them, and breaks the day the attribute changes.
-- **Readable aloud.** Four digits, one prefix, no characters that sound alike.
+### How it is built
 
-The customer sees it on their portal landing page and gives it to their rep. It is the
-only identifier that crosses between the two applications.
+```
+DF-CMC827
+─┬─ ─┬─ ─┬─
+ │   │   └── 3 digits, hashed from the email
+ │   └────── 3 consonants from the company name  (a-C-M-e  C-orporation → CMC)
+ └────────── fixed prefix
+```
 
----
+### Why this shape
+
+- **Pronounceable.** "D-F, C-M-C, eight-two-seven" survives a phone call in a way
+  `0abcb337-0417-…` does not.
+- **Reveals nothing.** No sequence, no count, no tier, no signup date. A sequential
+  code like `CUST-0011` would tell anyone who saw it roughly how many customers you
+  have.
+- **Stable.** Nothing an admin or the customer can edit changes it, so it is safe to
+  quote in an email or print on a document.
+- **Unique, enforced by the database** (`customers_customer_id_key`). Generation is a
+  hash, so a collision is possible in principle — the insert retries with a different
+  salt until it succeeds.
+
+### Where it is used
+
+```
+customer reads it out to their rep   →  DF-CMC827
+rep looks them up                    →  GET /customers?q=DF-CMC827
+foreign keys, API paths              →  the UUID
+```
+
+It is the only identifier that crosses between the two applications.
 
 ## 3. Tiers, and what they control
 
@@ -125,7 +146,7 @@ That is why `tier` cannot come from the signup body: a customer choosing their o
 tier would be choosing their own prices.
 
 The ceiling numbers are stored in the `tier_config` table, seeded with the values
-above, and moved with [`PATCH /customer-tiers/:tier`](#5-patch-customer-tierstier).
+above, and moved with [`PATCH /customer-tiers/:tier`](#6-patch-customer-tierstier).
 They are read back alongside the category ceilings through
 [`GET /discount-config`](./02-API-REFERENCE.md#6-discount-governance--approval-chain).
 
@@ -138,16 +159,18 @@ Look a customer up by the code they gave you.
 **Auth** — any internal (staff) token.
 
 ```http
-GET /api/v1/customers?q=CUST-0001
+GET /api/v1/customers?q=DF-CMC827
 Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 ```
 
 | Query | Type | Required | Description |
 |---|---|:---:|---|
-| `q` | string | ✅ | matches `customerCode`, company name, or email |
+| `q` | string | ✅ | matches `customerId`, company name, or email |
 
 - **`q` is required.** Omitting it returns `400`, not every customer.
-- Matching is case-insensitive and partial on name and email; a `CUST-` code is exact.
+- `DF-CMC827` is matched **exactly** — it returns at most one row.
+- A name or email fragment is matched **partially**, case-insensitively, and can return
+  several rows.
 
 ### Response `200`
 
@@ -156,9 +179,9 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
   "success": true,
   "data": [
     {
-      "id": "cus_9f2c1a44",
-      "customerCode": "CUST-0001",
-      "name": "Acme Corp",
+      "id": "0abcb337-0417-4d1b-aa3d-b7d3df6d049b",
+      "customerId": "DF-CMC827",
+      "name": "Acme Corporation",
       "contactName": "R. Iyer",
       "email": "buyer@acmecorp.com",
       "tier": "bronze",
@@ -172,7 +195,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 ```
 
 - Always an **array** — a name or email fragment can match several customers, while a
-  `CUST-` code matches at most one.
+  `DF-` id matches at most one.
 - Empty `data` means no match. That is a `200`, not a `404`: the search ran and found
   nothing.
 - **No `meta` block.** There is no paging, because a lookup returns a handful of rows
@@ -188,7 +211,37 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ---
 
-## 5. `PATCH /customer-tiers/:tier`
+## 5. `GET /customer-tiers/:tier`
+
+Read the current ceiling for one tier.
+
+**Auth** — admin or sales_manager.
+
+```http
+GET /api/v1/customer-tiers/gold
+```
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "tier": "gold",
+    "maxDiscountPct": 15,
+    "updatedAt": "2026-03-01T09:00:00.000Z"
+  }
+}
+```
+
+`updatedAt` is when the ceiling last moved — useful when a manager is deciding whether
+a number is current policy or a leftover from last quarter.
+
+**Errors** — `400` unknown tier · `403 FORBIDDEN` for any other role
+
+---
+
+## 6. `PATCH /customer-tiers/:tier`
 
 The discount ceiling attached to a **tier** — business policy, not a per-customer
 decision.
@@ -258,7 +311,7 @@ discretion.
 
 ---
 
-## 6. What a customer never sees
+## 7. What a customer never sees
 
 Everything above is the **internal** surface. A customer token cannot reach any of it —
 `403 WRONG_KIND`.
@@ -283,7 +336,7 @@ See [`02-API-REFERENCE.md §17`](./02-API-REFERENCE.md#17-customer-portal).
 
 ---
 
-## 7. Guards
+## 8. Guards
 
 ```
 1. requireKind('staff')
@@ -305,7 +358,7 @@ See [`02-API-REFERENCE.md §17`](./02-API-REFERENCE.md#17-customer-portal).
 
 ---
 
-## 8. Error catalogue
+## 9. Error catalogue
 
 | `code` | HTTP | Meaning |
 |---|---|---|
@@ -318,7 +371,7 @@ See [`02-API-REFERENCE.md §17`](./02-API-REFERENCE.md#17-customer-portal).
 
 ---
 
-## 9. Worked flow
+## 10. Worked flow
 
 ```bash
 BASE=http://localhost:5050/api/v1
@@ -330,10 +383,10 @@ curl -s -X POST $BASE/auth/signup -H 'content-type: application/json' \
 
 curl -s -X POST $BASE/auth/verify-otp -H 'content-type: application/json' \
   -d '{"email":"buyer@acmecorp.com","otp":"418302","type":"customer"}'
-# → customerCode: "CUST-0001", tier: "bronze"
+# → customerId: "DF-CMC827", tier: "bronze"
 
-# 2. they read CUST-0001 to their rep, who looks them up
-curl -s "$BASE/customers?q=CUST-0001" -H "authorization: Bearer $REP"
+# 2. they read DF-CMC827 to their rep, who looks them up
+curl -s "$BASE/customers?q=DF-CMC827" -H "authorization: Bearer $REP"
 
 # 3. the rep quotes them; their tier's price list resolves automatically
 curl -s -X POST $BASE/quotations -H "authorization: Bearer $REP" \
@@ -360,7 +413,7 @@ curl -s -X PATCH "$BASE/customer-tiers/gold" -H "authorization: Bearer $ADMIN" \
   -H 'content-type: application/json' -d '{"maxDiscountPct":150}'      # 400
 
 # a customer token cannot reach the internal surface
-curl -s "$BASE/customers?q=CUST-0001" -H "authorization: Bearer $CUSTOMER"  # 403
+curl -s "$BASE/customers?q=DF-CMC827" -H "authorization: Bearer $CUSTOMER"  # 403
 ```
 
 ---
@@ -369,10 +422,11 @@ curl -s "$BASE/customers?q=CUST-0001" -H "authorization: Bearer $CUSTOMER"  # 40
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `GET` | `/customers?q=` | any internal | Look up by code, name, or email — `q` required |
-| `PATCH` | `/customer-tiers/:tier` | admin / sales_manager | The tier-wide discount ceiling |
+| `GET` | `/customers?q=` | any internal | Look up by id, name, or email — `q` required |
+| `GET` | `/customer-tiers/:tier` | admin / sales_manager | Read the tier-wide ceiling |
+| `PATCH` | `/customer-tiers/:tier` | admin / sales_manager | Move the tier-wide ceiling |
 
-**2 endpoints.**
+**3 endpoints.**
 
 - No `POST` — customers self-register at [`POST /auth/signup`](./03-AUTH-API.md#6-post-authsignup).
 - No browse-all — `q` is required.
