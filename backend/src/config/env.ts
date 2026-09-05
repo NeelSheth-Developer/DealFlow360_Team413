@@ -51,6 +51,13 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+
+  // Returns the OTP in the API response so the flow can be exercised without a
+  // working email provider. Double-gated: this flag AND a non-production NODE_ENV.
+  EXPOSE_DEV_OTP: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 const parsed = envSchema.safeParse(process.env);
