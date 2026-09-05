@@ -24,7 +24,19 @@ export function createApp() {
   app.use(compression());
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(pinoHttp({ logger }));
+  // app.use(pinoHttp({ logger }));
+  app.use(
+    pinoHttp({
+      logger,
+      customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+      customErrorMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+      serializers: {
+        req: (req) => ({ method: req.method, url: req.url }),
+        res: (res) => ({ statusCode: res.statusCode }),
+      },
+    }),
+  );
+
   app.use(rateLimit());
 
   app.use('/api/v1', apiRouter);
