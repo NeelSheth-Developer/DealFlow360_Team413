@@ -9,6 +9,7 @@ import type { FindCustomersQuery } from './customers.schemas.js';
 const publicColumns = {
   id: customers.id,
   seq: customers.seq,
+  customerId: customers.customerId,
   name: customers.name,
   contactName: customers.contactName,
   email: customers.email,
@@ -28,10 +29,13 @@ const publicColumns = {
  */
 export async function findCustomers(query: FindCustomersQuery) {
   const seq = parseCustomerCode(query.q);
+  const isCustomerId = /^DF-[A-Z]{3}\d{3}$/i.test(query.q.trim());
 
   const where = seq
     ? eq(customers.seq, seq)
-    : or(ilike(customers.name, `%${query.q}%`), ilike(customers.email, `%${query.q}%`));
+    : isCustomerId
+      ? eq(customers.customerId, query.q.trim().toUpperCase())
+      : or(ilike(customers.name, `%${query.q}%`), ilike(customers.email, `%${query.q}%`));
 
   const rows = await db
     .select(publicColumns)
@@ -83,6 +87,7 @@ export async function updateTierCeiling(tier: Tier, maxDiscountPct: number) {
 function present(row: {
   id: string;
   seq: number;
+  customerId: string;
   name: string;
   contactName: string | null;
   email: string;
@@ -95,6 +100,7 @@ function present(row: {
   return {
     id: row.id,
     customerCode: toCustomerCode(row.seq),
+    customerId: row.customerId,
     name: row.name,
     contactName: row.contactName,
     email: row.email,
