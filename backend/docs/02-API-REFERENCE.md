@@ -301,7 +301,47 @@ is written to. Customers are never created by a rep.
 > `admin` must come from seed data — nobody can self-register as one. That is the
 > point.
 
-**Response `201`** — the account exists but is **not usable yet**
+### Signup behaviour
+
+```
+POST /auth/signup
+        ↓
+  Does this email already exist?
+        │
+        ├── NO ──────────────→ create the row, email an OTP
+        │                      201  { message: "OTP sent successfully" }
+        │
+        └── YES ── password correct?
+                     │
+                     ├── YES, already verified ──→ 200  tokens issued
+                     │                                  (behaves as a login)
+                     ├── YES, not yet verified ──→ 201  new OTP emailed
+                     │                                  { message: "OTP sent successfully" }
+                     └── NO ─────────────────────→ 401  Invalid email or password
+```
+
+---
+
+#### Response `201` — new signup
+
+Nothing but the confirmation. No account details, no token.
+
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully"
+}
+```
+
+The same body is returned when an **unverified** account signs up again — it simply
+gets a fresh code. The client cannot tell the two apart, so the endpoint reveals
+nothing about which emails are registered.
+
+---
+
+#### Response `200` — existing verified account
+
+The credentials were correct, so tokens are issued and the user goes straight in.
 
 Internal:
 
@@ -313,16 +353,11 @@ Internal:
       "id": "usr_8f21c3",
       "name": "Priya Sharma",
       "email": "priya@teamvector.space",
-      "role": "sales_rep",
-      "team": null,
-      "emailVerified": false,
-      "createdAt": "2026-03-01T09:00:00.000Z"
+      "role": "sales_rep"
     },
-    "kind": "staff",
-    "otpSent": true,
-    "otpExpiresInSeconds": 600,
-    "message": "We sent a 6-digit code to priya@teamvector.space.",
-    "redirectTo": "/verify-otp"
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "rt_4c8a91e0...",
+    "expiresIn": 604800
   }
 }
 ```
@@ -340,32 +375,27 @@ Customer:
       "contactName": null,
       "email": "buyer@acmecorp.com",
       "tier": "bronze",
-      "currency": "INR",
-      "emailVerified": false,
-      "createdAt": "2026-03-01T09:00:00.000Z"
+      "currency": "INR"
     },
-    "kind": "customer",
-    "otpSent": true,
-    "otpExpiresInSeconds": 600,
-    "message": "We sent a 6-digit code to buyer@acmecorp.com.",
-    "redirectTo": "/portal/verify-otp"
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "rt_2f81c003...",
+    "expiresIn": 86400
   }
 }
 ```
 
-> `name` is what the customer typed at signup; a rep can correct it later with
-> `PATCH /customers/:id`. `contactName` starts `null` and the rep fills it in.
->
-> `customerCode` (`CUST-0001`) is the handle the customer gives their sales contact.
-> It is sequential, zero-padded, and safe to read aloud over a phone call. `id` stays
-> the internal primary key; `customerCode` is the human-facing one.
+> `kind` is **not** in the response body. It lives inside the JWT, where the server
+> reads it to authorise every request. The client already knows which app to open —
+> it sent `type` in the request — and the payload carries either `user` or `customer`.
 
-> **No `accessToken` is issued here.** The address has not been proved yet. The user
-> must call [`POST /auth/verify-otp`](#post-authverify-otp) with the emailed code —
-> that is where the token comes from. Attempting `POST /auth/login` before verifying
-> returns `403 EMAIL_NOT_VERIFIED`.
+---
 
-**Errors** — `400` validation · `409` email already registered
+**Errors**
+
+| Code | Cause |
+|---|---|
+| `400` | Validation failed, or a server-assigned field was sent (`FIELD_NOT_ALLOWED`) |
+| `401` | Email exists but the password is wrong — same wording as login: *"Invalid email or password"* |
 
 ---
 
@@ -389,8 +419,7 @@ POST /auth/verify-otp      code checked
 ```json
 {
   "email": "priya@teamvector.space",
-  "otp": "418302",
-  "purpose": "signup"
+  "otp": "418302"
 }
 ```
 
@@ -398,9 +427,15 @@ POST /auth/verify-otp      code checked
 |---|---|:---:|---|
 | `email` | string | ✅ | the address that received the code |
 | `otp` | string | ✅ | exactly 6 digits |
-| `purpose` | enum | ✅ | `signup` \| `password_reset` \| `email_change` |
+
+> The client does not say what the code is for. The server stores the purpose on the
+> OTP row when it issues the code, and reads it back on verification — the same reason
+> `role` and `tier` are never taken from the request. A signup code cannot be replayed
+> against a password reset, because the stored purpose will not match the endpoint.
 
 **Response `200`**
+
+Internal:
 
 ```json
 {
@@ -410,18 +445,39 @@ POST /auth/verify-otp      code checked
       "id": "usr_8f21c3",
       "name": "Priya Sharma",
       "email": "priya@teamvector.space",
-      "role": "sales_rep",
-      "team": null,
-      "emailVerified": true
+      "role": "sales_rep"
     },
-    "kind": "staff",
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_4c8a91e0...",
-    "expiresIn": 604800,
-    "redirectTo": "/app/dashboard"
+    "expiresIn": 604800
   }
 }
 ```
+
+Customer — this is where `customerCode` becomes active:
+
+```json
+{
+  "success": true,
+  "data": {
+    "customer": {
+      "id": "cus_9f2c1a44",
+      "customerCode": "CUST-0001",
+      "name": "Acme Corp",
+      "contactName": null,
+      "email": "buyer@acmecorp.com",
+      "tier": "bronze",
+      "currency": "INR"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "rt_2f81c003...",
+    "expiresIn": 86400
+  }
+}
+```
+
+Identical in shape to the signup response for an existing account, so the frontend
+handles one payload either way.
 
 **Errors**
 
@@ -447,6 +503,16 @@ concurrent      requesting a new code invalidates the previous one
 ### `POST /auth/resend-otp`
 
 **Request** `{ "email": "priya@teamvector.space", "purpose": "signup" }`
+
+| Field | Type | Required | Rules |
+|---|---|:---:|---|
+| `email` | string | ✅ | |
+| `purpose` | enum | ✅ | `signup` \| `password_reset` \| `email_change` |
+
+> `purpose` **is** required here, unlike `verify-otp`. The previous code may have
+> expired and been cleaned up, so there is no stored row for the server to read it
+> from — it has to be told which kind of code to send. It selects an email template;
+> it grants nothing.
 
 **Response `200`** — always the same message, whether or not the address exists.
 
@@ -524,6 +590,7 @@ Step 2. Verifies the code and sets the new password in one call.
 > compromised, resetting the password logs the attacker out everywhere. The user signs
 > in again — no token is issued here.
 
+
 **Errors**
 
 | Code | `error.code` | Cause |
@@ -544,6 +611,11 @@ For a user who is already signed in and knows their current password. No OTP nee
 ```json
 { "currentPassword": "S3cure!pass", "newPassword": "N3wS3cure!pass" }
 ```
+
+| Field | Type | Required | Rules |
+|---|---|:---:|---|
+| `currentPassword` | string | ✅ | must match the stored hash |
+| `newPassword` | string | ✅ | min 8 chars; must differ from the current one |
 
 **Response `200`**
 
@@ -599,14 +671,11 @@ Content-Type: application/json
       "id": "usr_2b77de",
       "name": "Anita Desai",
       "email": "anita@teamvector.space",
-      "role": "sales_manager",
-      "team": "National"
+      "role": "sales_manager"
     },
-    "kind": "staff",
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_9d21b4f7...",
-    "expiresIn": 604800,
-    "redirectTo": "/app/dashboard"
+    "expiresIn": 604800
   }
 }
 ```
@@ -642,11 +711,9 @@ Token payload: `{ "sub": "usr_2b77de", "kind": "staff", "role": "sales_manager" 
       "tier": "gold",
       "currency": "INR"
     },
-    "kind": "customer",
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_2f81c003...",
-    "expiresIn": 86400,
-    "redirectTo": "/portal/quotations"
+    "expiresIn": 86400
   }
 }
 ```
@@ -674,14 +741,15 @@ Distinct messages would let an attacker discover who your customers are.
 `400` is returned only for a malformed body (missing `type`, invalid email format).
 
 `403 EMAIL_NOT_VERIFIED` is returned when the credentials are correct but the signup
-OTP was never confirmed — the response carries `redirectTo: "/verify-otp"` so the
-frontend can send the user straight to the code screen.
+OTP was never confirmed. The frontend sends the user to its own verify-code screen and
+calls `POST /auth/resend-otp` for a fresh code.
 
 ---
 
 ### `POST /auth/refresh`
 
-Works for both kinds. The new token carries the same `kind` and `role` as the original.
+Works for both kinds. The new token carries the same `kind` and `role` as the original,
+inside the JWT — the response body stays minimal.
 
 **Request** `{ "refreshToken": "rt_9d21b4f7..." }`
 
@@ -690,7 +758,7 @@ Works for both kinds. The new token carries the same `kind` and `role` as the or
 ```json
 {
   "success": true,
-  "data": { "accessToken": "eyJ...", "kind": "staff", "expiresIn": 604800 }
+  "data": { "accessToken": "eyJ...", "expiresIn": 604800 }
 }
 ```
 
