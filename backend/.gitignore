@@ -127,3 +127,5 @@ desktop.ini
 *.seed
 *.pid.lock
 .node_repl_history
+
+postman.json
