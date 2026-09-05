@@ -8,7 +8,7 @@ relative to it.
 | | |
 |---|---|
 | **Endpoints** | 113 across 17 modules |
-| **Data model** | [`../schema.dbml`](../schema.dbml) — 31 tables, renderable at dbdiagram.io |
+| **Data model** | [§24](#24-data-model) — 31 tables, ER diagrams and the full DBML |
 | **Postman** | [`../postman/`](../postman) — importable collection covering every endpoint |
 | **Browser tester** | `npm run dev`, then <http://localhost:5050> |
 | **End-to-end test** | `npm run e2e` — 92 assertions over the brief's 8-step flow |
@@ -42,7 +42,8 @@ relative to it.
 | [20](#20-transactional-emails) | Transactional emails | — |
 | [21](#21-quick-test-flow--api-calls) | Quick Test Flow → API calls | — |
 | [22](#22-role-permission-matrix) | Role permission matrix | — |
-| [23](#23-endpoint-index) | Endpoint index | 113 |
+| [23](#23-endpoint-index) | **Numbered endpoint index** | 113 |
+| [24](#24-data-model) | Data model — ER diagrams + DBML | 31 tables |
 
 
 ---
@@ -2481,123 +2482,1377 @@ That is a wall between two identity spaces, not a permission level.
 
 ## 23. Endpoint index
 
-All **113** endpoints, generated from the router definitions.
+All **113** endpoints, numbered and in document order. The § column links to
+the section that documents the request and response shapes.
 
-| Method | Path |
-|---|---|
-| `GET` | `/approvals/queue` |
-| `GET` | `/audit-log` |
-| `POST` | `/auth/change-password` |
-| `POST` | `/auth/forgot-password` |
-| `POST` | `/auth/login` |
-| `POST` | `/auth/logout` |
-| `GET` | `/auth/me` |
-| `POST` | `/auth/refresh` |
-| `POST` | `/auth/resend-otp` |
-| `POST` | `/auth/reset-password` |
-| `POST` | `/auth/signup` |
-| `POST` | `/auth/verify-otp` |
-| `GET` | `/config/approval-chain` |
-| `POST` | `/config/approval-chain` |
-| `PUT` | `/config/approval-chain/:id` |
-| `DELETE` | `/config/approval-chain/:id` |
-| `PUT` | `/config/approval-chain/order` |
-| `GET` | `/config/dashboard` |
-| `PUT` | `/config/dashboard` |
-| `GET` | `/config/discount` |
-| `PUT` | `/config/discount/category-ceilings` |
-| `PUT` | `/config/discount/tier-ceilings` |
-| `GET` | `/customer-tiers/:tier` |
-| `PATCH` | `/customer-tiers/:tier` |
-| `GET` | `/customer/invoices/:id/pdf` |
-| `GET` | `/customer/quotations` |
-| `GET` | `/customer/quotations/:id` |
-| `POST` | `/customer/quotations/:id/confirm` |
-| `POST` | `/customer/quotations/:id/lines/:lineId/comments` |
-| `GET` | `/customer/quotations/:id/pdf` |
-| `POST` | `/customer/quotations/:id/request` |
-| `GET` | `/customers` |
-| `GET` | `/customers/:id` |
-| `PATCH` | `/customers/:id/tier` |
-| `GET` | `/dashboard/alerts` |
-| `POST` | `/dashboard/alerts/:id/escalate` |
-| `POST` | `/dashboard/alerts/:id/nudge` |
-| `GET` | `/dashboard/deal-health` |
-| `GET` | `/health` |
-| `GET` | `/health/ready` |
-| `GET` | `/invoices` |
-| `GET` | `/invoices/:id` |
-| `POST` | `/invoices/:id/payments` |
-| `GET` | `/invoices/:id/pdf` |
-| `POST` | `/invoices/:id/send` |
-| `GET` | `/notifications` |
-| `PATCH` | `/notifications/:id/read` |
-| `PATCH` | `/notifications/read-all` |
-| `GET` | `/price-lists` |
-| `PUT` | `/price-lists` |
-| `GET` | `/products` |
-| `POST` | `/products` |
-| `GET` | `/products/:id` |
-| `PUT` | `/products/:id` |
-| `PATCH` | `/products/:id/active` |
-| `POST` | `/products/:id/duplicate` |
-| `GET` | `/quotations` |
-| `POST` | `/quotations` |
-| `GET` | `/quotations/:id` |
-| `PATCH` | `/quotations/:id` |
-| `POST` | `/quotations/:id/apply-counter` |
-| `POST` | `/quotations/:id/approve` |
-| `GET` | `/quotations/:id/billing` |
-| `POST` | `/quotations/:id/billing/build` |
-| `GET` | `/quotations/:id/credit-notes` |
-| `POST` | `/quotations/:id/credit-notes` |
-| `POST` | `/quotations/:id/dismiss-suggestion` |
-| `GET` | `/quotations/:id/fulfillment` |
-| `POST` | `/quotations/:id/fulfillment/accept` |
-| `POST` | `/quotations/:id/fulfillment/backorder-policy` |
-| `POST` | `/quotations/:id/fulfillment/consolidate` |
-| `POST` | `/quotations/:id/fulfillment/override` |
-| `POST` | `/quotations/:id/lines` |
-| `PATCH` | `/quotations/:id/lines/:lineId` |
-| `DELETE` | `/quotations/:id/lines/:lineId` |
-| `GET` | `/quotations/:id/lines/:lineId/cancellation-preview` |
-| `POST` | `/quotations/:id/lines/:lineId/comments` |
-| `POST` | `/quotations/:id/lines/:lineId/proration-preview` |
-| `PATCH` | `/quotations/:id/lines/:lineId/subscription` |
-| `DELETE` | `/quotations/:id/lines/:lineId/subscription` |
-| `POST` | `/quotations/:id/lost` |
-| `PATCH` | `/quotations/:id/owner` |
-| `GET` | `/quotations/:id/pdf` |
-| `POST` | `/quotations/:id/reject` |
-| `POST` | `/quotations/:id/return` |
-| `POST` | `/quotations/:id/share` |
-| `POST` | `/quotations/:id/stage` |
-| `POST` | `/quotations/:id/submit-approval` |
-| `GET` | `/reports/products` |
-| `GET` | `/reports/summary` |
-| `GET` | `/risk/config` |
-| `POST` | `/risk/score` |
-| `POST` | `/risk/score-batch` |
-| `GET` | `/roles` |
-| `GET` | `/subscription-plans` |
-| `POST` | `/subscription-plans` |
-| `GET` | `/subscription-plans/:id` |
-| `PUT` | `/subscription-plans/:id` |
-| `GET` | `/teams` |
-| `GET` | `/upsell-rules` |
-| `POST` | `/upsell-rules` |
-| `PUT` | `/upsell-rules/:id` |
-| `DELETE` | `/upsell-rules/:id` |
-| `POST` | `/upsell-rules/suggest` |
-| `GET` | `/users` |
-| `GET` | `/users/:id` |
-| `PATCH` | `/users/:id` |
-| `GET` | `/warehouses` |
-| `POST` | `/warehouses` |
-| `GET` | `/warehouses/:id` |
-| `PUT` | `/warehouses/:id` |
-| `POST` | `/warehouses/:id/restock` |
-| `PUT` | `/warehouses/:id/stock` |
+### §1 · Health — 2
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 1 | `GET` | [`/health`](#1-health) | Liveness | public |
+| 2 | `GET` | [`/health/ready`](#1-health) | Readiness — database and Redis | public |
+
+### §2 · Authentication — 10
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 3 | `POST` | [`/auth/signup`](#2-authentication) | Register; always creates a sales_rep | public |
+| 4 | `POST` | [`/auth/verify-otp`](#2-authentication) | Confirm the emailed code, return a session | public |
+| 5 | `POST` | [`/auth/resend-otp`](#2-authentication) | Re-send a code, cooldown enforced | public |
+| 6 | `POST` | [`/auth/login`](#2-authentication) | Sign in (staff or customer) | public |
+| 7 | `POST` | [`/auth/refresh`](#2-authentication) | Rotate the token pair | public |
+| 8 | `POST` | [`/auth/logout`](#2-authentication) | End the session | any |
+| 9 | `GET` | [`/auth/me`](#2-authentication) | The signed-in identity | any |
+| 10 | `POST` | [`/auth/forgot-password`](#2-authentication) | Start a reset; always 200 | public |
+| 11 | `POST` | [`/auth/reset-password`](#2-authentication) | Set a new password with the code | public |
+| 12 | `POST` | [`/auth/change-password`](#2-authentication) | Change it while signed in | any |
+
+### §3 · Users, roles and teams — 5
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 13 | `GET` | [`/users`](#3-users-roles-and-teams) | Staff directory | staff |
+| 14 | `GET` | [`/users/:id`](#3-users-roles-and-teams) | One staff member | staff |
+| 15 | `PATCH` | [`/users/:id`](#3-users-roles-and-teams) | Role, name, team, active | admin · manager |
+| 16 | `GET` | [`/roles`](#3-users-roles-and-teams) | Assignable roles and their counts | staff |
+| 17 | `GET` | [`/teams`](#3-users-roles-and-teams) | Sales territories | staff |
+
+### §4 · Customers — 5
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 18 | `GET` | [`/customers`](#4-customers) | Directory; optional q matches DF- exactly | staff |
+| 19 | `GET` | [`/customers/:id`](#4-customers) | One customer | staff |
+| 20 | `PATCH` | [`/customers/:id/tier`](#4-customers) | Promote or demote the pricing tier | admin · manager |
+| 21 | `GET` | [`/customer-tiers/:tier`](#4-customers) | Ceiling for one tier | admin · manager |
+| 22 | `PATCH` | [`/customer-tiers/:tier`](#4-customers) | Move that ceiling | admin · manager |
+
+### §5 · Governance configuration — 10
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 23 | `GET` | [`/config/discount`](#5-governance-configuration) | Both ceiling sets and the chain | manager · finance · admin |
+| 24 | `PUT` | [`/config/discount/tier-ceilings`](#5-governance-configuration) | All three tiers at once | admin · manager |
+| 25 | `PUT` | [`/config/discount/category-ceilings`](#5-governance-configuration) | All four categories at once | admin · manager |
+| 26 | `GET` | [`/config/approval-chain`](#5-governance-configuration) | The rules, with coverage warnings | manager · finance · admin |
+| 27 | `POST` | [`/config/approval-chain`](#5-governance-configuration) | Add a rule | admin · manager |
+| 28 | `PUT` | [`/config/approval-chain/order`](#5-governance-configuration) | Reorder the chain | admin · manager |
+| 29 | `PUT` | [`/config/approval-chain/:id`](#5-governance-configuration) | Update a rule | admin · manager |
+| 30 | `DELETE` | [`/config/approval-chain/:id`](#5-governance-configuration) | Remove a rule; the last is refused | admin · manager |
+| 31 | `GET` | [`/config/dashboard`](#5-governance-configuration) | Alert thresholds | manager · finance · admin |
+| 32 | `PUT` | [`/config/dashboard`](#5-governance-configuration) | Set alert thresholds | admin · manager |
+
+### §6 · Catalog and pricing — 8
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 33 | `GET` | [`/products`](#6-catalog-and-pricing) | List, filter, search | staff |
+| 34 | `GET` | [`/products/:id`](#6-catalog-and-pricing) | One product with variants | staff |
+| 35 | `POST` | [`/products`](#6-catalog-and-pricing) | Create; generates tier prices | admin |
+| 36 | `PUT` | [`/products/:id`](#6-catalog-and-pricing) | Update | admin |
+| 37 | `PATCH` | [`/products/:id/active`](#6-catalog-and-pricing) | Archive or restore | admin |
+| 38 | `POST` | [`/products/:id/duplicate`](#6-catalog-and-pricing) | Copy under a new SKU, archived | admin |
+| 39 | `GET` | [`/price-lists`](#6-catalog-and-pricing) | Tier prices | staff |
+| 40 | `PUT` | [`/price-lists`](#6-catalog-and-pricing) | Upsert one tier/currency price | admin · manager |
+
+### §7 · Warehouses — 6
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 41 | `GET` | [`/warehouses`](#7-warehouses) | List with stock maps | staff |
+| 42 | `GET` | [`/warehouses/:id`](#7-warehouses) | One warehouse | staff |
+| 43 | `POST` | [`/warehouses`](#7-warehouses) | Create | admin · finance |
+| 44 | `PUT` | [`/warehouses/:id`](#7-warehouses) | Update | admin · finance |
+| 45 | `PUT` | [`/warehouses/:id/stock`](#7-warehouses) | Partial stock map + affected quotations | admin · finance |
+| 46 | `POST` | [`/warehouses/:id/restock`](#7-warehouses) | Apply replenishment | admin · finance |
+
+### §8 · Subscription plans — 4
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 47 | `GET` | [`/subscription-plans`](#8-subscription-plans) | List | staff |
+| 48 | `GET` | [`/subscription-plans/:id`](#8-subscription-plans) | One plan | staff |
+| 49 | `POST` | [`/subscription-plans`](#8-subscription-plans) | Create | admin · finance |
+| 50 | `PUT` | [`/subscription-plans/:id`](#8-subscription-plans) | Update | admin · finance |
+
+### §9 · Upsell rules — 5
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 51 | `GET` | [`/upsell-rules`](#9-upsell-rules) | List pairings | staff |
+| 52 | `POST` | [`/upsell-rules`](#9-upsell-rules) | Create a pairing | admin · manager |
+| 53 | `POST` | [`/upsell-rules/suggest`](#9-upsell-rules) | Ranked suggestions for a cart | staff |
+| 54 | `PUT` | [`/upsell-rules/:id`](#9-upsell-rules) | Update | admin · manager |
+| 55 | `DELETE` | [`/upsell-rules/:id`](#9-upsell-rules) | Delete | admin · manager |
+
+### §10 · Risk scoring — 3
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 56 | `POST` | [`/risk/score`](#10-risk-scoring) | Score one quotation or ad-hoc lines | staff |
+| 57 | `POST` | [`/risk/score-batch`](#10-risk-scoring) | Score up to 50 in one call | staff |
+| 58 | `GET` | [`/risk/config`](#10-risk-scoring) | Ceilings and chain for the sandbox | manager · finance · admin |
+
+### §11 · Quotations — 15
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 59 | `GET` | [`/quotations`](#11-quotations) | List, filtered; reps see only own drafts | staff |
+| 60 | `GET` | [`/quotations/:id`](#11-quotations) | One quotation in full | staff |
+| 61 | `POST` | [`/quotations`](#11-quotations) | Create against an existing customer | staff |
+| 62 | `PATCH` | [`/quotations/:id`](#11-quotations) | Order discount, dates, notes, terms | owner · manager · admin |
+| 63 | `POST` | [`/quotations/:id/lines`](#11-quotations) | Add a line; price resolved server-side | owner · manager · admin |
+| 64 | `PATCH` | [`/quotations/:id/lines/:lineId`](#11-quotations) | Qty, discount, negotiated price | owner · manager · admin |
+| 65 | `DELETE` | [`/quotations/:id/lines/:lineId`](#11-quotations) | Remove a line | owner · manager · admin |
+| 66 | `POST` | [`/quotations/:id/lines/:lineId/comments`](#11-quotations) | Rep reply on a line | owner · manager · admin |
+| 67 | `PATCH` | [`/quotations/:id/owner`](#11-quotations) | Reassign the owning rep | manager · admin |
+| 68 | `POST` | [`/quotations/:id/share`](#11-quotations) | Publish to the customer portal | owner · manager · admin |
+| 69 | `POST` | [`/quotations/:id/stage`](#11-quotations) | Move stage within the graph | owner · manager · admin |
+| 70 | `POST` | [`/quotations/:id/lost`](#11-quotations) | Mark lost, reason required | owner · manager · admin |
+| 71 | `POST` | [`/quotations/:id/apply-counter`](#11-quotations) | Apply the counter, then re-score | owner · manager · admin |
+| 72 | `POST` | [`/quotations/:id/dismiss-suggestion`](#11-quotations) | Stop resurfacing an upsell | owner · manager · admin |
+| 73 | `GET` | [`/quotations/:id/pdf`](#11-quotations) | Customer-facing PDF | staff |
+
+### §12 · Approvals — 5
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 74 | `POST` | [`/quotations/:id/submit-approval`](#12-approvals) | Server routes it, or auto-approves | owner · manager · admin |
+| 75 | `POST` | [`/quotations/:id/approve`](#12-approvals) | Approve the current step | step's role · admin |
+| 76 | `POST` | [`/quotations/:id/reject`](#12-approvals) | Reject; reason required | step's role · admin |
+| 77 | `POST` | [`/quotations/:id/return`](#12-approvals) | Return to draft, chain cleared | step's role · admin |
+| 78 | `GET` | [`/approvals/queue`](#12-approvals) | What this role can action now | manager · finance · admin |
+
+### §13 · Fulfillment — 5
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 79 | `GET` | [`/quotations/:id/fulfillment`](#13-fulfillment) | Suggested or accepted split | staff |
+| 80 | `POST` | [`/quotations/:id/fulfillment/accept`](#13-fulfillment) | Accept the suggestion | staff |
+| 81 | `POST` | [`/quotations/:id/fulfillment/override`](#13-fulfillment) | Manual split, per-cell errors | staff |
+| 82 | `POST` | [`/quotations/:id/fulfillment/consolidate`](#13-fulfillment) | Refill a backorder, report saving | staff |
+| 83 | `POST` | [`/quotations/:id/fulfillment/backorder-policy`](#13-fulfillment) | Ship-partial vs hold | staff |
+
+### §14 · Billing and subscriptions — 8
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 84 | `GET` | [`/quotations/:id/billing`](#14-billing-and-subscriptions) | One-time and recurring, separated | staff |
+| 85 | `POST` | [`/quotations/:id/billing/build`](#14-billing-and-subscriptions) | Generate invoice and schedules | staff |
+| 86 | `POST` | [`/quotations/:id/lines/:lineId/proration-preview`](#14-billing-and-subscriptions) | Preview a qty change | staff |
+| 87 | `PATCH` | [`/quotations/:id/lines/:lineId/subscription`](#14-billing-and-subscriptions) | Apply it; auto credit note | staff |
+| 88 | `GET` | [`/quotations/:id/lines/:lineId/cancellation-preview`](#14-billing-and-subscriptions) | Preview a cancellation | staff |
+| 89 | `DELETE` | [`/quotations/:id/lines/:lineId/subscription`](#14-billing-and-subscriptions) | Cancel; refund per rule | staff |
+| 90 | `GET` | [`/quotations/:id/credit-notes`](#14-billing-and-subscriptions) | The ledger | staff |
+| 91 | `POST` | [`/quotations/:id/credit-notes`](#14-billing-and-subscriptions) | Issue a credit note or refund | finance · admin |
+
+### §15 · Invoices and payments — 5
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 92 | `GET` | [`/invoices`](#15-invoices-and-payments) | List | staff |
+| 93 | `GET` | [`/invoices/:id`](#15-invoices-and-payments) | One invoice with derived balances | staff |
+| 94 | `POST` | [`/invoices/:id/send`](#15-invoices-and-payments) | Draft to sent | finance · admin |
+| 95 | `POST` | [`/invoices/:id/payments`](#15-invoices-and-payments) | Record a payment; idempotent | finance · admin |
+| 96 | `GET` | [`/invoices/:id/pdf`](#15-invoices-and-payments) | Invoice PDF | staff |
+
+### §16 · Customer portal — 7
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 97 | `GET` | [`/customer/quotations`](#16-customer-portal) | Own, shared quotations only | customer |
+| 98 | `GET` | [`/customer/quotations/:id`](#16-customer-portal) | One; 404 if not theirs | customer |
+| 99 | `POST` | [`/customer/quotations/:id/lines/:lineId/comments`](#16-customer-portal) | Ask a question | customer |
+| 100 | `POST` | [`/customer/quotations/:id/request`](#16-customer-portal) | Counter-discount and reasoning | customer |
+| 101 | `POST` | [`/customer/quotations/:id/confirm`](#16-customer-portal) | Confirm; may re-enter approval | customer |
+| 102 | `GET` | [`/customer/quotations/:id/pdf`](#16-customer-portal) | Own quotation PDF | customer |
+| 103 | `GET` | [`/customer/invoices/:id/pdf`](#16-customer-portal) | Own issued invoice PDF | customer |
+
+### §17 · Dashboard, reports, audit, notifications — 10
+
+| # | Method | Path | Purpose | Access |
+|---:|---|---|---|---|
+| 104 | `GET` | [`/dashboard/deal-health`](#17-dashboard-reports-audit-notifications) | KPI summary | staff |
+| 105 | `GET` | [`/dashboard/alerts`](#17-dashboard-reports-audit-notifications) | Computed anomaly alerts | staff |
+| 106 | `POST` | [`/dashboard/alerts/:id/nudge`](#17-dashboard-reports-audit-notifications) | Notify the owning rep | manager · admin |
+| 107 | `POST` | [`/dashboard/alerts/:id/escalate`](#17-dashboard-reports-audit-notifications) | Raise to every manager | manager · admin |
+| 108 | `GET` | [`/reports/summary`](#17-dashboard-reports-audit-notifications) | KPIs, rep and team rollups, charts | manager · finance · admin |
+| 109 | `GET` | [`/reports/products`](#17-dashboard-reports-audit-notifications) | Product performance | manager · finance · admin |
+| 110 | `GET` | [`/audit-log`](#17-dashboard-reports-audit-notifications) | Append-only trail, filtered | manager · finance · admin |
+| 111 | `GET` | [`/notifications`](#17-dashboard-reports-audit-notifications) | Own notifications | staff |
+| 112 | `PATCH` | [`/notifications/read-all`](#17-dashboard-reports-audit-notifications) | Mark all read | staff |
+| 113 | `PATCH` | [`/notifications/:id/read`](#17-dashboard-reports-audit-notifications) | Mark one read | staff |
+
+**Total: 113 endpoints.**
+
+---
+
+## 24. Data model
+
+31 tables. The diagrams below render directly on GitHub; the full DBML at the end can
+be pasted into [dbdiagram.io](https://dbdiagram.io/d) for an interactive view.
+
+Three conventions run through all of it:
+
+- **Every primary key is a uuid.** Rows a human reads aloud additionally carry a short
+  `reference` (`Q-1042`, `INV-2031`, `DF-CMC827`) — unique and indexed, but never used
+  as a foreign key, so it can be reformatted later without touching a relationship.
+- **Money is `numeric(14,2)` in major units; percentages are `numeric(5,2)`.**
+  Postgres returns these as strings, and every read goes through one conversion helper
+  rather than being re-derived at each call site.
+- **Nothing is hard-deleted.** Rows deactivate, so a historical quotation keeps
+  resolving its products, warehouses and plans.
+
+### 24.1 Identity and access
+
+```mermaid
+erDiagram
+    teams ||--o{ users : "assigned by admin, never at signup"
+    users ||--o{ notifications : receives
+    customers ||--o{ quotations : "is quoted"
+    users ||--o{ quotations : owns
+
+    teams {
+        uuid id PK
+        varchar name UK
+        boolean active
+    }
+    users {
+        uuid id PK
+        varchar email UK
+        text password_hash
+        role role "default sales_rep"
+        uuid team_id FK "null = Unassigned"
+        timestamptz email_verified_at
+        boolean active
+    }
+    customers {
+        uuid id PK
+        varchar customer_id UK "DF-CMC827"
+        varchar email UK
+        text password_hash
+        tier tier "default bronze"
+        varchar currency
+        varchar industry
+    }
+    refresh_tokens {
+        uuid id PK
+        varchar token_hash UK "SHA-256 only"
+        uuid subject_id "polymorphic, no FK"
+        subject_kind subject_kind
+        timestamptz revoked_at
+    }
+```
+
+`refresh_tokens.subject_id` is polymorphic across `users` and `customers`, so it carries
+no foreign key and is always paired with `subject_kind`. Only the SHA-256 hash is
+stored — a database leak hands out no working sessions.
+
+### 24.2 Catalog, pricing and inventory
+
+```mermaid
+erDiagram
+    products ||--o{ product_variants : has
+    products ||--o{ price_lists : "priced per tier"
+    products ||--o{ warehouse_stock : "stocked as"
+    warehouses ||--o{ warehouse_stock : holds
+    products ||--o{ subscription_plan_products : "may attach"
+    subscription_plans ||--o{ subscription_plan_products : covers
+    products ||--o{ upsell_rules : "triggers or is suggested"
+
+    products {
+        uuid id PK
+        varchar sku UK
+        category category
+        numeric base_price
+        numeric cost_price "INTERNAL ONLY"
+        numeric tax_pct
+        boolean active
+    }
+    price_lists {
+        uuid id PK
+        uuid product_id FK
+        tier tier
+        varchar currency
+        numeric price
+    }
+    warehouses {
+        uuid id PK
+        varchar name UK
+        numeric shipping_cost_weight "split tie-breaker"
+        numeric base_ship_cost
+        integer replenish_threshold
+        integer replenish_qty
+        integer replenish_lead_days
+    }
+    warehouse_stock {
+        uuid warehouse_id PK_FK
+        uuid product_id PK_FK
+        integer qty
+    }
+    subscription_plans {
+        uuid id PK
+        cadence cadence
+        proration_rule proration_rule
+        cancellation_rule cancellation_rule
+        integer billing_day_of_cycle "max 28"
+    }
+    upsell_rules {
+        uuid id PK
+        uuid trigger_product_id FK
+        uuid suggested_product_id FK
+        numeric co_purchase_score
+        boolean promoted
+        numeric min_margin_pct "below this, dropped not demoted"
+    }
+```
+
+`price_lists` is unique on `(product_id, tier, currency)`. Tier pricing is **not** a
+discount — it is the starting price for that customer, and a rep's discount applies on
+top and is measured against the ceilings.
+
+### 24.3 Governance configuration
+
+```mermaid
+erDiagram
+    tier_config {
+        tier tier PK
+        numeric max_discount_pct "bronze 5, silver 10, gold 15"
+    }
+    category_config {
+        category category PK
+        numeric max_discount_pct "hardware 15, service 10, sub 12, acc 20"
+    }
+    approval_rules {
+        uuid id PK
+        numeric min_score
+        numeric max_score "null = unbounded"
+        text_array approvers "empty = auto-approve"
+        numeric single_line_trip
+        integer sort_order
+    }
+    dashboard_config {
+        integer id PK "singleton, CHECK id = 1"
+        integer stall_threshold_days
+        numeric anomaly_sensitivity
+        integer approval_sla_hours
+    }
+```
+
+Four standalone tables with no foreign keys — they are policy, read by the risk engine
+on every score. A line's binding ceiling is `MIN(category_config, tier_config)`; the
+stricter of the two wins.
+
+### 24.4 The quotation lifecycle
+
+This is the core of the platform.
+
+```mermaid
+erDiagram
+    customers ||--o{ quotations : for
+    users ||--o{ quotations : owns
+    quotations ||--o{ quotation_lines : contains
+    quotations ||--o{ approval_steps : "routed through"
+    quotation_lines ||--o{ line_comments : "discussed on"
+    products ||--o{ quotation_lines : "snapshotted into"
+    subscription_plans ||--o{ quotation_lines : "makes recurring"
+    users ||--o{ approval_steps : reviews
+
+    quotations {
+        uuid id PK
+        varchar reference UK "Q-1042"
+        uuid customer_id FK
+        uuid owner_id FK
+        tier tier "snapshot at create"
+        stage stage
+        numeric order_discount_pct
+        negotiation_status negotiation_status
+        boolean awaiting_seller
+        numeric counter_discount_pct
+        text internal_notes "never in a portal response"
+        timestamptz last_activity_at "drives the stalled alert"
+    }
+    quotation_lines {
+        uuid id PK
+        uuid quotation_id FK
+        uuid product_id FK
+        varchar product_name "snapshot"
+        category category "snapshot"
+        integer qty
+        numeric unit_price "server-resolved"
+        numeric cost_price "snapshot, internal"
+        numeric discount_pct
+        boolean is_subscription
+        uuid plan_id FK
+        subscription_status subscription_status
+    }
+    approval_steps {
+        uuid id PK
+        uuid quotation_id FK
+        role role
+        approval_status status
+        integer step_order UK
+        uuid reviewer_id FK
+        text reason
+    }
+    line_comments {
+        uuid id PK
+        uuid line_id FK
+        varchar author_name
+        subject_kind side "collapses to seller/customer"
+        text message
+    }
+```
+
+**Totals and risk are not columns.** Both are computed on read — a stored total can
+never disagree with the table beside it, and a ceiling change must not silently
+invalidate an approval already given.
+
+`approval_steps` is unique on `(quotation_id, step_order)`: only the first row still
+`pending` is actionable, so Finance cannot act before the Sales Manager. A *return*
+deletes every row, so a resubmission re-scores from scratch.
+
+### 24.5 Fulfillment
+
+```mermaid
+erDiagram
+    quotations ||--o| fulfillment_plans : "accepted or overridden"
+    quotations ||--o{ fulfillment_allocations : "split across"
+    quotations ||--o{ backorders : "short by"
+    quotation_lines ||--o{ fulfillment_allocations : allocates
+    quotation_lines ||--o{ backorders : "awaits stock"
+    warehouses ||--o{ fulfillment_allocations : "ships from"
+
+    fulfillment_plans {
+        uuid quotation_id PK_FK
+        boolean is_override
+        timestamptz accepted_at "null = still recomputed live"
+        numeric estimated_cost
+        integer shipment_count
+    }
+    fulfillment_allocations {
+        uuid id PK
+        uuid line_id FK
+        uuid warehouse_id FK
+        integer qty
+    }
+    backorders {
+        uuid id PK
+        uuid line_id FK
+        uuid product_id FK
+        integer qty
+        date eta_date "shortest lead time, or null"
+        timestamptz resolved_at
+    }
+```
+
+The split is recomputed from live stock on every read **unless** `accepted_at` is set —
+a rep's deliberate decision is never silently discarded by a recompute.
+
+### 24.6 Billing, invoices and payments
+
+```mermaid
+erDiagram
+    quotations ||--o{ billing_occurrences : "recurring stream"
+    quotations ||--o{ credit_notes : "refunds against"
+    quotations ||--o{ invoices : "one-time stream"
+    quotation_lines ||--o{ billing_occurrences : bills
+    invoices ||--o{ invoice_lines : "snapshots"
+    invoices ||--o{ payments : "settled by"
+    customers ||--o{ invoices : owes
+    users ||--o{ payments : records
+
+    billing_occurrences {
+        uuid id PK
+        uuid line_id FK
+        date occurs_on
+        numeric amount
+        occurrence_status status
+        integer cycle_index UK
+    }
+    invoices {
+        uuid id PK
+        varchar reference UK "INV-2031"
+        uuid quotation_id FK
+        invoice_status status
+        numeric subtotal
+        numeric tax
+        numeric total
+        date due_date
+    }
+    invoice_lines {
+        uuid id PK
+        uuid invoice_id FK
+        varchar product_name "snapshot at build"
+        numeric total
+    }
+    payments {
+        uuid id PK
+        uuid invoice_id FK
+        numeric amount
+        payment_method method
+        uuid recorded_by_id FK "finance or admin only"
+        varchar idempotency_key UK
+    }
+    credit_notes {
+        uuid id PK
+        varchar reference UK "CN-0007"
+        numeric amount
+        credit_note_type type
+        text reason
+    }
+```
+
+**The two streams never merge.** One-time lines produce an invoice; recurring lines
+produce their own schedule.
+
+`invoices` has no `amount_paid` or `balance_remaining` column — both are derived from
+`payments` on every read. A stored balance that drifts from its ledger is worse than no
+balance at all. The unique `idempotency_key` is what stops a double-click recording a
+payment twice.
+
+### 24.7 Observability
+
+```mermaid
+erDiagram
+    quotations ||--o{ alert_states : "flagged by"
+    users ||--o{ notifications : receives
+
+    audit_log {
+        uuid id PK
+        varchar entity_type
+        uuid entity_id
+        varchar entity_ref "Q-1042, readable after a delete"
+        varchar action
+        uuid actor_id
+        actor_role actor_role "incl. customer and system"
+        text reason
+        jsonb meta
+    }
+    alert_states {
+        varchar alert_key PK "disc-<quotationId>"
+        uuid quotation_id FK
+        alert_type type
+        boolean escalated
+        timestamptz nudged_at
+    }
+    notifications {
+        uuid id PK
+        uuid user_id FK
+        notification_type type
+        varchar entity_ref
+        varchar view "frontend builds its own path"
+        boolean read
+    }
+```
+
+`audit_log` is **append-only** — no update or delete endpoint exists, because an
+editable trail proves nothing. It carries no foreign key to the entity it describes:
+the row must survive the thing it is about, which is why `entity_ref` is stored
+alongside `entity_id`.
+
+`alert_states` stores only the operator actions taken against an alert. The alerts
+themselves are computed on read from live data and the configured thresholds — they are
+not a queue that has to be kept in sync.
+
+### 24.8 Full DBML source
+
+Paste into [dbdiagram.io](https://dbdiagram.io/d) for an interactive, laid-out diagram.
+
+<details>
+<summary><strong>Show the complete DBML (31 tables, 20 enums)</strong></summary>
+
+```dbml
+// =============================================================================
+//  DealFlow360 — Data Model
+//  Team_413 · Odoo Hackathon 2026
+//
+//  Render at https://dbdiagram.io/d  (paste this file)
+//
+//  Conventions
+//  -----------
+//  * Every primary key is a uuid. Rows that a human reads out loud additionally
+//    carry a short `reference` (Q-1042, INV-2031, DF-CMC827) — unique, indexed,
+//    and never used as a foreign key.
+//  * Money is numeric(14,2) in major units. Percentages are numeric(5,2).
+//  * `created_at` / `updated_at` are timestamptz, defaulted server-side.
+//  * Nothing is hard-deleted. Rows deactivate (`active = false`) so historical
+//    quotations keep resolving their products, warehouses and plans.
+// =============================================================================
+
+
+// =============================================================================
+//  ENUMS
+// =============================================================================
+
+Enum role {
+  sales_rep
+  sales_manager
+  finance
+  admin
+}
+
+Enum tier {
+  bronze
+  silver
+  gold
+}
+
+Enum subject_kind {
+  staff
+  customer
+}
+
+Enum category {
+  hardware
+  service
+  subscription
+  accessories
+}
+
+Enum stage {
+  draft
+  sent
+  under_negotiation
+  pending_approval
+  approved
+  fulfillment
+  billed
+  confirmed
+  lost
+}
+
+Enum approval_status {
+  pending
+  approved
+  rejected
+  returned
+  skipped
+}
+
+Enum negotiation_status {
+  none
+  sent
+  under_negotiation
+  pending_reapproval
+  confirmed
+}
+
+Enum invoice_status {
+  draft
+  sent
+  partially_paid
+  paid
+}
+
+Enum payment_method {
+  card
+  bank_transfer
+  cheque
+  upi
+  other
+}
+
+Enum cadence {
+  monthly
+  quarterly
+  yearly
+}
+
+Enum proration_rule {
+  daily_prorate
+  full_period
+  next_cycle_adjust
+}
+
+Enum cancellation_rule {
+  refund_unused
+  no_refund
+  credit_note_only
+}
+
+Enum occurrence_status {
+  scheduled
+  invoiced
+  paid
+  refunded
+  cancelled
+}
+
+Enum subscription_status {
+  active
+  cancelled
+}
+
+Enum backorder_policy {
+  ship_available
+  hold_until_complete
+}
+
+Enum credit_note_type {
+  refund
+  credit_note
+}
+
+Enum alert_type {
+  stalled
+  discount_anomaly
+  delivery_slippage
+  approval_bottleneck
+}
+
+Enum severity {
+  low
+  medium
+  high
+}
+
+Enum notification_type {
+  approval_request
+  approval_result
+  negotiation
+  nudge
+  escalation
+  system
+}
+
+// Audit actors include two non-user principals: the portal customer, and the
+// server itself for auto-approvals and scheduled jobs.
+Enum actor_role {
+  sales_rep
+  sales_manager
+  finance
+  admin
+  customer
+  system
+}
+
+
+// =============================================================================
+//  IDENTITY
+// =============================================================================
+
+Table teams {
+  id           uuid       [pk, default: `gen_random_uuid()`]
+  name         varchar(80) [not null, unique]
+  active       boolean    [not null, default: true]
+  created_at   timestamptz [not null, default: `now()`]
+
+  Note: '''
+    Sales territories. Seeded with three rows; there is no create endpoint —
+    the brief lists products, price lists, tiers, warehouses and plans as the
+    admin's configuration surface, and teams are not on it.
+
+    A rep never picks their own team. `users.team_id` starts null and an admin
+    or manager assigns it from the staff directory.
+  '''
+}
+
+Table users {
+  id                uuid       [pk, default: `gen_random_uuid()`]
+  name              varchar(120) [not null]
+  email             varchar(255) [not null, unique]
+  password_hash     text       [not null]
+  role              role       [not null, default: 'sales_rep']
+  team_id           uuid       [ref: > teams.id, note: 'null = Unassigned']
+  email_verified_at timestamptz
+  active            boolean    [not null, default: true]
+  created_at        timestamptz [not null, default: `now()`]
+  updated_at        timestamptz [not null, default: `now()`]
+
+  Note: '''
+    Internal staff. Everyone self-registers as `sales_rep`; only an admin
+    promotes. There is no create-user endpoint — the first admin is seeded
+    from the backend, which is what keeps `admin` unreachable from outside.
+  '''
+}
+
+Table customers {
+  id                uuid       [pk, default: `gen_random_uuid()`]
+  customer_id       varchar(12) [not null, unique, note: 'DF-CMC827']
+  name              varchar(200) [not null]
+  contact_name      varchar(120)
+  email             varchar(255) [not null, unique]
+  password_hash     text       [not null]
+  tier              tier       [not null, default: 'bronze']
+  currency          varchar(3) [not null, default: 'INR']
+  industry          varchar(80)
+  email_verified_at timestamptz
+  active            boolean    [not null, default: true]
+  created_at        timestamptz [not null, default: `now()`]
+  updated_at        timestamptz [not null, default: `now()`]
+
+  Note: '''
+    Portal accounts. Tier is never self-selected at signup — it decides
+    pricing, so only an admin or sales_manager moves it.
+  '''
+}
+
+Table refresh_tokens {
+  id           uuid       [pk, default: `gen_random_uuid()`]
+  token_hash   varchar(64) [not null, unique]
+  subject_id   uuid       [not null]
+  subject_kind subject_kind [not null]
+  expires_at   timestamptz [not null]
+  revoked_at   timestamptz
+  user_agent   varchar(255)
+  ip           varchar(45)
+  created_at   timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (subject_id, subject_kind)
+    expires_at
+  }
+
+  Note: '''
+    Only the SHA-256 hash is stored, so a database leak hands out no working
+    sessions. `subject_id` is polymorphic across users and customers — hence
+    no FK — and is always paired with `subject_kind`.
+  '''
+}
+
+
+// =============================================================================
+//  CATALOG & PRICING
+// =============================================================================
+
+Table products {
+  id          uuid       [pk, default: `gen_random_uuid()`]
+  name        varchar(200) [not null]
+  sku         varchar(40) [not null, unique]
+  category    category   [not null]
+  base_price  numeric(14,2) [not null]
+  cost_price  numeric(14,2) [not null, note: 'INTERNAL ONLY — never on a /customer/* response']
+  unit        varchar(24) [not null, default: 'unit']
+  tax_pct     numeric(5,2) [not null, default: 0]
+  description text
+  active      boolean    [not null, default: true]
+  created_at  timestamptz [not null, default: `now()`]
+  updated_at  timestamptz [not null, default: `now()`]
+}
+
+Table product_variants {
+  id          uuid       [pk, default: `gen_random_uuid()`]
+  product_id  uuid       [not null, ref: > products.id]
+  attribute   varchar(60) [not null, note: 'Memory, Size, Pack']
+  value       varchar(60) [not null, note: '16GB, 32GB']
+  extra_price numeric(14,2) [not null, default: 0]
+
+  Indexes {
+    (product_id, attribute, value) [unique]
+  }
+}
+
+Table price_lists {
+  id         uuid       [pk, default: `gen_random_uuid()`]
+  product_id uuid       [not null, ref: > products.id]
+  tier       tier       [not null]
+  currency   varchar(3) [not null]
+  price      numeric(14,2) [not null]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (product_id, tier, currency) [unique]
+  }
+
+  Note: '''
+    Tier pricing is NOT a discount. It is the starting price for that customer,
+    and a rep's discount applies on top of it and is measured against the
+    ceilings. Rows are generated on product create (bronze = list,
+    silver -4%, gold -8%, rounded to 50) and editable afterwards.
+  '''
+}
+
+
+// =============================================================================
+//  GOVERNANCE CONFIGURATION
+// =============================================================================
+
+Table tier_config {
+  tier             tier       [pk]
+  max_discount_pct numeric(5,2) [not null]
+  updated_at       timestamptz [not null, default: `now()`]
+
+  Note: 'Seeded bronze 5, silver 10, gold 15 — the values named in the brief.'
+}
+
+Table category_config {
+  category         category   [pk]
+  max_discount_pct numeric(5,2) [not null]
+  updated_at       timestamptz [not null, default: `now()`]
+
+  Note: '''
+    The other half of the binding ceiling. Each line is measured against
+    MIN(category ceiling, tier ceiling) — the stricter of the two.
+    Seeded hardware 15, service 10, subscription 12, accessories 20.
+  '''
+}
+
+Table approval_rules {
+  id               uuid       [pk, default: `gen_random_uuid()`]
+  min_score        numeric(6,2) [not null]
+  max_score        numeric(6,2) [note: 'null = unbounded']
+  approvers        text[]     [not null, note: 'empty array = auto-approve']
+  single_line_trip numeric(6,2) [note: 'force-escalate when any one line is this far over']
+  note             text
+  sort_order       integer    [not null]
+
+  Note: '''
+    A rule matches when score > min_score AND score <= coalesce(max_score, inf),
+    OR when any single line is more than `single_line_trip` points over its own
+    ceiling. When several match, the one demanding MORE approvers wins —
+    routing must never step down.
+  '''
+}
+
+Table dashboard_config {
+  id                   integer    [pk, default: 1, note: 'singleton, CHECK (id = 1)']
+  stall_threshold_days integer    [not null, default: 5]
+  anomaly_sensitivity  numeric(4,2) [not null, default: 1.8]
+  approval_sla_hours   integer    [not null, default: 24]
+  updated_at           timestamptz [not null, default: `now()`]
+}
+
+
+// =============================================================================
+//  WAREHOUSES
+// =============================================================================
+
+Table warehouses {
+  id                   uuid       [pk, default: `gen_random_uuid()`]
+  name                 varchar(120) [not null, unique]
+  location             varchar(200)
+  shipping_cost_weight numeric(6,2) [not null, default: 1.0, note: 'higher = prefer shipping elsewhere']
+  base_ship_cost       numeric(14,2) [not null, default: 0]
+  replenish_threshold  integer    [not null, default: 0]
+  replenish_qty        integer    [not null, default: 0]
+  replenish_lead_days  integer    [not null, default: 0]
+  active               boolean    [not null, default: true]
+  created_at           timestamptz [not null, default: `now()`]
+}
+
+Table warehouse_stock {
+  warehouse_id uuid       [not null, ref: > warehouses.id]
+  product_id   uuid       [not null, ref: > products.id]
+  qty          integer    [not null, default: 0]
+  updated_at   timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (warehouse_id, product_id) [pk]
+  }
+}
+
+
+// =============================================================================
+//  SUBSCRIPTIONS & UPSELL
+// =============================================================================
+
+Table subscription_plans {
+  id                    uuid       [pk, default: `gen_random_uuid()`]
+  name                  varchar(160) [not null]
+  cadence               cadence    [not null]
+  proration_rule        proration_rule [not null, default: 'daily_prorate']
+  cancellation_rule     cancellation_rule [not null, default: 'refund_unused']
+  min_commitment_months integer    [not null, default: 0]
+  trial_days            integer    [not null, default: 0]
+  billing_day_of_cycle  integer    [not null, default: 1]
+  active                boolean    [not null, default: true]
+  created_at            timestamptz [not null, default: `now()`]
+}
+
+Table subscription_plan_products {
+  plan_id    uuid [not null, ref: > subscription_plans.id]
+  product_id uuid [not null, ref: > products.id]
+
+  Indexes {
+    (plan_id, product_id) [pk]
+  }
+
+  Note: 'Which products a plan may be attached to. Drives default plan resolution.'
+}
+
+Table upsell_rules {
+  id                   uuid       [pk, default: `gen_random_uuid()`]
+  trigger_product_id   uuid       [not null, ref: > products.id]
+  suggested_product_id uuid       [not null, ref: > products.id]
+  co_purchase_score    numeric(6,2) [not null, default: 0]
+  promoted             boolean    [not null, default: false]
+  min_margin_pct       numeric(5,2) [not null, default: 0]
+  active               boolean    [not null, default: true]
+  created_at           timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (trigger_product_id, suggested_product_id) [unique]
+  }
+
+  Note: '''
+    Ranking: co_purchase_score + (promoted ? 25 : 0) + margin_pct * 0.3.
+    A suggestion whose margin at the customer's tier price falls below
+    `min_margin_pct` is DROPPED, not ranked low — the panel must never nudge
+    a rep toward a margin-destructive add-on.
+  '''
+}
+
+
+// =============================================================================
+//  QUOTATIONS
+// =============================================================================
+
+Table quotations {
+  id                     uuid       [pk, default: `gen_random_uuid()`]
+  reference              varchar(16) [not null, unique, note: 'Q-1042']
+  customer_id            uuid       [not null, ref: > customers.id]
+  owner_id               uuid       [not null, ref: > users.id]
+  created_by_id          uuid       [not null, ref: > users.id]
+  tier                   tier       [not null, note: 'snapshotted from the customer at create']
+  currency               varchar(3) [not null]
+  stage                  stage      [not null, default: 'draft']
+  order_discount_pct     numeric(5,2) [not null, default: 0]
+  negotiation_status     negotiation_status [not null, default: 'none']
+  awaiting_seller        boolean    [not null, default: false]
+  shared_at              timestamptz
+  counter_discount_pct   numeric(5,2)
+  counter_justification  text
+  dismissed_suggestions  text[]     [not null, default: `'{}'`]
+  promised_delivery_date date
+  valid_until            date
+  internal_notes         text       [note: 'NEVER on a /customer/* response']
+  customer_terms         text
+  lost_reason            text
+  backorder_policy       backorder_policy [not null, default: 'ship_available']
+  last_activity_at       timestamptz [not null, default: `now()`]
+  created_at             timestamptz [not null, default: `now()`]
+  updated_at             timestamptz [not null, default: `now()`]
+
+  Indexes {
+    customer_id
+    owner_id
+    stage
+    last_activity_at
+  }
+
+  Note: '''
+    Totals, tax, margin and effective discount are NOT stored. They are derived
+    from the lines on read, so a stored total can never disagree with the table
+    beside it. Risk is likewise computed, never persisted — a ceiling change
+    must not silently invalidate an approval someone already gave.
+
+    `last_activity_at` drives the stalled-deal alert and is bumped on every
+    mutation, including customer comments.
+  '''
+}
+
+Table quotation_lines {
+  id                      uuid       [pk, default: `gen_random_uuid()`]
+  quotation_id            uuid       [not null, ref: > quotations.id]
+  product_id              uuid       [not null, ref: > products.id]
+  product_name            varchar(200) [not null, note: 'snapshot — survives a product rename']
+  category                category   [not null]
+  qty                     integer    [not null, default: 1]
+  unit_price              numeric(14,2) [not null, note: 'resolved server-side from price_lists']
+  cost_price              numeric(14,2) [not null]
+  discount_pct            numeric(5,2) [not null, default: 0]
+  tax_pct                 numeric(5,2) [not null, default: 0]
+  is_subscription         boolean    [not null, default: false]
+  plan_id                 uuid       [ref: > subscription_plans.id]
+  subscription_start_date date
+  subscription_status     subscription_status [not null, default: 'active']
+  position                integer    [not null, default: 0]
+  created_at              timestamptz [not null, default: `now()`]
+
+  Indexes {
+    quotation_id
+  }
+
+  Note: '''
+    Price, cost, category and tax are all resolved by the server from the
+    product and the customer's tier price list. A client-supplied price is
+    never trusted. The snapshot means a later price change does not silently
+    rewrite an approved quotation.
+  '''
+}
+
+Table line_comments {
+  id           uuid       [pk, default: `gen_random_uuid()`]
+  line_id      uuid       [not null, ref: > quotation_lines.id]
+  author_name  varchar(120) [not null]
+  author_id    uuid       [note: 'staff or customer id; null for system']
+  side         subject_kind [not null, note: 'collapses to seller/customer in the portal']
+  message      text       [not null]
+  created_at   timestamptz [not null, default: `now()`]
+
+  Indexes {
+    line_id
+  }
+
+  Note: '''
+    `side` is what the portal shows. A customer never learns whether the person
+    replying is a rep, a manager or finance — the internal role names are not
+    exposed.
+  '''
+}
+
+Table approval_steps {
+  id            uuid       [pk, default: `gen_random_uuid()`]
+  quotation_id  uuid       [not null, ref: > quotations.id]
+  role          role       [not null]
+  status        approval_status [not null, default: 'pending']
+  step_order    integer    [not null]
+  reviewer_id   uuid       [ref: > users.id]
+  reviewer_name varchar(120)
+  reason        text
+  acted_at      timestamptz
+  created_at    timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (quotation_id, step_order) [unique]
+    status
+  }
+
+  Note: '''
+    Strictly ordered: only the first row still `pending` is actionable, so
+    Finance can never act before the Sales Manager. A "return for revision"
+    deletes every row — a resubmission re-scores from scratch, so a worse
+    quote cannot ride a stale approval.
+  '''
+}
+
+
+// =============================================================================
+//  FULFILLMENT
+// =============================================================================
+
+Table fulfillment_plans {
+  quotation_id     uuid       [pk, ref: - quotations.id]
+  is_override      boolean    [not null, default: false]
+  accepted_at      timestamptz
+  estimated_cost   numeric(14,2) [not null, default: 0]
+  shipment_count   integer    [not null, default: 0]
+  created_at       timestamptz [not null, default: `now()`]
+  updated_at       timestamptz [not null, default: `now()`]
+
+  Note: '''
+    Only persisted once accepted or overridden. Until then the split is
+    recomputed from live stock on every read — but a rep's manual decision is
+    never silently discarded by a recompute.
+  '''
+}
+
+Table fulfillment_allocations {
+  id           uuid    [pk, default: `gen_random_uuid()`]
+  quotation_id uuid    [not null, ref: > quotations.id]
+  line_id      uuid    [not null, ref: > quotation_lines.id]
+  warehouse_id uuid    [not null, ref: > warehouses.id]
+  qty          integer [not null]
+
+  Indexes {
+    quotation_id
+  }
+}
+
+Table backorders {
+  id           uuid    [pk, default: `gen_random_uuid()`]
+  quotation_id uuid    [not null, ref: > quotations.id]
+  line_id      uuid    [not null, ref: > quotation_lines.id]
+  product_id   uuid    [not null, ref: > products.id]
+  qty          integer [not null]
+  eta_date     date    [note: 'shortest replenish_lead_days among warehouses stocking it']
+  resolved_at  timestamptz
+
+  Indexes {
+    quotation_id
+  }
+}
+
+
+// =============================================================================
+//  BILLING
+// =============================================================================
+
+Table billing_occurrences {
+  id           uuid       [pk, default: `gen_random_uuid()`]
+  quotation_id uuid       [not null, ref: > quotations.id]
+  line_id      uuid       [not null, ref: > quotation_lines.id]
+  occurs_on    date       [not null]
+  amount       numeric(14,2) [not null]
+  status       occurrence_status [not null, default: 'scheduled']
+  cycle_index  integer    [not null]
+
+  Indexes {
+    (line_id, cycle_index) [unique]
+    quotation_id
+  }
+
+  Note: '''
+    The recurring stream. One-time lines produce an invoice instead; the two
+    never merge — that separation is the point of hybrid billing.
+    12 forward occurrences are kept per active recurring line.
+  '''
+}
+
+Table credit_notes {
+  id            uuid       [pk, default: `gen_random_uuid()`]
+  reference     varchar(16) [not null, unique, note: 'CN-0007']
+  quotation_id  uuid       [not null, ref: > quotations.id]
+  line_id       uuid       [ref: > quotation_lines.id]
+  amount        numeric(14,2) [not null]
+  type          credit_note_type [not null]
+  reason        text       [not null]
+  created_by_id uuid       [not null, ref: > users.id]
+  created_at    timestamptz [not null, default: `now()`]
+
+  Indexes {
+    quotation_id
+  }
+
+  Note: 'Issued automatically on a negative proration or a cancellation, or manually by finance.'
+}
+
+
+// =============================================================================
+//  INVOICES & PAYMENTS
+// =============================================================================
+
+Table invoices {
+  id           uuid       [pk, default: `gen_random_uuid()`]
+  reference    varchar(16) [not null, unique, note: 'INV-2031']
+  quotation_id uuid       [not null, ref: > quotations.id]
+  customer_id  uuid       [not null, ref: > customers.id]
+  currency     varchar(3) [not null]
+  status       invoice_status [not null, default: 'draft']
+  subtotal     numeric(14,2) [not null, default: 0]
+  tax          numeric(14,2) [not null, default: 0]
+  total        numeric(14,2) [not null, default: 0]
+  issue_date   date
+  due_date     date
+  sent_at      timestamptz
+  created_at   timestamptz [not null, default: `now()`]
+  updated_at   timestamptz [not null, default: `now()`]
+
+  Indexes {
+    quotation_id
+    customer_id
+    status
+  }
+
+  Note: '''
+    One-time lines only. `amount_paid` and `balance_remaining` are derived from
+    `payments`, never stored — a stored balance that drifts from the payment
+    ledger is worse than no balance at all.
+  '''
+}
+
+Table invoice_lines {
+  id           uuid       [pk, default: `gen_random_uuid()`]
+  invoice_id   uuid       [not null, ref: > invoices.id]
+  line_id      uuid       [not null, ref: > quotation_lines.id]
+  product_name varchar(200) [not null]
+  qty          integer    [not null]
+  unit_price   numeric(14,2) [not null]
+  discount_pct numeric(5,2) [not null]
+  tax_pct      numeric(5,2) [not null]
+  total        numeric(14,2) [not null]
+
+  Indexes {
+    invoice_id
+  }
+
+  Note: 'Snapshot at build time. An invoice is a legal record; it does not follow later line edits.'
+}
+
+Table payments {
+  id               uuid       [pk, default: `gen_random_uuid()`]
+  invoice_id       uuid       [not null, ref: > invoices.id]
+  amount           numeric(14,2) [not null]
+  method           payment_method [not null]
+  reference        varchar(120)
+  paid_on          date       [not null]
+  notes            text
+  recorded_by_id   uuid       [not null, ref: > users.id]
+  recorded_by_name varchar(120) [not null]
+  idempotency_key  varchar(120) [unique]
+  created_at       timestamptz [not null, default: `now()`]
+
+  Indexes {
+    invoice_id
+  }
+
+  Note: '''
+    finance / admin only — whoever sold the deal must not be the person who
+    confirms the cash arrived. The unique `idempotency_key` is what stops a
+    double-click recording a payment twice.
+  '''
+}
+
+
+// =============================================================================
+//  OBSERVABILITY
+// =============================================================================
+
+Table audit_log {
+  id          uuid       [pk, default: `gen_random_uuid()`]
+  entity_type varchar(40) [not null, note: 'quotation, invoice, product, config, ...']
+  entity_id   uuid
+  entity_ref  varchar(16) [note: 'Q-1042 — so the trail stays readable after a delete']
+  action      varchar(160) [not null]
+  actor_id    uuid
+  actor_name  varchar(120) [not null]
+  actor_role  actor_role [not null]
+  reason      text
+  meta        jsonb
+  created_at  timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (entity_type, entity_id)
+    actor_id
+    created_at
+  }
+
+  Note: '''
+    APPEND-ONLY. There is no update or delete endpoint, ever — an editable
+    audit trail is worthless. The actor is always the server's own view of who
+    called; a client-supplied actor id is never trusted.
+  '''
+}
+
+Table alert_states {
+  alert_key     varchar(80) [pk, note: 'stable synthetic key, e.g. disc-<quotationId>']
+  quotation_id  uuid       [not null, ref: > quotations.id]
+  type          alert_type [not null]
+  escalated     boolean    [not null, default: false]
+  escalated_at  timestamptz
+  nudged_at     timestamptz
+
+  Note: '''
+    Alerts themselves are COMPUTED on read from live data and thresholds —
+    they are not a queue. Only the operator actions taken against one (nudged,
+    escalated) need to survive, so only those are stored.
+  '''
+}
+
+Table notifications {
+  id          uuid       [pk, default: `gen_random_uuid()`]
+  user_id     uuid       [not null, ref: > users.id]
+  type        notification_type [not null]
+  title       varchar(200) [not null]
+  body        text
+  entity_type varchar(40)
+  entity_id   uuid
+  entity_ref  varchar(16)
+  view        varchar(40) [note: 'approval | negotiation | billing — the frontend builds its own path']
+  read        boolean    [not null, default: false]
+  created_at  timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (user_id, read)
+    created_at
+  }
+
+  Note: 'In-app notifications stand in for the emails a production deployment would send.'
+}
+```
+
+</details>
 
 ---
 

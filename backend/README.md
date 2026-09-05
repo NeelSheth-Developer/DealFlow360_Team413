@@ -97,17 +97,17 @@ src/
   app.ts        Express app assembly
   server.ts     bootstrap + graceful shutdown
 
-docs/           API-REFERENCE.md — every endpoint, in one file
+docs/           API-REFERENCE.md — every endpoint and the data model, in one file
 postman/        importable collection covering all 113 endpoints
 public/         dev-only API tester, served at / when NODE_ENV != production
 drizzle/        generated migrations
-schema.dbml     the data model, renderable at dbdiagram.io
 ```
 
 ## API
 
 **113 endpoints** across 17 modules. The complete reference — request and response
-shapes, roles, error codes — is [`docs/API-REFERENCE.md`](docs/API-REFERENCE.md).
+shapes, roles, error codes, and the 31-table data model as ER diagrams plus the full
+DBML — is [`docs/API-REFERENCE.md`](docs/API-REFERENCE.md).
 
 | Area                | Endpoints | Area                    | Endpoints |
 | ------------------- | --------: | ----------------------- | --------: |
