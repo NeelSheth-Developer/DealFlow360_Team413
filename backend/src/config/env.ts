@@ -108,10 +108,24 @@ export const isProduction = env.NODE_ENV === 'production';
 /** Both halves present, so the Gmail fallback can actually authenticate. */
 export const gmailConfigured = Boolean(env.GMAIL_USER && env.GMAIL_APP_PASSWORD);
 
+/**
+ * A misconfigured optional feature must not stop the API from serving.
+ *
+ * This used to exit(1), which meant a deploy with EMAIL_TRANSPORT=gmail but no app
+ * password would refuse to boot at all — taking down every endpoint over a setting
+ * that affects only mail. It warns loudly and falls back to Resend instead; email is
+ * worth a broken deploy far less than the rest of the platform is.
+ */
 if (env.EMAIL_TRANSPORT === 'gmail' && !gmailConfigured) {
-  process.stderr.write('\nEMAIL_TRANSPORT=gmail requires GMAIL_USER and GMAIL_APP_PASSWORD.\n');
-  process.exit(1);
+  process.stderr.write(
+    '\nWARNING: EMAIL_TRANSPORT=gmail but GMAIL_APP_PASSWORD is not set.\n' +
+      '         Falling back to Resend. Set the app password to enable Gmail.\n\n',
+  );
 }
+
+/** The transport actually usable, after accounting for missing credentials. */
+export const emailTransport: 'resend' | 'gmail' =
+  env.EMAIL_TRANSPORT === 'gmail' && gmailConfigured ? 'gmail' : 'resend';
 
 /** All three credentials present. Checked once, so no caller has to re-derive it. */
 export const cloudinaryConfigured = Boolean(

@@ -1,6 +1,6 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { Resend } from 'resend';
-import { env, gmailConfigured, isProduction } from '../config/env.js';
+import { emailTransport, env, gmailConfigured, isProduction } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import type { OtpPurpose } from './otp-purpose.js';
 
@@ -19,6 +19,21 @@ function gmailTransport(): Transporter {
   gmail ??= nodemailer.createTransport({
     service: 'gmail',
     auth: { user: env.GMAIL_USER, pass: env.GMAIL_APP_PASSWORD },
+    /**
+     * Explicit timeouts, because the default is effectively "wait".
+     *
+     * Most hosting platforms block or throttle outbound SMTP to stop spam. On one of
+     * those, a connection to Gmail does not fail — it hangs. And `sendCode` is
+     * awaited on the signup path, so a hung socket hangs the HTTP request with it:
+     * the user sees a spinner rather than an error, and the platform eventually kills
+     * the request with no explanation.
+     *
+     * Ten seconds is far longer than a working connection needs and short enough that
+     * a blocked port surfaces as ETIMEDOUT in the log, which is a diagnosable thing.
+     */
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   });
   return gmail;
 }
@@ -98,7 +113,7 @@ async function viaGmail(to: string, subject: string, body: Body) {
 export async function sendEmail({ to, subject, html, text }: SendEmailOptions) {
   const body: Body = { html: html + FOOTER_HTML, text: text + FOOTER_TEXT };
 
-  if (env.EMAIL_TRANSPORT === 'gmail') {
+  if (emailTransport === 'gmail') {
     const sent = await viaGmail(to, subject, body);
     logger.info({ ...sent, subject }, 'Email sent');
     return sent;
