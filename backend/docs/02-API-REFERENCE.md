@@ -16,7 +16,7 @@
 **A · Backend Configuration**
 - [1. Authentication & Session](#1-authentication--session) — A1
 - [2. Users & Roles](#2-users--roles)
-- [3. Customers & Tiers](#3-customers--tiers)
+- [3. Customers](#3-customers)
 - [4. Catalog — Products, Categories, Variants](#4-catalog--products-categories-variants) — A2
 - [5. Price Lists](#5-price-lists) — A2
 - [6. Discount Governance & Approval Chain](#6-discount-governance--approval-chain) — A3
@@ -352,8 +352,8 @@ is written to. Customers are never created by a rep.
 > | Field | Set to | Changed later by |
 > |---|---|---|
 > | `role` | always `sales_rep` | admin — `PATCH /users/:id { "role": "sales_manager" }` |
-> > | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id { "tier": "gold" }` |
-> | `currency` | `INR` | rep — `PATCH /customers/:id { "currency": "USD" }` |
+> | `tier` | always `bronze` | not editable through the API — see [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md) |
+> | `currency` | `INR` | not editable through the API |
 >
 > Sending any of these returns **`400 FIELD_NOT_ALLOWED`**, naming the offending field.
 >
@@ -1100,111 +1100,59 @@ GET /api/v1/roles
 
 ---
 
-## 3. Customers & Tiers
+## 3. Customers
 
 | Method | Path | Roles |
 |---|---|---|
-| `GET` | `/customers` | any internal |
-| `POST` | `/customers` | admin, manager, rep |
-| `GET` | `/customers/:id` | any internal |
-| `PATCH` | `/customers/:id` | admin, manager, rep |
-| `DELETE` | `/customers/:id` | admin |
-| `GET` | `/customer-tiers` | any internal |
-| `PATCH` | `/customer-tiers/:tier` | admin, manager |
+| `GET` | `/customers?q=` | any internal |
+| `PATCH` | `/customer-tiers/:tier` | admin, sales_manager |
 
----
-
-### `GET /customers`
-
-```http
-GET /api/v1/customers?tier=gold&q=acme
-```
-
-**Response `200`**
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "cus_acme01",
-      "name": "Acme Corp",
-      "tier": "gold",
-      "contactName": "R. Iyer",
-      "email": "buyer@acmecorp.com",
-      "currency": "INR",
-      "openQuotations": 3,
-      "lifetimeValue": 8420000
-    }
-  ],
-  "meta": { "page": 1, "limit": 25, "total": 8, "totalPages": 1 }
-}
-```
-
----
-
-### `POST /customers`
-
-**Request**
-
-```json
-{ "name": "Nova Tech", "tier": "silver", "contactName": "S. Menon",
-  "email": "procurement@novatech.io", "currency": "INR" }
-```
-
-| Field | Type | Required | Rules |
-|---|---|:---:|---|
-| `name` | string | ✅ | unique per company |
-| `tier` | enum | ✅ | `bronze` \| `silver` \| `gold` |
-| `contactName` | string | ➖ | |
-| `email` | string | ✅ | valid email — used for portal access |
-| `currency` | string | ➖ | ISO-4217, default `INR` |
-
-**Response `201`**
-
-```json
-{
-  "success": true,
-  "data": {
-    "id": "cus_nova01",
-    "customerCode": "CUST-0009",
-    "name": "Nova Tech",
-    "tier": "silver",
-    "contactName": "S. Menon",
-    "email": "procurement@novatech.io",
-    "currency": "INR",
-    "emailVerified": false,
-    "passwordSet": false,
-    "portalAccess": false
-  }
-}
-```
-
-> ### This is NOT the normal way a customer appears
+> ### There is no `POST /customers` and no browse-all list
 >
 > Customers **self-register** at [`POST /auth/signup`](#post-authsignup) with
-> `type: "customer"`, and give their `customerCode` to the rep. This endpoint exists
-> only so a rep can record a company that has not signed up yet — for example, quoting
-> a prospect who asked by phone.
+> `type: "customer"`, which assigns them a `customerCode` (`CUST-0001`). They give
+> that code to their sales rep, who looks them up with it.
 >
-> A row created here has `passwordSet: false` and `portalAccess: false`. **It cannot
-> log in.** No invite is emailed and no password is set. If that company later
-> self-registers with the same email, the signup **links to this existing row** rather
-> than creating a duplicate, and keeps the tier the rep assigned.
+> ```
+> Customer signs up      →  CUST-0001, tier = bronze  (forced)
+>          ↓  reads the code out to their rep
+> Rep looks them up      →  GET /customers?q=CUST-0001
+>          ↓
+> Rep quotes them        →  POST /quotations { customerId }
+>
+> Ceilings are tier-wide  →  PATCH /customer-tiers/gold { "maxDiscountPct": 18 }
+> ```
+>
+> A rep never creates a customer, so there is no `POST`. And a rep has no reason to
+> page through every customer in the business, so there is no unfiltered list — `q`
+> is required. That keeps the whole customer book from being enumerable by anyone who
+> can sign in.
 
-**Errors** — `409` a customer with that email already exists
+**In this section** — full detail in [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)
+
+1. [`GET /customers?q=`](#31-get-customersq) — look up by code, name, or email
+2. [`PATCH /customer-tiers/:tier`](#32-patch-customer-tierstier) — the tier-wide ceiling
+
+Two endpoints, and no more. There is no `POST`, no browse-all list, no per-customer
+`PATCH`, and no `DELETE`.
 
 ---
 
-### Finding a customer by their code
+### 3.1 `GET /customers?q=`
 
-When a customer says *"my customer ID is CUST-0001"*, the rep looks them up:
+Look a customer up by the code they gave you.
 
 ```http
 GET /api/v1/customers?q=CUST-0001
 ```
 
-`q` matches `customerCode`, company name, or email.
+| Query | Type | Required | Description |
+|---|---|:---:|---|
+| `q` | string | ✅ | matches `customerCode`, company name, or email |
+
+- **`q` is required.** Omitting it returns `400`, not every customer — the customer
+  book is not enumerable by anyone who can sign in.
+- Matching is case-insensitive and partial on name and email; a `CUST-` code is exact.
 
 **Response `200`**
 
@@ -1216,29 +1164,48 @@ GET /api/v1/customers?q=CUST-0001
       "id": "cus_9f2c1a44",
       "customerCode": "CUST-0001",
       "name": "Acme Corp",
-      "tier": "bronze",
       "contactName": "R. Iyer",
       "email": "buyer@acmecorp.com",
+      "tier": "bronze",
       "currency": "INR",
-      "emailVerified": true,
-      "portalAccess": true,
-      "selfRegistered": true,
-      "openQuotations": 0
+      "verified": true,
+      "active": true,
+      "createdAt": "2026-03-01T09:00:00.000Z"
     }
-  ],
-  "meta": { "total": 1 }
+  ]
 }
 ```
 
-The rep then raises the tier if the commercial relationship warrants it:
+- Always an **array** — a name or email fragment can match several customers, while a
+  `CUST-` code matches at most one.
+- Empty `data` means no match. That is a `200`, not a `404`: the search ran fine and
+  found nothing.
+- No `meta` block. There is no paging here because a lookup is expected to return a
+  handful of rows, not a page of them.
+
+**Errors** — `400 VALIDATION_FAILED` when `q` is missing or empty
+
+---
+
+### 3.2 `PATCH /customer-tiers/:tier`
+
+The discount ceiling attached to a **tier**, not to any one customer.
+
+**Auth** — admin or sales_manager.
 
 ```http
-PATCH /api/v1/customers/cus_9f2c1a44
+PATCH /api/v1/customer-tiers/gold
 ```
 
+**Request**
+
 ```json
-{ "tier": "gold" }
+{ "maxDiscountPct": 18 }
 ```
+
+| Field | Type | Rules |
+|---|---|---|
+| `maxDiscountPct` | number | `0`–`100`. `0` is valid — that tier gets no discretionary discount |
 
 **Response `200`**
 
@@ -1246,49 +1213,23 @@ PATCH /api/v1/customers/cus_9f2c1a44
 {
   "success": true,
   "data": {
-    "id": "cus_9f2c1a44",
-    "customerCode": "CUST-0001",
-    "tier": "gold"
+    "tier": "gold",
+    "maxDiscountPct": 18,
+    "updatedAt": "2026-03-01T09:00:00.000Z"
   }
 }
 ```
 
-> Raising a tier changes what that customer pays and how much discount they may
-> receive, so it is **restricted to admin and sales_manager** and always writes an
-> audit entry. A rep cannot upgrade their own customer.
+- **Tier-wide.** It moves the ceiling for every customer on that tier at once.
+- Ceilings are read back through [`GET /discount-config`](#6-discount-governance--approval-chain),
+  which returns tier **and** category ceilings together — only meaningful side by side,
+  since the stricter of the two binds each line.
+- **Existing quotations are not re-scored.** Risk is recomputed on the next mutation or
+  on `Reload Data`, so a ceiling change cannot silently invalidate an approval someone
+  already gave.
 
----
-
-### `GET /customer-tiers`
-
-Headline discount ceilings per tier.
-
-**Response `200`**
-
-```json
-{
-  "success": true,
-  "data": [
-    { "tier": "bronze", "label": "Bronze", "maxDiscountPct": 5,  "customerCount": 2 },
-    { "tier": "silver", "label": "Silver", "maxDiscountPct": 10, "customerCount": 3 },
-    { "tier": "gold",   "label": "Gold",   "maxDiscountPct": 15, "customerCount": 3 }
-  ]
-}
-```
-
----
-
-### `PATCH /customer-tiers/:tier`
-
-```http
-PATCH /api/v1/customer-tiers/gold
-```
-
-**Request** `{ "maxDiscountPct": 18 }`
-
-**Response `200`** — the updated tier. Writes an audit entry.
-
-**Errors** — `400` when `maxDiscountPct` is outside `0`–`100`
+**Errors** — `400` outside `0`–`100`, unknown tier, or an unexpected field ·
+`403 FORBIDDEN` for a rep · `403 WRONG_KIND` for a customer token
 
 ---
 
@@ -4621,14 +4562,9 @@ USERS & ROLES
   PATCH  /users/:id                       promote / demote / deactivate
   GET    /roles                           assignable roles (admin excluded)
 
-CUSTOMERS & TIERS
-  GET    /customers                       ?q=CUST-0001 lookup by code
-  POST   /customers
-  GET    /customers/:id
-  PATCH  /customers/:id
-  DELETE /customers/:id
-  GET    /customer-tiers
-  PATCH  /customer-tiers/:tier
+CUSTOMERS
+  GET    /customers?q=                    lookup by CUST- code, name or email
+  PATCH  /customer-tiers/:tier            tier-wide ceiling (admin/manager)
 
 CATALOG                                     A2
   GET    /products
@@ -4789,7 +4725,7 @@ AUDIT & NOTIFICATIONS
 
 </details>
 
-**Total: 143 endpoints across 20 groups.**
+**Total: 138 endpoints across 20 groups.**
 
 ---
 

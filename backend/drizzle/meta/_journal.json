@@ -15,6 +15,13 @@
       "when": 1788600407896,
       "tag": "0001_drop_user_team",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788604070274,
+      "tag": "0002_tier_config",
+      "breakpoints": true
     }
   ]
 }

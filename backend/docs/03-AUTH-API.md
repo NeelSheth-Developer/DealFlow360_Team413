@@ -7,7 +7,7 @@
 > `src/middleware/{auth,rate-limit}.ts`.
 >
 > Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
-> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`04-ROLES-API.md`](./04-ROLES-API.md)
+> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)
 
 ---
 
@@ -309,8 +309,8 @@ Creates an account. **Both kinds self-register** — `type` selects the table.
 > | Field | Set to | Changed later by |
 > |---|---|---|
 > | `role` | always `sales_rep` | admin — `PATCH /users/:id` |
-> | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id` |
-> | `currency` | `INR` | rep — `PATCH /customers/:id` |
+> | `tier` | always `bronze` | not editable through the API |
+> | `currency` | `INR` | not editable through the API |
 >
 > Sending any of them returns **`400 FIELD_NOT_ALLOWED`**. Rejected, not ignored:
 > a field that is never accepted cannot be honoured by accident later.
@@ -936,7 +936,7 @@ reason to skip output encoding — they defend different things.
 | `WRONG_KIND` | `403` | Staff token on a portal route, or the reverse |
 | `FORBIDDEN` | `403` | Role does not permit the action |
 | `NOT_FOUND` | `404` | Unknown route or account |
-| `LAST_ADMIN` | `409` | Demoting or deactivating the only active admin (see [`04-ROLES-API.md`](./04-ROLES-API.md)) |
+| `LAST_ADMIN` | `409` | Demoting or deactivating the only active admin (see [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)) |
 | `OTP_EXPIRED` | `410` | Code older than 10 minutes, or already used |
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts — the code is destroyed |
 | `OTP_RESEND_TOO_SOON` | `429` | New code requested within 60 seconds |
@@ -1076,6 +1076,36 @@ npm run dev
 
 `seed:admin` promotes the account if it already exists, or creates it pre-verified if
 it does not. It is the only way an `admin` can come into being.
+
+### Browser tester
+
+```bash
+npm run dev
+open http://localhost:5050          # the page is the API's own root in development
+```
+
+A dependency-free page covering all ten auth endpoints plus the admin-guarded
+`/roles` and `/users`. It captures tokens from every response and reuses them, fills
+the OTP in for you from `devOtp`, and keeps a request log with status codes.
+
+```
+public/index.html    the page
+public/app.js        one call() path — auth and logging cannot drift per handler
+```
+
+Two deliberate choices:
+
+- **Served by the API itself, not opened as a `file://`.** Same origin means no CORS
+  hop between the page and the endpoints, so nothing has to be added to
+  `CORS_ORIGINS` for testing.
+- **Mounted before `helmet()` and only when `NODE_ENV !== 'production'`.** Before
+  helmet so its inline styles are not blocked by the CSP; behind the NODE_ENV check
+  so it cannot exist in production — the guard is not a flag someone can flip.
+  Verified: with `NODE_ENV=production` both `/` and `/app.js` return `404` while
+  `/api/v1/health` still returns `200`.
+
+Session state lives in `sessionStorage`, so a reload keeps your tokens but closing
+the tab discards them.
 
 ### Walk the flow
 

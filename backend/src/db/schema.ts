@@ -3,6 +3,7 @@ import {
   boolean,
   index,
   integer,
+  numeric,
   pgEnum,
   pgTable,
   text,
@@ -63,6 +64,22 @@ export const customers = pgTable(
     uniqueIndex('customers_seq_key').on(table.seq),
   ],
 );
+
+/**
+ * Discount ceiling per customer tier. One row per tier, seeded with the values from
+ * the problem statement (Bronze 5, Silver 10, Gold 15).
+ *
+ * A table rather than a constant because these are business policy: a manager moves
+ * them, and the change has to survive a redeploy. The *category* ceilings live
+ * alongside these once that module lands — the stricter of the two binds each line.
+ */
+export const tierConfig = pgTable('tier_config', {
+  tier: tierEnum('tier').primaryKey(),
+  maxDiscountPct: numeric('max_discount_pct', { precision: 5, scale: 2 }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type TierConfig = typeof tierConfig.$inferSelect;
 
 /**
  * Refresh tokens live here rather than in Redis: they must survive a cache flush,

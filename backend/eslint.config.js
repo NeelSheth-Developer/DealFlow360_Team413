@@ -5,7 +5,8 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'drizzle/**'],
+    // `public/` is browser code for the dev tester, outside the TS project.
+    ignores: ['dist/**', 'node_modules/**', 'drizzle/**', 'public/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
