@@ -15,6 +15,7 @@ const VARS_KEY = 'df360.vars';
 
 /** Everything captured from earlier responses. Persisted so a reload keeps the session. */
 let vars = load();
+if (!vars.tier) vars.tier = 'gold';
 
 function load() {
   try {
@@ -92,6 +93,10 @@ const ENDPOINTS = [
       d: 'Rotates the pair. Replaying a used token revokes every session for that subject.',
       b: B({ refreshToken: '{{refreshToken}}' }),
       capture: { staffToken: 'data.accessToken', refreshToken: 'data.refreshToken' } },
+    { m: 'POST', p: '/auth/resend-otp', auth: 'none',
+      d: 'Rate-limited by a cooldown (default 60s). purpose is signup or password_reset.',
+      b: B({ email: '{{staffEmail}}', type: 'internal', purpose: 'signup' }),
+      capture: { otp: 'devOtp' } },
     { m: 'POST', p: '/auth/forgot-password', auth: 'none',
       d: 'Always 200, whether or not the address exists.',
       b: B({ email: '{{staffEmail}}', type: 'internal' }), capture: { otp: 'devOtp' } },
@@ -132,6 +137,11 @@ const ENDPOINTS = [
       b: B({ minScore: 0, maxScore: 5, approvers: ['sales_manager'], singleLineTrip: 5, note: 'Mild blended overage.' }) },
     { m: 'PUT', p: '/config/approval-chain/order', b: B({ ids: ['{{ruleId}}'] }) },
     { m: 'DELETE', p: '/config/approval-chain/{{ruleId}}', d: 'Refused when it is the last rule.' },
+    { m: 'GET', p: '/customer-tiers/{{tier}}',
+      d: 'The ceiling for one tier. GET /config/discount returns all three at once; this is the per-tier form.' },
+    { m: 'PATCH', p: '/customer-tiers/{{tier}}',
+      d: '0 is legitimate — it means that tier gets no discretionary discount at all.',
+      b: B({ maxDiscountPct: 15 }) },
     { m: 'GET', p: '/config/dashboard' },
     { m: 'PUT', p: '/config/dashboard', b: B({ stallThresholdDays: 5, anomalySensitivity: 1.8, approvalSlaHours: 24 }) },
   ]],

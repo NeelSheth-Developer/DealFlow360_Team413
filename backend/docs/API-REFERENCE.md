@@ -1,25 +1,17 @@
-# DealFlow360 — API Reference
-
-> Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
-> [`03-AUTH-API.md`](./03-AUTH-API.md) · [`04-ROLES-API.md`](./04-ROLES-API.md) ·
-> [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md) · [`06-ADMIN-ROLE.md`](./06-ADMIN-ROLE.md)
->
-> Also in the repo: [`schema.dbml`](../schema.dbml) (the data model, renderable at
-> dbdiagram.io) · [`postman/`](../postman) (an importable collection covering every
-> endpoint) · `npm run e2e` (a 92-check walkthrough of the brief's Quick Test Flow).
+# DealFlow360 — Complete API Reference
 
 **Team_413 · Odoo Hackathon 2026**
-Base URL: `/api/v1` · 113 endpoints · every path below is relative to the base.
 
-Companion documents:
+Every endpoint in the platform, in one file. Base URL `/api/v1`; all paths below are
+relative to it.
 
-- [`01-PROJECT-OVERVIEW.md`](01-PROJECT-OVERVIEW.md) — what the platform does and why
-- [`03-AUTH-API.md`](03-AUTH-API.md) — authentication in depth
-- [`04-ROLES-API.md`](04-ROLES-API.md) — the role model
-- [`05-CUSTOMERS-API.md`](05-CUSTOMERS-API.md) — the customer surface
-- [`06-ADMIN-ROLE.md`](06-ADMIN-ROLE.md) — everything an admin controls
-- [`../schema.dbml`](../schema.dbml) — the data model, renderable at dbdiagram.io
-- [`../postman/`](../postman) — an importable Postman collection covering every endpoint
+| | |
+|---|---|
+| **Endpoints** | 113 across 17 modules |
+| **Data model** | [`../schema.dbml`](../schema.dbml) — 31 tables, renderable at dbdiagram.io |
+| **Postman** | [`../postman/`](../postman) — importable collection covering every endpoint |
+| **Browser tester** | `npm run dev`, then <http://localhost:5050> |
+| **End-to-end test** | `npm run e2e` — 92 assertions over the brief's 8-step flow |
 
 ---
 
@@ -47,7 +39,11 @@ Companion documents:
 | [17](#17-dashboard-reports-audit-notifications) | Dashboard, reports, audit, notifications | 10 |
 | [18](#18-enumerations) | Enumerations | — |
 | [19](#19-error-catalogue) | Error catalogue | — |
-| [20](#20-endpoint-index) | Endpoint index | 113 |
+| [20](#20-transactional-emails) | Transactional emails | — |
+| [21](#21-quick-test-flow--api-calls) | Quick Test Flow → API calls | — |
+| [22](#22-role-permission-matrix) | Role permission matrix | — |
+| [23](#23-endpoint-index) | Endpoint index | 113 |
+
 
 ---
 
@@ -2410,7 +2406,80 @@ exactly this path and asserts 92 checks against it.
 
 ---
 
-## 22. Endpoint index
+---
+
+## 22. Role permission matrix
+
+Every rule below is enforced server-side on each request. A client-side check shapes
+the UI; it is not security.
+
+| Action | sales_rep | sales_manager | finance | admin |
+|---|:---:|:---:|:---:|:---:|
+| **Create a quotation** | ● | ● | | ● |
+| Set `ownerId` to someone else | | ● | | ● |
+| Edit lines and discounts | own only | ● | | ● |
+| Submit for approval | own only | ● | | ● |
+| **Approve the manager step** | | ● | | ● ¹ |
+| **Approve the finance step** | | | ● | ● ¹ |
+| Mark lost / move stage | own only | ● | | ● |
+| Share with the customer | own only | ● | | ● |
+| Accept / override a fulfillment split | ● | ● | ● | ● |
+| **Issue an invoice** | | | ● | ● |
+| **Record a payment** | | | ● | ● |
+| **Issue a credit note or refund** | | | ● | ● |
+| Build billing / preview proration | ● | ● | ● | ● |
+| Change a customer's tier | | ● | | ● |
+| **Read governance config** | | ● | ● | ● |
+| **Write governance config** | | ● | | ● |
+| Create or edit a product | | | | ● |
+| Set a price-list entry | | ● | | ● |
+| Create a warehouse / set stock | | | ● | ● |
+| Create or edit a subscription plan | | | ● | ● |
+| Create or edit an upsell rule | | ● | | ● |
+| See upsell suggestions | ● | ● | ● | ● |
+| Read the staff directory | ● | ● | ● | ● |
+| Assign a team | | ● | | ● |
+| **Change a role** | | | | ● |
+| Activate / deactivate an account | | | | ● |
+| Read reports | | ● | ● | ● |
+| **Read the audit log** | | ● | ● | ● |
+| Nudge / escalate an alert | | ● | | ● |
+| Score risk | ● | ● | ● | ● |
+| Override ceilings when scoring | | ● | | ● |
+| **Create an account for anyone else** | | | | |
+| **Read `costPrice` or any margin** | ● | ● | ● | ● |
+| Anything under `/customer/*` | | | | |
+
+¹ `admin` may unblock any approval step so a solo deployment is never deadlocked. It
+is audited as an override.
+
+**Nobody can create an account for anyone else**, admin included. Every account
+self-registers through `POST /auth/signup` and proves its own email. The first admin is
+planted with `npm run seed:admin`, from the backend, by someone with database access —
+which is what makes `admin` unreachable from outside.
+
+**No staff role can reach `/customer/*`**, and no customer can reach anything internal.
+That is a wall between two identity spaces, not a permission level.
+
+### 22.1 Invariants
+
+1. **A rep can never self-approve past a ceiling.** Routing is decided by the score,
+   not the submitter.
+2. **Approval steps are strictly ordered.** Finance cannot act before the Sales Manager.
+3. **A return clears the chain entirely.** Resubmission re-scores from scratch, so a
+   worse quotation cannot ride a stale approval.
+4. **Customer confirmation re-scores the final terms** and re-enters approval
+   automatically when needed. No rep action is involved.
+5. **Payments cannot exceed the balance**, and cannot be recorded by whoever sold the
+   deal.
+6. **A draft is never visible to a customer.**
+7. **Line prices come from the server's price list**, never from the client.
+8. **A tier change never rewrites an existing quotation** — each snapshots its tier.
+9. **The audit log is append-only.** There is no update or delete endpoint.
+10. **`costPrice`, margins, risk scores and ceilings never reach a customer response.**
+
+
+## 23. Endpoint index
 
 All **113** endpoints, generated from the router definitions.
 
