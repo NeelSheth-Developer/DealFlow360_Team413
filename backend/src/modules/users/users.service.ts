@@ -80,7 +80,7 @@ export async function listUsers(query: ListUsersQuery) {
   }
 
   const where = filters.length > 0 ? and(...filters) : undefined;
-  const offset = (query.page - 1) * query.limit;
+  const offset = (query.page - 1) * query.pageSize;
 
   const [rows, [totals]] = await Promise.all([
     db
@@ -89,7 +89,7 @@ export async function listUsers(query: ListUsersQuery) {
       .leftJoin(teams, eq(teams.id, users.teamId))
       .where(where)
       .orderBy(desc(users.createdAt))
-      .limit(query.limit)
+      .limit(query.pageSize)
       .offset(offset),
     db.select({ total: count() }).from(users).where(where),
   ]);
@@ -99,9 +99,9 @@ export async function listUsers(query: ListUsersQuery) {
     data: rows.map(present),
     meta: {
       page: query.page,
-      limit: query.limit,
+      pageSize: query.pageSize,
       total,
-      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
     },
   };
 }

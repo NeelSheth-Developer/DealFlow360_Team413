@@ -51,7 +51,7 @@ export async function findCustomers(query: FindCustomersQuery) {
   if (query.tier) filters.push(eq(customers.tier, query.tier));
 
   const where = filters.length > 0 ? and(...filters) : undefined;
-  const offset = (query.page - 1) * query.limit;
+  const offset = (query.page - 1) * query.pageSize;
 
   const [rows, [totals]] = await Promise.all([
     db
@@ -63,7 +63,7 @@ export async function findCustomers(query: FindCustomersQuery) {
       .from(customers)
       .where(where)
       .orderBy(desc(customers.createdAt))
-      .limit(query.limit)
+      .limit(query.pageSize)
       .offset(offset),
     db.select({ total: count() }).from(customers).where(where),
   ]);
@@ -74,9 +74,9 @@ export async function findCustomers(query: FindCustomersQuery) {
     data: rows.map(present),
     meta: {
       page: query.page,
-      limit: query.limit,
+      pageSize: query.pageSize,
       total,
-      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
     },
   };
 }

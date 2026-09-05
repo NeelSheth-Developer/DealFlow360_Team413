@@ -579,7 +579,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/users?limit=50&role=&teamId=&q=",
+              "raw": "{{baseUrl}}/users?pageSize=50&role=&teamId=&q=",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -588,7 +588,7 @@
               ],
               "query": [
                 {
-                  "key": "limit",
+                  "key": "pageSize",
                   "value": "50",
                   "description": "1-100"
                 },
@@ -750,7 +750,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/customers?q=&tier=&limit=25",
+              "raw": "{{baseUrl}}/customers?q=&tier=&pageSize=25",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -769,7 +769,7 @@
                   "description": "bronze | silver | gold"
                 },
                 {
-                  "key": "limit",
+                  "key": "pageSize",
                   "value": "25",
                   "description": ""
                 }
@@ -1176,7 +1176,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/products?category=&active=true&search=&limit=50",
+              "raw": "{{baseUrl}}/products?category=&active=true&search=&pageSize=50",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1200,7 +1200,7 @@
                   "description": "name or SKU"
                 },
                 {
-                  "key": "limit",
+                  "key": "pageSize",
                   "value": "50",
                   "description": ""
                 }

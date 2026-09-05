@@ -62,9 +62,13 @@ Every 2xx response is wrapped. Lists that paginate carry `meta` alongside `data`
 {
   "success": true,
   "data": [ { "...": "..." } ],
-  "meta": { "page": 1, "limit": 25, "total": 137, "totalPages": 6 }
+  "meta": { "page": 1, "pageSize": 25, "total": 137, "totalPages": 6 }
 }
 ```
+
+Paginated lists always use `page` + `pageSize` on the query and
+`{ page, pageSize, total, totalPages }` in `meta`. A few lists that do not paginate
+take a plain `limit` cap instead — `/notifications` and `/upsell-rules/suggest`.
 
 The wrapper is deliberate. A bare array leaves nowhere to put pagination without
 changing the response type between the paginated and unpaginated forms of the same
@@ -402,7 +406,7 @@ Revokes every other session on success.
 | 3.1 | `GET` | `/users` | any staff |
 | 3.2 | `GET` | `/users/:id` | any staff |
 | 3.3 | `PATCH` | `/users/:id` | admin, sales_manager |
-| 3.4 | `GET` | `/roles` | any staff |
+| 3.4 | `GET` | `/roles` | admin |
 | 3.5 | `GET` | `/teams` | any staff |
 
 **There is no `POST /users` and no `DELETE`.** Every staff account comes from
@@ -412,7 +416,7 @@ brief does not list user provisioning among the admin's responsibilities.
 
 ### 3.1 `GET /users`
 
-Query: `?role=&active=&teamId=&q=&page=&limit=`
+Query: `?role=&active=&teamId=&q=&page=&pageSize=`
 
 ```json
 {
@@ -431,7 +435,7 @@ Query: `?role=&active=&teamId=&q=&page=&limit=`
       "createdAt": "2026-02-01T10:00:00.000Z"
     }
   ],
-  "meta": { "page": 1, "limit": 25, "total": 12, "totalPages": 1 }
+  "meta": { "page": 1, "pageSize": 25, "total": 12, "totalPages": 1 }
 }
 ```
 
@@ -469,6 +473,10 @@ Three guards:
 the request is rejected at the edge with 400.
 
 ### 3.4 `GET /roles`
+
+**Admin only.** It exists to drive the role picker that `PATCH /users/:id` feeds, and
+only an admin can change a role — a rep being shown the list of roles they cannot
+assign is noise, not information.
 
 ```json
 {
@@ -527,7 +535,7 @@ quotations against them must keep resolving).
 
 ### 4.1 `GET /customers`
 
-Query: `?q=&tier=&page=&limit=`
+Query: `?q=&tier=&page=&pageSize=`
 
 `q` is optional. With no term this lists the directory, newest first. A `DF-CMC827`
 term is matched **exactly** and returns at most one row — that is the intended path
@@ -555,7 +563,7 @@ contact name and email.
       "quotationCount": 3
     }
   ],
-  "meta": { "page": 1, "limit": 25, "total": 8, "totalPages": 1 }
+  "meta": { "page": 1, "pageSize": 25, "total": 8, "totalPages": 1 }
 }
 ```
 
@@ -768,7 +776,7 @@ there is no path by which a cost reaches a customer through here.
 
 ### 6.1 `GET /products`
 
-Query: `?category=&active=&search=&page=&limit=`
+Query: `?category=&active=&search=&page=&pageSize=`
 
 ```json
 {
@@ -792,7 +800,7 @@ Query: `?category=&active=&search=&page=&limit=`
       "createdAt": "2026-01-15T…"
     }
   ],
-  "meta": { "page": 1, "limit": 50, "total": 24, "totalPages": 1 }
+  "meta": { "page": 1, "pageSize": 50, "total": 24, "totalPages": 1 }
 }
 ```
 
@@ -2831,8 +2839,8 @@ request and response — not to the top of its area.
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 1 | 1.1 | `GET` | [`/health`](#11-get-health) | Liveness | public |
-| 2 | 1.2 | `GET` | [`/health/ready`](#12-get-healthready) | Readiness | public |
+| 1 | 1.1 | `GET` | [`/health`](#11-get-health) | Liveness; no dependency checks | public |
+| 2 | 1.2 | `GET` | [`/health/ready`](#12-get-healthready) | Readiness — database and Redis reachability | public |
 
 ### §2 · Authentication — 10
 
@@ -2853,17 +2861,17 @@ request and response — not to the top of its area.
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 13 | 3.1 | `GET` | [`/users`](#31-get-users) | Query: ?role=&active=&teamId=&q=&page=&limit= | any staff |
+| 13 | 3.1 | `GET` | [`/users`](#31-get-users) | Staff directory, filterable by role, team and search | any staff |
 | 14 | 3.2 | `GET` | [`/users/:id`](#32-get-usersid) | One staff member, in the §3.1 shape | any staff |
 | 15 | 3.3 | `PATCH` | [`/users/:id`](#33-patch-usersid) | The split is deliberate | admin, sales_manager |
-| 16 | 3.4 | `GET` | [`/roles`](#34-get-roles) | Server-driven so an admin's role picker cannot drift out of step with what PATCH /users/… | any staff |
+| 16 | 3.4 | `GET` | [`/roles`](#34-get-roles) | The roles that PATCH /users/:id will accept | admin |
 | 17 | 3.5 | `GET` | [`/teams`](#35-get-teams) | Read-only, seeded by migration | any staff |
 
 ### §4 · Customers — 5
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 18 | 4.1 | `GET` | [`/customers`](#41-get-customers) | Query: ?q=&tier=&page=&limit= | any staff |
+| 18 | 4.1 | `GET` | [`/customers`](#41-get-customers) | Customer directory; a DF- term matches exactly | any staff |
 | 19 | 4.2 | `GET` | [`/customers/:id`](#42-get-customersid) | One customer, in the §4.1 shape including quotationCount | any staff |
 | 20 | 4.3 | `PATCH` | [`/customers/:id/tier`](#43-patch-customersidtier) | Promote or demote the pricing tier — the one mutation on a customer record | admin, sales_manager |
 | 21 | 4.4 | `GET` | [`/customer-tiers/:tier`](#44-get-customer-tierstier) | The discount ceiling for a whole tier, not for one customer | admin, sales_manager |
@@ -2888,7 +2896,7 @@ request and response — not to the top of its area.
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 33 | 6.1 | `GET` | [`/products`](#61-get-products) | Query: ?category=&active=&search=&page=&limit= | any staff |
+| 33 | 6.1 | `GET` | [`/products`](#61-get-products) | Product catalogue, filterable by category, status and search | any staff |
 | 34 | 6.2 | `GET` | [`/products/:id`](#62-get-productsid) | One product with its variants, in the §6.1 shape | any staff |
 | 35 | 6.3 | `POST` | [`/products`](#63-post-products) | Tier price rows are generated on create so the product is immediately quotable: bronze =… | admin |
 | 36 | 6.4 | `PUT` | [`/products/:id`](#64-put-productsid) | Body is the §6.3 shape with every field optional; sku is not accepted, because quotation… | admin |
@@ -2939,7 +2947,7 @@ request and response — not to the top of its area.
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 59 | 11.1 | `GET` | [`/quotations`](#111-get-quotations) | Query: ?stage=&ownerId=&customerId=&tier=&search=&from=&to=&page=&pageSize= | any staff |
+| 59 | 11.1 | `GET` | [`/quotations`](#111-get-quotations) | Quotation list, filtered; a rep never sees another rep's drafts | any staff |
 | 60 | 11.2 | `GET` | [`/quotations/:id`](#112-get-quotationsid) | The full §11.0 object | any staff |
 | 61 | 11.3 | `POST` | [`/quotations`](#113-post-quotations) | - The customer must already exist | any staff |
 | 62 | 11.4 | `PATCH` | [`/quotations/:id`](#114-patch-quotationsid) | Any subset; only while draft or under_negotiation, else 409 STAGE_LOCKED naming the curr… | owner, manager, admin |
@@ -2992,7 +3000,7 @@ request and response — not to the top of its area.
 
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
-| 92 | 15.1 | `GET` | [`/invoices`](#151-get-invoices) | Query: ?status=&customerId=&quotationId=&page=&pageSize= | any staff |
+| 92 | 15.1 | `GET` | [`/invoices`](#151-get-invoices) | Invoice list; each row is the full detail object | any staff |
 | 93 | 15.2 | `GET` | [`/invoices/:id`](#152-get-invoicesid) | lines contains one-time lines only — recurring charges bill on their own schedule | any staff |
 | 94 | 15.3 | `POST` | [`/invoices/:id/send`](#153-post-invoicesidsend) | Empty body | **finance, admin** |
 | 95 | 15.4 | `POST` | [`/invoices/:id/payments`](#154-post-invoicesidpayments) | replayed: true means the idempotency key had been seen before and the original payment i… | **finance, admin** |
@@ -3015,13 +3023,13 @@ request and response — not to the top of its area.
 | # | § | Method | Path | Purpose | Access |
 |---:|---|---|---|---|---|
 | 104 | 17.1 | `GET` | [`/dashboard/deal-health`](#171-get-dashboarddeal-health) | KPI summary — active value, win rate, cycle time, alert counts | any staff |
-| 105 | 17.2 | `GET` | [`/dashboard/alerts`](#172-get-dashboardalerts) | Query: ?type=&severity= | any staff |
+| 105 | 17.2 | `GET` | [`/dashboard/alerts`](#172-get-dashboardalerts) | Alert ids are synthetic and stable (stall-, disc-, slip-, appr- + the quotation id), not… | any staff |
 | 106 | 17.3 | `POST` | [`/dashboard/alerts/:id/nudge`](#173-post-dashboardalertsidnudge) | Empty bodies | manager, admin |
 | 107 | 17.4 | `POST` | [`/dashboard/alerts/:id/escalate`](#174-post-dashboardalertsidescalate) | Empty body | manager, admin |
-| 108 | 17.5 | `GET` | [`/reports/summary`](#175-get-reportssummary) | Query: ?from=&to=&repIds=&teamIds=&stages=&category= (comma-separated lists) | manager, finance, admin |
+| 108 | 17.5 | `GET` | [`/reports/summary`](#175-get-reportssummary) | These are the four filters the brief names: Period, Sales Team / Rep, Approval Status (v… | manager, finance, admin |
 | 109 | 17.6 | `GET` | [`/reports/products`](#176-get-reportsproducts) | Same filters as §17.5 | manager, finance, admin |
-| 110 | 17.7 | `GET` | [`/audit-log`](#177-get-audit-log) | Query: ?entityType=&entityId=&actorId=&actorRole=&search=&from=&to=&page=&pageSize= | manager, finance, admin |
-| 111 | 17.8 | `GET` | [`/notifications`](#178-get-notifications) | Query: ?unreadOnly=&limit= | any staff |
+| 110 | 17.7 | `GET` | [`/audit-log`](#177-get-audit-log) | Entries are written only from inside the services, and the actor is always the server's … | manager, finance, admin |
+| 111 | 17.8 | `GET` | [`/notifications`](#178-get-notifications) | The caller's own notifications, with an unread count | any staff |
 | 112 | 17.9 | `PATCH` | [`/notifications/:id/read`](#179-patch-notificationsidread) | 204 | any staff |
 | 113 | 17.10 | `PATCH` | [`/notifications/read-all`](#1710-patch-notificationsread-all) | 204 | any staff |
 

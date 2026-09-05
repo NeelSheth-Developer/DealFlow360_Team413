@@ -108,7 +108,7 @@ const ENDPOINTS = [
   ]],
 
   ['Directory', [
-    { m: 'GET', p: '/users', q: 'limit=50', capture: { userId: 'data.0.id' } },
+    { m: 'GET', p: '/users', q: 'pageSize=50', capture: { userId: 'data.0.id' } },
     { m: 'GET', p: '/users/{{userId}}' },
     { m: 'PATCH', p: '/users/{{userId}}',
       d: 'role needs admin; teamId and name accept sales_manager too. Demoting the last active admin is refused with 409 LAST_ADMIN.',
@@ -147,7 +147,7 @@ const ENDPOINTS = [
   ]],
 
   ['Catalog', [
-    { m: 'GET', p: '/products', q: 'limit=50', capture: { productId: 'data.0.id' } },
+    { m: 'GET', p: '/products', q: 'pageSize=50', capture: { productId: 'data.0.id' } },
     { m: 'GET', p: '/products/{{productId}}' },
     { m: 'POST', p: '/products',
       d: 'Generates the three tier price rows on create so the product is immediately quotable.',

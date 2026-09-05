@@ -15,7 +15,7 @@ export const findCustomersQuerySchema = z
     q: z.string().transform(cleanText).pipe(z.string().max(255)).optional(),
     tier: z.enum(['bronze', 'silver', 'gold']).optional(),
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(25),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25),
   })
   .strict();
 

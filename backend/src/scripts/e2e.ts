@@ -121,7 +121,7 @@ async function main() {
   const repToken = await createStaff(repEmail, 'Priya Sharma');
   check('rep signed up and verified', repToken.length > 0, true);
 
-  const staff = await call('GET', '/users/?limit=100', admin);
+  const staff = await call('GET', '/users/?pageSize=100', admin);
   const staffRows = pick<Json[]>(staff, 'data') ?? [];
   const idOf = (email: string) =>
     (staffRows.find((row) => row.email === email)?.id as string | undefined) ?? '';

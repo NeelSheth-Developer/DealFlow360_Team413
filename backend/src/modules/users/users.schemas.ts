@@ -48,7 +48,7 @@ export const listUsersQuerySchema = z
     teamId: z.string().uuid().optional(),
     q: z.string().max(255).optional(),
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(25),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25),
   })
   .strict();
 
