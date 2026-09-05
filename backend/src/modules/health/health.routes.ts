@@ -3,10 +3,12 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { redis } from '../../lib/redis.js';
 import { asyncHandler } from '../../utils/async-handler.js';
+import { logger } from '../../config/logger.js';
 
 export const healthRouter = Router();
 
 healthRouter.get('/', (_req, res) => {
+  logger.info('Health check endpoint called');
   res.json({ success: true, status: 'ok', uptime: process.uptime() });
 });
 
