@@ -7,7 +7,7 @@
 > `src/middleware/{auth,rate-limit}.ts`.
 >
 > Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
-> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)
+> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md) · [`06-ADMIN-ROLE.md`](./06-ADMIN-ROLE.md)
 
 ---
 
