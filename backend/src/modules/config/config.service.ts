@@ -15,6 +15,8 @@ import type {
   ApprovalRuleInput,
   CategoryCeilingsInput,
   DashboardConfigInput,
+  PatchCategoryCeilingsInput,
+  PatchTierCeilingsInput,
   TierCeilingsInput,
 } from './config.schemas.js';
 
@@ -69,6 +71,30 @@ export async function setTierCeilings(actor: AuditActor, input: TierCeilingsInpu
   return getDiscountConfig();
 }
 
+export async function patchTierCeilings(actor: AuditActor, input: PatchTierCeilingsInput) {
+  const before = await db.select().from(tierConfig);
+  const previous = Object.fromEntries(before.map((row) => [row.tier, num(row.maxDiscountPct)]));
+
+  for (const [tier, value] of Object.entries(input)) {
+    await db
+      .update(tierConfig)
+      .set({ maxDiscountPct: pct(value as number), updatedAt: new Date() })
+      .where(eq(tierConfig.tier, tier as Tier));
+  }
+
+  await audit({
+    entityType: 'config',
+    action: 'Tier discount ceilings patched',
+    actor,
+    meta: { from: previous, to: input },
+  });
+
+  const updated = await db.select().from(tierConfig);
+  const tierCeilings = {} as Record<Tier, number>;
+  for (const row of updated) tierCeilings[row.tier] = num(row.maxDiscountPct);
+  return { tierCeilings };
+}
+
 export async function setCategoryCeilings(actor: AuditActor, input: CategoryCeilingsInput) {
   const before = await db.select().from(categoryConfig);
   const previous = Object.fromEntries(before.map((row) => [row.category, num(row.maxDiscountPct)]));
@@ -88,6 +114,30 @@ export async function setCategoryCeilings(actor: AuditActor, input: CategoryCeil
   });
 
   return getDiscountConfig();
+}
+
+export async function patchCategoryCeilings(actor: AuditActor, input: PatchCategoryCeilingsInput) {
+  const before = await db.select().from(categoryConfig);
+  const previous = Object.fromEntries(before.map((row) => [row.category, num(row.maxDiscountPct)]));
+
+  for (const [category, value] of Object.entries(input)) {
+    await db
+      .update(categoryConfig)
+      .set({ maxDiscountPct: pct(value as number), updatedAt: new Date() })
+      .where(eq(categoryConfig.category, category as Category));
+  }
+
+  await audit({
+    entityType: 'config',
+    action: 'Category discount ceilings patched',
+    actor,
+    meta: { from: previous, to: input },
+  });
+
+  const updated = await db.select().from(categoryConfig);
+  const categoryCeilings = {} as Record<Category, number>;
+  for (const row of updated) categoryCeilings[row.category] = num(row.maxDiscountPct);
+  return { categoryCeilings };
 }
 
 export async function listChain() {

@@ -16,6 +16,15 @@ export const tierCeilingsSchema = z
   })
   .strict();
 
+export const patchTierCeilingsSchema = z
+  .object({
+    bronze: percentage.optional(),
+    silver: percentage.optional(),
+    gold: percentage.optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one tier must be provided' });
+
 export const categoryCeilingsSchema = z
   .object({
     hardware: percentage,
@@ -24,6 +33,16 @@ export const categoryCeilingsSchema = z
     accessories: percentage,
   })
   .strict();
+
+export const patchCategoryCeilingsSchema = z
+  .object({
+    hardware: percentage.optional(),
+    service: percentage.optional(),
+    subscription: percentage.optional(),
+    accessories: percentage.optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one category must be provided' });
 
 const APPROVER_ROLES = ['sales_manager', 'finance', 'admin'] as const;
 
@@ -63,6 +82,8 @@ export const dashboardConfigSchema = z
   .strict();
 
 export type TierCeilingsInput = z.infer<typeof tierCeilingsSchema>;
+export type PatchTierCeilingsInput = z.infer<typeof patchTierCeilingsSchema>;
 export type CategoryCeilingsInput = z.infer<typeof categoryCeilingsSchema>;
+export type PatchCategoryCeilingsInput = z.infer<typeof patchCategoryCeilingsSchema>;
 export type ApprovalRuleInput = z.infer<typeof approvalRuleSchema>;
 export type DashboardConfigInput = z.infer<typeof dashboardConfigSchema>;

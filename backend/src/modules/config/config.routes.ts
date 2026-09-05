@@ -7,6 +7,8 @@ import {
   approvalRuleSchema,
   categoryCeilingsSchema,
   dashboardConfigSchema,
+  patchCategoryCeilingsSchema,
+  patchTierCeilingsSchema,
   reorderChainSchema,
   tierCeilingsSchema,
 } from './config.schemas.js';
@@ -16,6 +18,8 @@ import {
   getDashboardConfig,
   getDiscountConfig,
   listChain,
+  patchCategoryCeilings,
+  patchTierCeilings,
   reorderChain,
   setCategoryCeilings,
   setDashboardConfig,
@@ -58,12 +62,30 @@ configRouter.put(
   }),
 );
 
+configRouter.patch(
+  '/discount/tier-ceilings',
+  canWrite,
+  asyncHandler(async (req, res) => {
+    const input = patchTierCeilingsSchema.parse(req.body);
+    res.json({ success: true, data: await patchTierCeilings(actorFrom(req), input) });
+  }),
+);
+
 configRouter.put(
   '/discount/category-ceilings',
   canWrite,
   asyncHandler(async (req, res) => {
     const input = categoryCeilingsSchema.parse(req.body);
     res.json({ success: true, data: await setCategoryCeilings(actorFrom(req), input) });
+  }),
+);
+
+configRouter.patch(
+  '/discount/category-ceilings',
+  canWrite,
+  asyncHandler(async (req, res) => {
+    const input = patchCategoryCeilingsSchema.parse(req.body);
+    res.json({ success: true, data: await patchCategoryCeilings(actorFrom(req), input) });
   }),
 );
 
