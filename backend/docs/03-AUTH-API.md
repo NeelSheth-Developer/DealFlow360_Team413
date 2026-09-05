@@ -7,7 +7,7 @@
 > `src/middleware/{auth,rate-limit}.ts`.
 >
 > Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
-> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`04-ROLES-API.md`](./04-ROLES-API.md)
+> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)
 
 ---
 
@@ -309,8 +309,8 @@ Creates an account. **Both kinds self-register** — `type` selects the table.
 > | Field | Set to | Changed later by |
 > |---|---|---|
 > | `role` | always `sales_rep` | admin — `PATCH /users/:id` |
-> | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id` |
-> | `currency` | `INR` | rep — `PATCH /customers/:id` |
+> | `tier` | always `bronze` | not editable through the API |
+> | `currency` | `INR` | not editable through the API |
 >
 > Sending any of them returns **`400 FIELD_NOT_ALLOWED`**. Rejected, not ignored:
 > a field that is never accepted cannot be honoured by accident later.
@@ -936,7 +936,7 @@ reason to skip output encoding — they defend different things.
 | `WRONG_KIND` | `403` | Staff token on a portal route, or the reverse |
 | `FORBIDDEN` | `403` | Role does not permit the action |
 | `NOT_FOUND` | `404` | Unknown route or account |
-| `LAST_ADMIN` | `409` | Demoting or deactivating the only active admin (see [`04-ROLES-API.md`](./04-ROLES-API.md)) |
+| `LAST_ADMIN` | `409` | Demoting or deactivating the only active admin (see [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)) |
 | `OTP_EXPIRED` | `410` | Code older than 10 minutes, or already used |
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts — the code is destroyed |
 | `OTP_RESEND_TOO_SOON` | `429` | New code requested within 60 seconds |
