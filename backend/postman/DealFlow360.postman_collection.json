@@ -1,0 +1,4041 @@
+{
+  "info": {
+    "_postman_id": "df360-team413-collection",
+    "name": "DealFlow360 \u2014 Team_413 API",
+    "description": "Complete API for DealFlow360, the Odoo Hackathon 2026 sales-operations platform.\n\n## Getting started\n\n1. Start the backend: `npm run dev` (defaults to port 5050).\n2. Seed the first admin: `npm run seed:admin -- admin@teamvector.space \"Admin\" \"S3cure!pass\"`.\n   The API cannot create an admin \u2014 signup always produces a `sales_rep` \u2014 so the bootstrap account has to be planted from the backend.\n3. Set `EXPOSE_DEV_OTP=true` in `.env` so signup returns the code in the response.\n4. Run **01 \u00b7 Auth \u2192 Login (admin)**. Every later request picks up the token automatically from the `staffToken` collection variable.\n\n## Conventions\n\n- Success: `{ \"success\": true, \"data\": ... }`, with `meta` on paginated lists.\n- Failure: `{ \"success\": false, \"error\": { \"code\", \"message\", \"details\" } }`.\n- Money is in major units with 2 decimals. Percentages are numbers, not fractions.\n- Ids are uuids; `reference` (`Q-1042`, `INV-2031`, `DF-CMC827`) is the human-readable form.\n- Request bodies are `.strict()`: an unknown key is rejected with 400 `FIELD_NOT_ALLOWED` rather than silently ignored.\n\n## Two identity spaces\n\nStaff and customers are separate populations. A staff token on `/customer/*` and a customer token on any internal router both get 403 `WRONG_KIND`, checked on every request rather than by hiding buttons in a UI.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 \u00b7 Health",
+      "description": "Liveness and readiness. No auth.",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness. Returns uptime."
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            },
+            "description": "Checks the database and Redis are reachable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 \u00b7 Auth",
+      "description": "One login surface, two identity spaces. `type` selects which table the credentials are checked against; it is not a privilege \u2014 the password still gates entry.\n\nRun **Signup (staff)** then **Verify OTP (staff)**: with `EXPOSE_DEV_OTP=true` the code comes back in the signup response and the collection captures both automatically.",
+      "item": [
+        {
+          "name": "Signup (staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Always creates a `sales_rep`. A `role` in the body is rejected with 400 FIELD_NOT_ALLOWED \u2014 that is what keeps `admin` unreachable from outside.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Priya Sharma\",\n  \"email\": \"priya@teamvector.space\",\n  \"password\": \"S3cure!pass\",\n  \"type\": \"internal\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b.devOtp) pm.collectionVariables.set('otp', b.devOtp);",
+                  "pm.collectionVariables.set('staffEmail', JSON.parse(pm.request.body.raw).email);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify OTP (staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "Six digits, ten minutes, five attempts, single use. Returns a session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"otp\": \"{{otp}}\",\n  \"type\": \"internal\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('staffToken', b.data.accessToken);",
+                  "if (b.data) pm.collectionVariables.set('refreshToken', b.data.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Identical error for unknown email and wrong password, so the endpoint is not an account-enumeration oracle.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"S3cure!pass\",\n  \"type\": \"internal\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('staffToken', b.data.accessToken);",
+                  "if (b.data) pm.collectionVariables.set('refreshToken', b.data.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "The first admin is seeded from the backend with `npm run seed:admin` \u2014 never through the API.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"S3cure!pass\",\n  \"type\": \"internal\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('staffToken', b.data.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Signup (customer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Creates a portal account at the lowest tier. Tier is never self-selected \u2014 it decides pricing.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corp\",\n  \"email\": \"buyer@acme.example\",\n  \"password\": \"Acme@2026x\",\n  \"type\": \"customer\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b.devOtp) pm.collectionVariables.set('otp', b.devOtp);",
+                  "pm.collectionVariables.set('customerEmail', JSON.parse(pm.request.body.raw).email);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify OTP (customer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"otp\": \"{{otp}}\",\n  \"type\": \"customer\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('customerToken', b.data.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (customer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"Acme@2026x\",\n  \"type\": \"customer\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('customerToken', b.data.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "The signed-in identity, re-read from the database."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotates the pair. Replaying a used token revokes every session for that subject \u2014 that is the replay detection.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('staffToken', b.data.accessToken);",
+                  "if (b.data) pm.collectionVariables.set('refreshToken', b.data.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "resend-otp"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"type\": \"internal\",\n  \"purpose\": \"signup\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Always 200, whether or not the address exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"type\": \"internal\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b.devOtp) pm.collectionVariables.set('otp', b.devOtp);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "The new password is checked against the old one BEFORE the code is spent, so a reused password does not burn the OTP.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"otp\": \"{{otp}}\",\n  \"password\": \"N3wS3cure!pass\",\n  \"type\": \"internal\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Revokes every other session on success.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"S3cure!pass\",\n  \"newPassword\": \"N3wS3cure!pass\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 \u00b7 Directory (users, roles, teams, customers)",
+      "description": "Reads are open to staff. Role changes are admin-only; team assignment is admin or sales_manager. There is no create-user endpoint anywhere \u2014 every account self-registers and proves its own email.",
+      "item": [
+        {
+          "name": "List staff",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users?limit=50&role=&teamId=&q=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "1-100"
+                },
+                {
+                  "key": "role",
+                  "value": "",
+                  "description": "sales_rep | sales_manager | finance | admin"
+                },
+                {
+                  "key": "teamId",
+                  "value": "",
+                  "description": "filter by team"
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "name or email"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('userId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get staff member",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Update staff member",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "`role` needs admin; `teamId` and `name` accept sales_manager too. Demoting the last active admin is refused with 409 LAST_ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"sales_manager\",\n  \"teamId\": \"{{teamId}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List assignable roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "roles"
+              ]
+            },
+            "description": "Drives the admin's role picker. `admin` is deliberately absent."
+          },
+          "response": []
+        },
+        {
+          "name": "List teams",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams"
+              ]
+            },
+            "description": "Read-only. Seeded by migration \u2014 the brief does not list teams as an admin-configurable resource."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('teamId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List customers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers?q=&tier=&limit=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "DF-CMC827, name, contact or email \u2014 optional"
+                },
+                {
+                  "key": "tier",
+                  "value": "",
+                  "description": "bronze | silver | gold"
+                },
+                {
+                  "key": "limit",
+                  "value": "25",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "With no `q` this lists the directory. A `DF-` term is matched exactly and returns at most one row."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('customerId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get customer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Change customer tier",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}/tier",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}",
+                "tier"
+              ]
+            },
+            "description": "admin / sales_manager only. The one mutation allowed on a customer record \u2014 it is commercial configuration, not account data. Existing quotations keep their snapshotted tier.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tier\": \"gold\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 \u00b7 Governance config",
+      "description": "Tier ceilings, category ceilings and the approval chain. Together these decide what the blended risk score flags and who signs it off.\n\nReads: sales_manager, finance, admin. Writes: sales_manager, admin. A sales_rep can read none of it \u2014 knowing the exact trip points makes it trivial to price a quote to sit one basis point under one.",
+      "item": [
+        {
+          "name": "Get discount config",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/discount",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "discount"
+              ]
+            },
+            "description": "Tier ceilings, category ceilings and the chain in one round trip, plus any coverage warnings."
+          },
+          "response": []
+        },
+        {
+          "name": "Set tier ceilings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/discount/tier-ceilings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "discount",
+                "tier-ceilings"
+              ]
+            },
+            "description": "All three at once, so a UI cannot leave bronze above gold between two requests.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bronze\": 5,\n  \"silver\": 10,\n  \"gold\": 15\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set category ceilings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/discount/category-ceilings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "discount",
+                "category-ceilings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hardware\": 15,\n  \"service\": 10,\n  \"subscription\": 12,\n  \"accessories\": 20\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get approval chain",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/approval-chain",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "approval-chain"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('ruleId', b.data.approvalChain[0] && b.data.approvalChain[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add approval rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/approval-chain",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "approval-chain"
+              ]
+            },
+            "description": "`maxScore: null` means unbounded. A rule also matches when any single line is more than `singleLineTrip` points over its own ceiling.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minScore\": 5,\n  \"maxScore\": null,\n  \"approvers\": [\n    \"sales_manager\",\n    \"finance\"\n  ],\n  \"singleLineTrip\": 12,\n  \"note\": \"Finance must co-sign.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update approval rule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/approval-chain/{{ruleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "approval-chain",
+                "{{ruleId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minScore\": 0,\n  \"maxScore\": 5,\n  \"approvers\": [\n    \"sales_manager\"\n  ],\n  \"singleLineTrip\": 5,\n  \"note\": \"Mild blended overage.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reorder approval chain",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/approval-chain/order",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "approval-chain",
+                "order"
+              ]
+            },
+            "description": "Must list every rule.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"{{ruleId}}\"\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete approval rule",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/approval-chain/{{ruleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "approval-chain",
+                "{{ruleId}}"
+              ]
+            },
+            "description": "Refused when it is the last rule \u2014 an empty chain would make every quotation unroutable."
+          },
+          "response": []
+        },
+        {
+          "name": "Get dashboard thresholds",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "dashboard"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Set dashboard thresholds",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/config/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "dashboard"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stallThresholdDays\": 5,\n  \"anomalySensitivity\": 1.8,\n  \"approvalSlaHours\": 24\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 \u00b7 Catalog & pricing",
+      "description": "Every response here carries `costPrice`, so the whole module is staff-only. Reads are open to staff; writes are admin.\n\nTier pricing is **not** a discount \u2014 it is the starting price for that customer, and a rep's discount applies on top and is measured against the ceilings.",
+      "item": [
+        {
+          "name": "List products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products?category=&active=true&search=&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "",
+                  "description": "hardware | service | subscription | accessories"
+                },
+                {
+                  "key": "active",
+                  "value": "true",
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "name or SKU"
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": ""
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('productId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "description": "Generates the three tier price rows on create (bronze = list, silver -4%, gold -8%, rounded to 50) so the product is immediately quotable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Laptop Pro 14\",\n  \"sku\": \"HW-LP14\",\n  \"category\": \"hardware\",\n  \"basePrice\": 95000,\n  \"costPrice\": 68000,\n  \"unit\": \"unit\",\n  \"taxPct\": 18,\n  \"description\": \"14-inch business laptop, 16GB RAM, 512GB NVMe.\",\n  \"variants\": [\n    {\n      \"attribute\": \"Memory\",\n      \"value\": \"16GB\",\n      \"extraPrice\": 0\n    },\n    {\n      \"attribute\": \"Memory\",\n      \"value\": \"32GB\",\n      \"extraPrice\": 12000\n    }\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('productId', b.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "description": "`sku` cannot be changed once quotations reference it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"basePrice\": 96000,\n  \"costPrice\": 68500\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Archive / restore product",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}/active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}",
+                "active"
+              ]
+            },
+            "description": "There is no DELETE \u2014 a product on a historical quotation must keep resolving.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Duplicate product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}/duplicate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}",
+                "duplicate"
+              ]
+            },
+            "description": "Copies variants and prices under a new SKU. The copy starts archived so it cannot appear in a rep's picker by accident."
+          },
+          "response": []
+        },
+        {
+          "name": "List price lists",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/price-lists?productId={{productId}}&tier=&currency=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "price-lists"
+              ],
+              "query": [
+                {
+                  "key": "productId",
+                  "value": "{{productId}}",
+                  "description": ""
+                },
+                {
+                  "key": "tier",
+                  "value": "",
+                  "description": "bronze | silver | gold"
+                },
+                {
+                  "key": "currency",
+                  "value": "",
+                  "description": "ISO 4217"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert a price",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/price-lists",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "price-lists"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"tier\": \"gold\",\n  \"currency\": \"INR\",\n  \"price\": 86000\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 \u00b7 Warehouses",
+      "description": "Stock and replenishment. `shippingCostWeight` is the split algorithm's cost tie-breaker \u2014 a higher weight means the system prefers to ship from elsewhere.",
+      "item": [
+        {
+          "name": "List warehouses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/warehouses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "warehouses"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('warehouseId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get warehouse",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/warehouses/{{warehouseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "warehouses",
+                "{{warehouseId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create warehouse",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/warehouses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "warehouses"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Main Warehouse\",\n  \"location\": \"Bhiwandi, Mumbai\",\n  \"shippingCostWeight\": 1.0,\n  \"baseShipCost\": 400,\n  \"replenishThreshold\": 5,\n  \"replenishQty\": 20,\n  \"replenishLeadDays\": 4\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('warehouseId', b.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update warehouse",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/warehouses/{{warehouseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "warehouses",
+                "{{warehouseId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shippingCostWeight\": 1.4\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set stock",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/warehouses/{{warehouseId}}/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "warehouses",
+                "{{warehouseId}}",
+                "stock"
+              ]
+            },
+            "description": "Partial map \u2014 absent products are left alone, not zeroed. Returns `affectedQuotationIds`: the open backorders this change could now fill, which is what raises the consolidation prompt.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stock\": {\n    \"{{productId}}\": 12\n  }\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Apply replenishment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/warehouses/{{warehouseId}}/restock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "warehouses",
+                "{{warehouseId}}",
+                "restock"
+              ]
+            },
+            "description": "Tops up every product at or below the threshold. Makes the backorder-consolidation path reproducible on demand."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 \u00b7 Subscription plans & upsell",
+      "description": "A `subscription` product CATEGORY does not make a line recurring \u2014 an attached plan does. A product can sit in that category and still be sold as a one-off.",
+      "item": [
+        {
+          "name": "List plans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/subscription-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subscription-plans"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('planId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get plan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/subscription-plans/{{planId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subscription-plans",
+                "{{planId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/subscription-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subscription-plans"
+              ]
+            },
+            "description": "The two rules are per-plan because they are commercial terms: an annual plan can reasonably refuse refunds where a monthly one prorates daily.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cloud Standard \\u2014 Monthly\",\n  \"cadence\": \"monthly\",\n  \"prorationRule\": \"daily_prorate\",\n  \"cancellationRule\": \"refund_unused\",\n  \"minCommitmentMonths\": 0,\n  \"trialDays\": 14,\n  \"billingDayOfCycle\": 1,\n  \"productIds\": [\n    \"{{productId}}\"\n  ]\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('planId', b.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/subscription-plans/{{planId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subscription-plans",
+                "{{planId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trialDays\": 30\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List upsell rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/upsell-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "upsell-rules"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('upsellRuleId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create upsell rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/upsell-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "upsell-rules"
+              ]
+            },
+            "description": "Replace `suggestedProductId` with a different product \u2014 a rule cannot suggest its own trigger.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"triggerProductId\": \"{{productId}}\",\n  \"suggestedProductId\": \"{{productId}}\",\n  \"coPurchaseScore\": 92,\n  \"promoted\": true,\n  \"minMarginPct\": 25\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('upsellRuleId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update upsell rule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/upsell-rules/{{upsellRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "upsell-rules",
+                "{{upsellRuleId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"promoted\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete upsell rule",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/upsell-rules/{{upsellRuleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "upsell-rules",
+                "{{upsellRuleId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Suggest for a cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/upsell-rules/suggest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "upsell-rules",
+                "suggest"
+              ]
+            },
+            "description": "Ranked `coPurchaseScore + (promoted ? 25 : 0) + marginPct * 0.3`. A product whose margin at the customer's tier price falls below the rule's `minMarginPct` is DROPPED, not ranked low.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productIds\": [\n    \"{{productId}}\"\n  ],\n  \"tier\": \"gold\",\n  \"currency\": \"INR\",\n  \"excludeProductIds\": [],\n  \"limit\": 5\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 \u00b7 Risk scoring",
+      "description": "The blended discount risk score. Every line is measured against the stricter of its category ceiling and the customer's tier ceiling; overages are weighted by gross line value.\n\nThe worked example below is the one from the problem statement and returns `score 0.21`, `worstSingleOverage 8`, `approvers [sales_manager]`.",
+      "item": [
+        {
+          "name": "Score a quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/risk/score",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "risk",
+                "score"
+              ]
+            },
+            "description": "`quotationId` may be null for the admin sandbox. `tierCeiling` and `categoryCeilings` are optional overrides honoured only for admin and sales_manager \u2014 a rep cannot score against a ceiling they invented.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quotationId\": \"{{quotationId}}\",\n  \"tier\": \"gold\",\n  \"orderDiscountPct\": 0,\n  \"lines\": [\n    {\n      \"id\": \"l-1\",\n      \"productName\": \"Laptop Pro 14\",\n      \"category\": \"hardware\",\n      \"qty\": 8,\n      \"unitPrice\": 87400,\n      \"discountPct\": 12\n    },\n    {\n      \"id\": \"l-2\",\n      \"productName\": \"Onboarding Setup Service\",\n      \"category\": \"service\",\n      \"qty\": 1,\n      \"unitPrice\": 18400,\n      \"discountPct\": 18\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Score a batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/risk/score-batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "risk",
+                "score-batch"
+              ]
+            },
+            "description": "A list of 15 rows must not cost 15 requests. Config is loaded once for the whole batch.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quotations\": [\n    {\n      \"quotationId\": \"{{quotationId}}\",\n      \"tier\": \"gold\",\n      \"orderDiscountPct\": 0,\n      \"lines\": [\n        {\n          \"id\": \"l-1\",\n          \"productName\": \"Laptop\",\n          \"category\": \"hardware\",\n          \"qty\": 8,\n          \"unitPrice\": 87400,\n          \"discountPct\": 12\n        }\n      ]\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Risk config",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/risk/config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "risk",
+                "config"
+              ]
+            },
+            "description": "Ceilings and chain, for the admin sandbox's starting state."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 \u00b7 Quotations",
+      "description": "Prices come from the server. `POST /lines` resolves the unit price from the customer's tier price list and the cost, tax and category from the product.\n\nLines may only be edited while the quotation is `draft` or `under_negotiation` \u2014 anything else would let a rep change the terms out from under an approval already given.",
+      "item": [
+        {
+          "name": "List quotations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations?stage=&ownerId=&customerId=&tier=&search=&from=&to=&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations"
+              ],
+              "query": [
+                {
+                  "key": "stage",
+                  "value": "",
+                  "description": "draft | sent | under_negotiation | pending_approval | approved | fulfillment | billed | confirmed | lost"
+                },
+                {
+                  "key": "ownerId",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "customerId",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "tier",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "reference or customer"
+                },
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "yyyy-MM-dd"
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "yyyy-MM-dd"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "A sales_rep never sees another rep's drafts."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('quotationId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get quotation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b.data && b.data.lines && b.data.lines[0]) pm.collectionVariables.set('lineId', b.data.lines[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations"
+              ]
+            },
+            "description": "The customer must already exist. `ownerId` is optional; a rep may only name themselves. Tier and currency are snapshotted from the customer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('quotationId', b.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update quotation",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderDiscountPct\": 5,\n  \"promisedDeliveryDate\": \"2026-03-28\",\n  \"validUntil\": \"2026-04-04\",\n  \"internalNotes\": \"Customer pushed hard on the setup service.\",\n  \"customerTerms\": \"Prices valid until the date shown. Payment due 15 days from invoice.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add line",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines"
+              ]
+            },
+            "description": "No `unitPrice` \u2014 the server resolves it. Adding a product already on the quotation with the same plan increments the quantity instead of duplicating the line.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"qty\": 8,\n  \"planId\": null\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b.data && b.data.lines && b.data.lines[0]) pm.collectionVariables.set('lineId', b.data.lines[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update line",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines/{{lineId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}"
+              ]
+            },
+            "description": "A negotiated `unitPrice` IS accepted here \u2014 agreeing a number on a call is a real commercial act. It is bounded and audited; the cost and category stay server-owned so margin and the binding ceiling remain honest.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qty\": 10,\n  \"discountPct\": 14,\n  \"unitPrice\": 86000\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove line",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines/{{lineId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Reply on a line",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines/{{lineId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}",
+                "comments"
+              ]
+            },
+            "description": "Clears `awaitingSeller` and emails the customer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Yes \\u2014 all six are height adjustable.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reassign owner",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/owner",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "owner"
+              ]
+            },
+            "description": "admin / sales_manager only. Notifies and emails the new owner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerId\": \"{{userId}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Share with the customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/share",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "share"
+              ]
+            },
+            "description": "Makes it visible in the customer's portal and emails them. There is no share link and no token \u2014 access is by authenticated account only."
+          },
+          "response": []
+        },
+        {
+          "name": "Move stage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/stage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "stage"
+              ]
+            },
+            "description": "Rejects anything outside the transition graph with 409 and a message written for a salesperson.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toStage\": \"sent\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mark lost",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lost"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Lost on price to an incumbent reseller.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Apply the customer's counter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/apply-counter",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "apply-counter"
+              ]
+            },
+            "description": "Applies `counterDiscountPct` to every line, then re-scores and returns both \u2014 so the rep sees what accepting the counter costs them in approvals."
+          },
+          "response": []
+        },
+        {
+          "name": "Dismiss an upsell suggestion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/dismiss-suggestion",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "dismiss-suggestion"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Quotation PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "pdf"
+              ]
+            },
+            "description": "Returns a hosted Cloudinary URL, or streams the PDF when Cloudinary is not configured. Customer-facing: no costs, no margins, no risk data."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 \u00b7 Approvals",
+      "description": "The rep never chooses the route and never gets to skip it. `submit-approval` re-scores from live line data and resolves the chain from stored config.\n\nSteps are strictly ordered \u2014 only the first step still `pending` is actionable. A **return** deletes the chain entirely, so a resubmission re-scores from scratch and a worse quote cannot ride a stale approval.",
+      "item": [
+        {
+          "name": "Submit for approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/submit-approval",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "submit-approval"
+              ]
+            },
+            "description": "Empty body. Either auto-approves (every line inside its ceiling) or opens the chain."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve the current step",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "approve"
+              ]
+            },
+            "description": "The caller's role must match the step. `admin` may unblock any step so a solo deployment is never deadlocked \u2014 and that is audited as an override.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Strategic account, margin still acceptable.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "reject"
+              ]
+            },
+            "description": "Reason required, minimum 10 characters. Stage becomes `lost`; later steps are marked skipped.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Bronze tier caps at 5% and the service ceiling is 10%. Resubmit at 5%.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Return for revision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/return",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "return"
+              ]
+            },
+            "description": "Back to draft, chain cleared entirely.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Please bring the service line back to 10% and resubmit.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "My approval queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/approvals/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "approvals",
+                "queue"
+              ]
+            },
+            "description": "Only quotations whose CURRENT step matches the caller's role \u2014 a finance user should not see one still sitting with the manager."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10 \u00b7 Fulfillment",
+      "description": "Recomputed from live stock on every read, unless a plan has been accepted or overridden \u2014 a rep's deliberate decision is never silently discarded by a recompute.\n\nOrdering: whole-line first, then a warehouse already shipping on this order, then cheapest, then most stock. Subscription and service lines are skipped.",
+      "item": [
+        {
+          "name": "Get the plan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/fulfillment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "fulfillment"
+              ]
+            },
+            "description": "`canConsolidate` is true when an open backorder could now be filled from current stock."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept the suggestion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/fulfillment/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "fulfillment",
+                "accept"
+              ]
+            },
+            "description": "Moves the stage from `approved` to `fulfillment`."
+          },
+          "response": []
+        },
+        {
+          "name": "Manual override",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/fulfillment/override",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "fulfillment",
+                "override"
+              ]
+            },
+            "description": "Returns per-cell errors on 422 so the UI can highlight the exact input, plus `costDelta` against the suggestion on success.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"allocations\": [\n    {\n      \"lineId\": \"{{lineId}}\",\n      \"warehouseId\": \"{{warehouseId}}\",\n      \"qty\": 8\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consolidate backorder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/fulfillment/consolidate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "fulfillment",
+                "consolidate"
+              ]
+            },
+            "description": "Recomputes from current stock and reports shipments and cost saved."
+          },
+          "response": []
+        },
+        {
+          "name": "Set backorder policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/fulfillment/backorder-policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "fulfillment",
+                "backorder-policy"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy\": \"ship_available\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 \u00b7 Billing & subscriptions",
+      "description": "One-time lines produce an invoice; recurring lines produce their own schedule. The two never merge \u2014 that separation is the point of hybrid billing.\n\nThe preview endpoints do not mutate. The figure is shown to the customer before anything is committed.",
+      "item": [
+        {
+          "name": "Get billing",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/billing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "billing"
+              ]
+            },
+            "description": "One-time rows, recurring rows with 12 forward occurrences each, and the credit-note ledger."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('invoiceId', b.data.invoiceId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Build billing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/billing/build",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "billing",
+                "build"
+              ]
+            },
+            "description": "Generates the invoice and the schedules. Idempotent \u2014 calling it twice rebuilds schedules and returns the existing invoice."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('invoiceId', b.data.invoiceId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preview a quantity change",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines/{{lineId}}/proration-preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}",
+                "proration-preview"
+              ]
+            },
+            "description": "No mutation. `explanation` is rendered verbatim to the customer, so it is written in plain language.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newQty\": 12\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Apply the quantity change",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines/{{lineId}}/subscription",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}",
+                "subscription"
+              ]
+            },
+            "description": "Regenerates the schedule and, when the proration is negative, issues a credit note automatically.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qty\": 12\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Preview a cancellation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines/{{lineId}}/cancellation-preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}",
+                "cancellation-preview"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel the subscription",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/lines/{{lineId}}/subscription",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}",
+                "subscription"
+              ]
+            },
+            "description": "Flips future `scheduled` occurrences to `cancelled` and creates the refund or credit note the plan's rule calls for."
+          },
+          "response": []
+        },
+        {
+          "name": "Credit-note ledger",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/credit-notes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "credit-notes"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Issue a credit note",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations/{{quotationId}}/credit-notes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "quotations",
+                "{{quotationId}}",
+                "credit-notes"
+              ]
+            },
+            "description": "finance / admin only, like every other money action.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lineId\": \"{{lineId}}\",\n  \"amount\": 4370,\n  \"type\": \"credit_note\",\n  \"reason\": \"Goodwill credit.\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "12 \u00b7 Invoices & payments",
+      "description": "**The most security-sensitive endpoints in the API.**\n\nIssuing an invoice and recording a payment are finance/admin only: the person who sold the deal must not be the one who confirms the money arrived. Overpayment is refused, the actor is the server's own view of who called, and full settlement moves the quotation to `confirmed`.\n\nSend an `Idempotency-Key` header on payments so a double-click cannot record twice.",
+      "item": [
+        {
+          "name": "List invoices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices?status=&customerId=&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "draft | sent | partially_paid | paid"
+                },
+                {
+                  "key": "customerId",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50",
+                  "description": ""
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('invoiceId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get invoice",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}"
+              ]
+            },
+            "description": "`amountPaid` and `balanceRemaining` are derived from the payment rows on every read, never stored."
+          },
+          "response": []
+        },
+        {
+          "name": "Issue the invoice",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/send",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "send"
+              ]
+            },
+            "description": "finance / admin only. Draft \u2192 sent, and moves the quotation from `fulfillment` to `billed`. Emails the customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Record a payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Replaying a key returns the original payment instead of writing a second one."
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "payments"
+              ]
+            },
+            "description": "finance / admin only. Refuses an amount above the outstanding balance with 422 OVERPAYMENT.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 224130,\n  \"method\": \"bank_transfer\",\n  \"reference\": \"NEFT-88213011\",\n  \"date\": \"2026-03-14\",\n  \"notes\": \"\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Invoice PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "pdf"
+              ]
+            },
+            "description": "Hosted Cloudinary URL, or the PDF streamed back when Cloudinary is not configured."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "13 \u00b7 Customer portal",
+      "description": "**Authorised against the customer session, never a staff one.** A staff token gets 403 here, and a customer token gets 403 on every internal router.\n\nEvery query is scoped by the session's own customer id in the query itself, and another customer's record returns **404, not 403** \u2014 a 403 confirms the record exists.\n\nThe response is an allow-list built from named safe fields. It never carries `costPrice`, a margin, a risk score, a ceiling, internal notes, the owning rep, the approval steps, or the internal role names.",
+      "item": [
+        {
+          "name": "My quotations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/quotations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "quotations"
+              ]
+            },
+            "description": "Shared quotations only \u2014 a draft is never visible."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('quotationId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "One quotation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/quotations/{{quotationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "quotations",
+                "{{quotationId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b.data && b.data.lines && b.data.lines[0]) pm.collectionVariables.set('lineId', b.data.lines[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/quotations/{{quotationId}}/lines/{{lineId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "quotations",
+                "{{quotationId}}",
+                "lines",
+                "{{lineId}}",
+                "comments"
+              ]
+            },
+            "description": "Permitted whenever `canMessage` \u2014 which stays true during internal approval, because a customer waiting on a decision must still be able to chase it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Are the stands height adjustable?\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Propose new terms",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/quotations/{{quotationId}}/request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "quotations",
+                "{{quotationId}}",
+                "request"
+              ]
+            },
+            "description": "Either field may be omitted, but not both.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"counterDiscountPct\": 25,\n  \"justification\": \"Three vendors quoted, we need 25% to proceed.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/quotations/{{quotationId}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "quotations",
+                "{{quotationId}}",
+                "confirm"
+              ]
+            },
+            "description": "**The automatic re-approval branch.** The server re-scores the final agreed terms and, if approvers are required, puts the quotation back into the chain with no rep action. The score itself is never returned \u2014 it is internal governance data."
+          },
+          "response": []
+        },
+        {
+          "name": "Quotation PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/quotations/{{quotationId}}/pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "quotations",
+                "{{quotationId}}",
+                "pdf"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Invoice PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/invoices/{{invoiceId}}/pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "invoices",
+                "{{invoiceId}}",
+                "pdf"
+              ]
+            },
+            "description": "A draft invoice does not exist to a customer \u2014 it returns 404."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "14 \u00b7 Dashboard, reports, audit, notifications",
+      "description": "Alerts are computed on read from live data and the configured thresholds \u2014 they are not a queue. Only the operator actions taken against one are stored.\n\nThe anomaly rule compares each rep against **their own** rolling 90-day average, not a global threshold: a naturally aggressive discounter would otherwise drown out the signal from a conservative one.",
+      "item": [
+        {
+          "name": "Deal health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/deal-health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "deal-health"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/alerts?type=&severity=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "alerts"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "description": "stalled | discount_anomaly | delivery_slippage | approval_bottleneck"
+                },
+                {
+                  "key": "severity",
+                  "value": "",
+                  "description": "low | medium | high"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('alertId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Nudge the owning rep",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/alerts/{{alertId}}/nudge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "alerts",
+                "{{alertId}}",
+                "nudge"
+              ]
+            },
+            "description": "sales_manager / admin. Notifies and emails the owner."
+          },
+          "response": []
+        },
+        {
+          "name": "Escalate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/alerts/{{alertId}}/escalate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "alerts",
+                "{{alertId}}",
+                "escalate"
+              ]
+            },
+            "description": "Notifies every sales_manager and raises the alert to high."
+          },
+          "response": []
+        },
+        {
+          "name": "Report summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/summary?from=&to=&repIds=&teamIds=&stages=&category=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "yyyy-MM-dd"
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "yyyy-MM-dd"
+                },
+                {
+                  "key": "repIds",
+                  "value": "",
+                  "description": "comma-separated"
+                },
+                {
+                  "key": "teamIds",
+                  "value": "",
+                  "description": "comma-separated"
+                },
+                {
+                  "key": "stages",
+                  "value": "",
+                  "description": "comma-separated"
+                },
+                {
+                  "key": "category",
+                  "value": "",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "KPIs, per-rep and per-TEAM rollups, discount buckets, funnel and the one-time / recurring revenue mix. Reps with no team appear under \"Unassigned\" so the team rows always reconcile to the header."
+          },
+          "response": []
+        },
+        {
+          "name": "Product performance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/products?from=&to=&category=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "category",
+                  "value": "",
+                  "description": ""
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Audit log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit-log?entityType=&entityId=&actorId=&actorRole=&search=&from=&to=&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audit-log"
+              ],
+              "query": [
+                {
+                  "key": "entityType",
+                  "value": "",
+                  "description": "quotation | invoice | product | config | ..."
+                },
+                {
+                  "key": "entityId",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "actorId",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "actorRole",
+                  "value": "",
+                  "description": "... | customer | system"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "**Append-only.** There is no update or delete endpoint, ever."
+          },
+          "response": []
+        },
+        {
+          "name": "My notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?unreadOnly=false&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "unreadOnly",
+                  "value": "false",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": ""
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "if (b && b.data) pm.collectionVariables.set('notificationId', b.data[0] && b.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark one read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5050/api/v1",
+      "description": "API base. Change the port if PORT differs."
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@teamvector.space",
+      "description": "The account created by npm run seed:admin."
+    },
+    {
+      "key": "staffEmail",
+      "value": "",
+      "description": "Captured by Signup (staff)."
+    },
+    {
+      "key": "customerEmail",
+      "value": "",
+      "description": "Captured by Signup (customer)."
+    },
+    {
+      "key": "staffToken",
+      "value": "",
+      "description": "Captured on staff login."
+    },
+    {
+      "key": "customerToken",
+      "value": "",
+      "description": "Captured on customer login."
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "otp",
+      "value": "",
+      "description": "Captured from devOtp when EXPOSE_DEV_OTP=true."
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "teamId",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "productId",
+      "value": ""
+    },
+    {
+      "key": "warehouseId",
+      "value": ""
+    },
+    {
+      "key": "planId",
+      "value": ""
+    },
+    {
+      "key": "upsellRuleId",
+      "value": ""
+    },
+    {
+      "key": "ruleId",
+      "value": ""
+    },
+    {
+      "key": "quotationId",
+      "value": ""
+    },
+    {
+      "key": "lineId",
+      "value": ""
+    },
+    {
+      "key": "invoiceId",
+      "value": ""
+    },
+    {
+      "key": "alertId",
+      "value": ""
+    },
+    {
+      "key": "notificationId",
+      "value": ""
+    }
+  ]
+}

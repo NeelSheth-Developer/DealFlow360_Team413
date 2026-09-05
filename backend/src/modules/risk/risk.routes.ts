@@ -106,7 +106,11 @@ riskRouter.get(
     const [ceilings, chain] = await Promise.all([loadCeilings(), loadChain()]);
     res.json({
       success: true,
-      data: { tierCeilings: ceilings.tier, categoryCeilings: ceilings.category, approvalChain: chain },
+      data: {
+        tierCeilings: ceilings.tier,
+        categoryCeilings: ceilings.category,
+        approvalChain: chain,
+      },
     });
   }),
 );

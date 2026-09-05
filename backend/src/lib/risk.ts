@@ -1,6 +1,13 @@
 import { asc } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { approvalRules, categoryConfig, tierConfig, type Category, type Role, type Tier } from '../db/schema.js';
+import {
+  approvalRules,
+  categoryConfig,
+  tierConfig,
+  type Category,
+  type Role,
+  type Tier,
+} from '../db/schema.js';
 import { ApiError } from '../utils/api-error.js';
 import { num, numOrNull, round2 } from './money.js';
 
@@ -248,7 +255,8 @@ function resolveRule(
   }
 
   const matches = chain.filter((rule) => {
-    const inScoreBand = score > rule.minScore && score <= (rule.maxScore ?? Number.POSITIVE_INFINITY);
+    const inScoreBand =
+      score > rule.minScore && score <= (rule.maxScore ?? Number.POSITIVE_INFINITY);
     const trips = rule.singleLineTrip !== null && worstSingleOverage > rule.singleLineTrip;
     return inScoreBand || trips;
   });
@@ -286,10 +294,6 @@ export async function scoreWithStoredConfig(input: RiskInput): Promise<RiskResul
 }
 
 /** The binding ceiling for one line — exported for the audit entry on a discount change. */
-export function bindingCeiling(
-  category: Category,
-  tier: Tier,
-  ceilings: Ceilings,
-): number {
+export function bindingCeiling(category: Category, tier: Tier, ceilings: Ceilings): number {
   return Math.min(ceilings.category[category] ?? 0, ceilings.tier[tier] ?? 0);
 }

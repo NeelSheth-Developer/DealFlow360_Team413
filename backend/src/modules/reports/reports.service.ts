@@ -61,7 +61,8 @@ async function loadScope(query: ReportQuery) {
     .leftJoin(teams, eq(teams.id, users.teamId))
     .where(filters.length > 0 ? and(...filters) : undefined);
 
-  if (rows.length === 0) return { quotations: rows, linesByQuotation: new Map<string, LoadedLine[]>() };
+  if (rows.length === 0)
+    return { quotations: rows, linesByQuotation: new Map<string, LoadedLine[]>() };
 
   const lineFilters: SQL[] = [
     inArray(
@@ -144,7 +145,10 @@ export async function summary(query: ReportQuery) {
       : 0;
 
   // --- by rep --------------------------------------------------------------
-  const repMap = new Map<string, { name: string; count: number; value: number; discount: number }>();
+  const repMap = new Map<
+    string,
+    { name: string; count: number; value: number; discount: number }
+  >();
   for (const row of scoped) {
     const entry = repMap.get(row.ownerId) ?? {
       name: row.ownerName,

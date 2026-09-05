@@ -170,7 +170,10 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex('users_email_key').on(table.email), index('users_team_idx').on(table.teamId)],
+  (table) => [
+    uniqueIndex('users_email_key').on(table.email),
+    index('users_team_idx').on(table.teamId),
+  ],
 );
 
 /**
@@ -289,9 +292,7 @@ export const priceLists = pgTable(
     price: numeric('price', { precision: 14, scale: 2 }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    uniqueIndex('price_lists_key').on(table.productId, table.tier, table.currency),
-  ],
+  (table) => [uniqueIndex('price_lists_key').on(table.productId, table.tier, table.currency)],
 );
 
 // =============================================================================

@@ -388,9 +388,7 @@ export async function dealHealth() {
     slippageCount: alerts.filter((alert) => alert.type === 'delivery_slippage').length,
     bottleneckCount: alerts.filter((alert) => alert.type === 'approval_bottleneck').length,
     pendingApprovalCount: rows.filter((row) => row.stage === 'pending_approval').length,
-    oldestPendingHours: oldest
-      ? round2((Date.now() - oldest.getTime()) / (60 * 60 * 1000))
-      : 0,
+    oldestPendingHours: oldest ? round2((Date.now() - oldest.getTime()) / (60 * 60 * 1000)) : 0,
     winRate: decided > 0 ? round2(((won?.total ?? 0) / decided) * 100) : 0,
     avgCycleDays,
     avgDiscountPct:
@@ -537,4 +535,3 @@ async function upsertState(
     })
     .onConflictDoUpdate({ target: alertStates.alertKey, set: patch });
 }
-

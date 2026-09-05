@@ -178,10 +178,7 @@ export async function suggest(input: SuggestInput): Promise<Suggestion[]> {
     .select()
     .from(upsellRules)
     .where(
-      and(
-        inArray(upsellRules.triggerProductId, input.productIds),
-        eq(upsellRules.active, true),
-      ),
+      and(inArray(upsellRules.triggerProductId, input.productIds), eq(upsellRules.active, true)),
     );
 
   if (rules.length === 0) return [];
@@ -191,7 +188,7 @@ export async function suggest(input: SuggestInput): Promise<Suggestion[]> {
 
   // Best rule per suggested product: the same add-on can be triggered by two different
   // cart items, and it should appear once, at its strongest score.
-  const best = new Map<string, typeof rules[number]>();
+  const best = new Map<string, (typeof rules)[number]>();
   for (const rule of rules) {
     if (excluded.has(rule.suggestedProductId)) continue;
     const current = best.get(rule.suggestedProductId);

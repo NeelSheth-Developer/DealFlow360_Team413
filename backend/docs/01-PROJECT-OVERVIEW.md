@@ -1,5 +1,13 @@
 # DealFlow360 — Project Overview
 
+> Companion documents: [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) ·
+> [`03-AUTH-API.md`](./03-AUTH-API.md) · [`04-ROLES-API.md`](./04-ROLES-API.md) ·
+> [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md) · [`06-ADMIN-ROLE.md`](./06-ADMIN-ROLE.md)
+>
+> Also in the repo: [`schema.dbml`](../schema.dbml) (the data model, renderable at
+> dbdiagram.io) · [`postman/`](../postman) (an importable collection covering every
+> endpoint) · `npm run e2e` (a 92-check walkthrough of the brief's Quick Test Flow).
+
 > **An Intelligent, Self-Governing Sales Operations Platform**
 >
 > Source of truth: `backend/DealFlow360.pdf` (hackathon problem statement).

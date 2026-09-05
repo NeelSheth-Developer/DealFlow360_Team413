@@ -26,7 +26,10 @@ export const recordPaymentSchema = z
     amount: z.number().min(0.01).max(99_999_999_999),
     method: z.enum(['card', 'bank_transfer', 'cheque', 'upi', 'other']),
     reference: z.string().transform(cleanText).pipe(z.string().max(120)).nullable().default(null),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use yyyy-MM-dd').optional(),
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use yyyy-MM-dd')
+      .optional(),
     notes: z.string().transform(cleanText).pipe(z.string().max(1000)).nullable().default(null),
   })
   .strict();

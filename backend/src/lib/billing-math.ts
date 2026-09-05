@@ -74,7 +74,10 @@ export function cycleFor(startDate: Date, cadence: Cadence, on: Date): Cycle {
 
   const dayMs = 24 * 60 * 60 * 1000;
   const daysInCycle = Math.max(1, Math.round((end.getTime() - start.getTime()) / dayMs));
-  const daysUsed = Math.max(0, Math.min(daysInCycle, Math.round((on.getTime() - start.getTime()) / dayMs)));
+  const daysUsed = Math.max(
+    0,
+    Math.min(daysInCycle, Math.round((on.getTime() - start.getTime()) / dayMs)),
+  );
 
   return { start, end, daysInCycle, daysUsed, daysRemaining: daysInCycle - daysUsed };
 }

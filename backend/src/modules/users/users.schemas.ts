@@ -20,6 +20,16 @@ export const updateUserSchema = z
     role: z.enum(ASSIGNABLE_ROLES).optional(),
     name: z.string().transform(cleanText).pipe(z.string().min(1).max(120)).optional(),
     active: z.boolean().optional(),
+    /**
+     * Sales territory. Nullable — clearing it returns the rep to "Unassigned", which
+     * is a legitimate state, not a gap to be avoided.
+     *
+     * A rep never sets this themselves: it is absent from the signup schema entirely,
+     * so team placement is assigned by an admin or manager from the directory. That
+     * keeps the reporting rollup trustworthy without an extra field on signup that a
+     * new hire could not answer correctly anyway.
+     */
+    teamId: z.string().uuid().nullable().optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, {
@@ -35,6 +45,7 @@ export const listUsersQuerySchema = z
       .enum(['true', 'false'])
       .transform((v) => v === 'true')
       .optional(),
+    teamId: z.string().uuid().optional(),
     q: z.string().max(255).optional(),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(25),

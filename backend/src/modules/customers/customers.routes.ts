@@ -78,11 +78,7 @@ customersRouter.patch(
  * `GET /config/discount` returns all three tiers, the category ceilings and the
  * approval chain together; these two routes are the per-tier form.
  */
-customerTiersRouter.use(
-  requireAuth,
-  requireKind('staff'),
-  requireRole('admin', 'sales_manager'),
-);
+customerTiersRouter.use(requireAuth, requireKind('staff'), requireRole('admin', 'sales_manager'));
 
 customerTiersRouter.get(
   '/:tier',

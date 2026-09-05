@@ -1,13 +1,6 @@
 import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import {
-  backorders,
-  products,
-
-  quotations,
-  warehouseStock,
-  warehouses,
-} from '../../db/schema.js';
+import { backorders, products, quotations, warehouseStock, warehouses } from '../../db/schema.js';
 import { audit, type AuditActor } from '../../lib/audit.js';
 import { money, num, round2 } from '../../lib/money.js';
 import { ApiError } from '../../utils/api-error.js';
@@ -65,11 +58,7 @@ export async function createWarehouse(actor: AuditActor, input: CreateWarehouseI
   return getWarehouse(created.id);
 }
 
-export async function updateWarehouse(
-  actor: AuditActor,
-  id: string,
-  input: UpdateWarehouseInput,
-) {
+export async function updateWarehouse(actor: AuditActor, id: string, input: UpdateWarehouseInput) {
   const [existing] = await db.select().from(warehouses).where(eq(warehouses.id, id)).limit(1);
   if (!existing) throw ApiError.notFound('Warehouse not found');
 
@@ -146,7 +135,9 @@ export async function updateStock(actor: AuditActor, id: string, input: UpdateSt
       });
   }
 
-  const raised = productIds.filter((productId) => (input.stock[productId] ?? 0) > (previous[productId] ?? 0));
+  const raised = productIds.filter(
+    (productId) => (input.stock[productId] ?? 0) > (previous[productId] ?? 0),
+  );
   const affectedQuotationIds = await quotationsAwaiting(raised);
 
   await audit({
@@ -275,4 +266,3 @@ function present(
     totalUnits: round2(Object.values(stock).reduce((sum, qty) => sum + qty, 0)),
   };
 }
-

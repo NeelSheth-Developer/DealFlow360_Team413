@@ -379,4 +379,3 @@ async function stageOf(quotationId: string): Promise<string | null> {
     .limit(1);
   return row?.stage ?? null;
 }
-

@@ -6,13 +6,23 @@ import { STAGES } from '../quotations/quotations.schemas.js';
 const csv = <T extends readonly [string, ...string[]]>(values: T) =>
   z
     .string()
-    .transform((value) => value.split(',').map((part) => part.trim()).filter(Boolean))
+    .transform((value) =>
+      value
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean),
+    )
     .pipe(z.array(z.enum(values)))
     .optional();
 
 const csvUuid = z
   .string()
-  .transform((value) => value.split(',').map((part) => part.trim()).filter(Boolean))
+  .transform((value) =>
+    value
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean),
+  )
   .pipe(z.array(z.string().uuid()))
   .optional();
 
@@ -26,8 +36,14 @@ const csvUuid = z
  */
 export const reportQuerySchema = z
   .object({
-    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
     repIds: csvUuid,
     teamIds: csvUuid,
     stages: csv(STAGES),

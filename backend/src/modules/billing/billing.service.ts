@@ -132,9 +132,7 @@ export async function getBilling(id: string) {
     oneTimeRows,
     oneTimeTotal: round2(oneTimeRows.reduce((sum, row) => sum + row.total, 0)),
     recurringRows,
-    recurringPerCycleTotal: round2(
-      activeRecurring.reduce((sum, row) => sum + row.perCycle, 0),
-    ),
+    recurringPerCycleTotal: round2(activeRecurring.reduce((sum, row) => sum + row.perCycle, 0)),
     annualRecurringTotal: round2(activeRecurring.reduce((sum, row) => sum + row.annual, 0)),
     invoiceId: invoice?.id ?? null,
     invoiceReference: invoice?.reference ?? null,
@@ -173,11 +171,7 @@ export async function buildBilling(actor: AuditActor, id: string) {
   await rebuildSchedules(loaded);
 
   const oneTime = loaded.lines.filter((line) => !line.isSubscription);
-  const [existing] = await db
-    .select()
-    .from(invoices)
-    .where(eq(invoices.quotationId, id))
-    .limit(1);
+  const [existing] = await db.select().from(invoices).where(eq(invoices.quotationId, id)).limit(1);
 
   if (existing) {
     await audit({
@@ -317,14 +311,7 @@ export async function previewProration(id: string, lineId: string, newQty: numbe
   const start = parseDate(line.subscriptionStartDate ?? formatDate(new Date()));
   const cycle = cycleFor(start, plan.cadence, new Date());
 
-  return prorate(
-    line.qty,
-    newQty,
-    line.unitPrice,
-    line.discountPct,
-    plan.prorationRule,
-    cycle,
-  );
+  return prorate(line.qty, newQty, line.unitPrice, line.discountPct, plan.prorationRule, cycle);
 }
 
 /**
@@ -416,9 +403,7 @@ export async function cancelSubscription(actor: AuditActor, id: string, lineId: 
   await db
     .update(billingOccurrences)
     .set({ status: 'cancelled' })
-    .where(
-      and(eq(billingOccurrences.lineId, lineId), eq(billingOccurrences.status, 'scheduled')),
-    );
+    .where(and(eq(billingOccurrences.lineId, lineId), eq(billingOccurrences.status, 'scheduled')));
 
   if (result.type !== null && result.amount > 0) {
     await issueCreditNote(actor, id, {
@@ -507,10 +492,7 @@ async function plansFor(planIds: (string | null)[]) {
   const map = new Map<string, typeof subscriptionPlans.$inferSelect>();
   if (ids.length === 0) return map;
 
-  const rows = await db
-    .select()
-    .from(subscriptionPlans)
-    .where(inArray(subscriptionPlans.id, ids));
+  const rows = await db.select().from(subscriptionPlans).where(inArray(subscriptionPlans.id, ids));
 
   for (const row of rows) map.set(row.id, row);
   return map;
@@ -525,7 +507,14 @@ async function occurrencesFor(quotationId: string) {
 
   const map = new Map<
     string,
-    { id: string; lineId: string; date: string; amount: number; status: string; cycleIndex: number }[]
+    {
+      id: string;
+      lineId: string;
+      date: string;
+      amount: number;
+      status: string;
+      cycleIndex: number;
+    }[]
   >();
 
   for (const row of rows) {
@@ -543,4 +532,3 @@ async function occurrencesFor(quotationId: string) {
 
   return map;
 }
-

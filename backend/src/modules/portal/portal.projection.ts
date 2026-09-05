@@ -80,7 +80,10 @@ function statusNoteFor(loaded: LoadedQuotation): StatusNote {
     return { tone: 'warning', text: 'We have your request and will come back to you shortly.' };
   }
   if (loaded.negotiationStatus === 'under_negotiation') {
-    return { tone: 'warning', text: 'We have replied to your request. Review the updated terms below.' };
+    return {
+      tone: 'warning',
+      text: 'We have replied to your request. Review the updated terms below.',
+    };
   }
   return { tone: 'info', text: 'This quotation is ready for your review.' };
 }

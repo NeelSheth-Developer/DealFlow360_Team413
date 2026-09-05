@@ -62,7 +62,10 @@ billingRouter.post(
   '/lines/:lineId/proration-preview',
   asyncHandler(async (req, res) => {
     const { newQty } = prorationPreviewSchema.parse(req.body);
-    res.json({ success: true, data: await previewProration(quotationId(req), lineId(req), newQty) });
+    res.json({
+      success: true,
+      data: await previewProration(quotationId(req), lineId(req), newQty),
+    });
   }),
 );
 
@@ -110,6 +113,8 @@ billingRouter.post(
   asyncHandler(async (req, res) => {
     const input = creditNoteSchema.parse(req.body);
     const actor = await resolveActor(req);
-    res.status(201).json({ success: true, data: await issueCreditNote(actor, quotationId(req), input) });
+    res
+      .status(201)
+      .json({ success: true, data: await issueCreditNote(actor, quotationId(req), input) });
   }),
 );

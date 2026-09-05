@@ -67,10 +67,7 @@ export function isShippable(category: string): boolean {
  * line cannot be promised units the first already took, and mutating the caller's
  * object to achieve that would be a trap.
  */
-export function computeSplit(
-  lines: AllocatableLine[],
-  warehouses: WarehouseView[],
-): SplitResult {
+export function computeSplit(lines: AllocatableLine[], warehouses: WarehouseView[]): SplitResult {
   const remaining = new Map<string, Record<string, number>>();
   for (const warehouse of warehouses) {
     remaining.set(warehouse.id, { ...warehouse.stock });

@@ -25,9 +25,8 @@ export const counterRequestSchema = z
       .default(null),
   })
   .strict()
-  .refine(
-    (body) => body.counterDiscountPct !== null || (body.justification ?? '').length > 0,
-    { message: 'Give a discount figure, a justification, or both' },
-  );
+  .refine((body) => body.counterDiscountPct !== null || (body.justification ?? '').length > 0, {
+    message: 'Give a discount figure, a justification, or both',
+  });
 
 export type CounterRequestInput = z.infer<typeof counterRequestSchema>;

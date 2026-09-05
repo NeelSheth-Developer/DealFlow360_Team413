@@ -9,7 +9,11 @@
 >
 > Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
 > [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`03-AUTH-API.md`](./03-AUTH-API.md) ·
-> [`04-ROLES-API.md`](./04-ROLES-API.md)
+> [`04-ROLES-API.md`](./04-ROLES-API.md) · [`06-ADMIN-ROLE.md`](./06-ADMIN-ROLE.md)
+>
+> Also in the repo: [`schema.dbml`](../schema.dbml) (the data model, renderable at
+> dbdiagram.io) · [`postman/`](../postman) (an importable collection covering every
+> endpoint) · `npm run e2e` (a 92-check walkthrough of the brief's Quick Test Flow).
 
 ---
 

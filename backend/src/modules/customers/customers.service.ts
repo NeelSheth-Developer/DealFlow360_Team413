@@ -111,10 +111,7 @@ export async function updateCustomerTier(actor: AuditActor, id: string, tier: Ti
 
   if (existing.tier === tier) return getCustomer(id);
 
-  await db
-    .update(customers)
-    .set({ tier, updatedAt: new Date() })
-    .where(eq(customers.id, id));
+  await db.update(customers).set({ tier, updatedAt: new Date() }).where(eq(customers.id, id));
 
   await audit({
     entityType: 'customer',

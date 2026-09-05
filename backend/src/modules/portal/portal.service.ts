@@ -156,8 +156,7 @@ export async function requestTerms(
   await db
     .update(quotations)
     .set({
-      counterDiscountPct:
-        input.counterDiscountPct === null ? null : pct(input.counterDiscountPct),
+      counterDiscountPct: input.counterDiscountPct === null ? null : pct(input.counterDiscountPct),
       counterJustification: input.justification,
       stage: loaded.stage === 'sent' ? 'under_negotiation' : loaded.stage,
       negotiationStatus: 'under_negotiation',
@@ -362,7 +361,7 @@ async function resetChain(quotationId: string, approvers: Role[]) {
   await db.insert(approvalSteps).values(
     approvers.map((role, index) => ({
       quotationId,
-      role: role as Role,
+      role: role,
       stepOrder: index,
       status: 'pending' as const,
     })),

@@ -6,9 +6,13 @@
 > 📕 = quoted from `DealFlow360.pdf` · 📘 = from the structure doc ·
 > 🔧 = our implementation choice, not in either
 >
-> Companion documents: `[01-PROJECT-OVERVIEW.md](./01-PROJECT-OVERVIEW.md)` ·
-> `[02-API-REFERENCE.md](./02-API-REFERENCE.md)` · `[03-AUTH-API.md](./03-AUTH-API.md)` ·
-> `[04-ROLES-API.md](./04-ROLES-API.md)` · `[05-CUSTOMERS-API.md](./05-CUSTOMERS-API.md)`
+> Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
+> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`03-AUTH-API.md`](./03-AUTH-API.md) ·
+> [`04-ROLES-API.md`](./04-ROLES-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md)
+>
+> Also in the repo: [`schema.dbml`](../schema.dbml) (the data model, renderable at
+> dbdiagram.io) · [`postman/`](../postman) (an importable collection covering every
+> endpoint) · `npm run e2e` (a 92-check walkthrough of the brief's Quick Test Flow).
 
 ---
 
@@ -531,7 +535,7 @@ assignable-role list excludes `admin`. The first one comes only from
 
 Two self-targeting guards: an admin may rename themselves, but not change their own
 role or deactivate themselves — both are one-way doors that need a second admin to
-undo. See `[04-ROLES-API.md](./04-ROLES-API.md)`.
+undo. See [`04-ROLES-API.md`](./04-ROLES-API.md).
 
 ---
 

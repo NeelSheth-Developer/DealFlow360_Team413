@@ -71,9 +71,7 @@ export async function setTierCeilings(actor: AuditActor, input: TierCeilingsInpu
 
 export async function setCategoryCeilings(actor: AuditActor, input: CategoryCeilingsInput) {
   const before = await db.select().from(categoryConfig);
-  const previous = Object.fromEntries(
-    before.map((row) => [row.category, num(row.maxDiscountPct)]),
-  );
+  const previous = Object.fromEntries(before.map((row) => [row.category, num(row.maxDiscountPct)]));
 
   for (const [category, value] of Object.entries(input)) {
     await db

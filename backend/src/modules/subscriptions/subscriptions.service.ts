@@ -88,9 +88,7 @@ export async function updatePlan(actor: AuditActor, id: string, input: UpdatePla
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.cadence !== undefined ? { cadence: input.cadence } : {}),
       ...(input.prorationRule !== undefined ? { prorationRule: input.prorationRule } : {}),
-      ...(input.cancellationRule !== undefined
-        ? { cancellationRule: input.cancellationRule }
-        : {}),
+      ...(input.cancellationRule !== undefined ? { cancellationRule: input.cancellationRule } : {}),
       ...(input.minCommitmentMonths !== undefined
         ? { minCommitmentMonths: input.minCommitmentMonths }
         : {}),
@@ -103,9 +101,7 @@ export async function updatePlan(actor: AuditActor, id: string, input: UpdatePla
     .where(eq(subscriptionPlans.id, id));
 
   if (input.productIds !== undefined) {
-    await db
-      .delete(subscriptionPlanProducts)
-      .where(eq(subscriptionPlanProducts.planId, id));
+    await db.delete(subscriptionPlanProducts).where(eq(subscriptionPlanProducts.planId, id));
 
     if (input.productIds.length > 0) {
       await db
@@ -136,9 +132,7 @@ export async function defaultPlanFor(productId: string) {
     .select({ id: subscriptionPlans.id, cadence: subscriptionPlans.cadence })
     .from(subscriptionPlanProducts)
     .innerJoin(subscriptionPlans, eq(subscriptionPlans.id, subscriptionPlanProducts.planId))
-    .where(
-      eq(subscriptionPlanProducts.productId, productId),
-    )
+    .where(eq(subscriptionPlanProducts.productId, productId))
     .orderBy(asc(subscriptionPlans.name))
     .limit(1);
 
@@ -179,10 +173,7 @@ async function productsFor(planIds: string[]) {
   return map;
 }
 
-function present(
-  row: typeof subscriptionPlans.$inferSelect,
-  productIds: string[],
-) {
+function present(row: typeof subscriptionPlans.$inferSelect, productIds: string[]) {
   return {
     id: row.id,
     name: row.name,
