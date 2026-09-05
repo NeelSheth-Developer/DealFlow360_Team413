@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { Avatar, EmptyState } from '@/components/ui/Misc';
+import { SkeletonTable } from '@/components/ui/Loading';
 import { RiskBadge } from '@/components/shared/RiskGauge';
 import { TierBadge } from '@/components/shared/Indicators';
 
@@ -113,15 +114,7 @@ export default function Approvals() {
         bodyClassName="px-0 py-0 sm:px-0"
       >
         {loading && rows.length === 0 ? (
-          <div className="flex items-center justify-center gap-3 px-4 py-14">
-            <span
-              className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-600"
-              aria-hidden="true"
-            />
-            <p className="text-xs font-semibold text-ink-soft" role="status">
-              Loading your queue…
-            </p>
-          </div>
+          <SkeletonTable rows={5} columns={6} />
         ) : error && rows.length === 0 ? (
           <EmptyState
             icon={Inbox}

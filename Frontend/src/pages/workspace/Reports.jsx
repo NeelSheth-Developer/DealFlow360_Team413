@@ -36,6 +36,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState, Skeleton } from '@/components/ui/Misc';
+import { SkeletonTiles } from '@/components/ui/Loading';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { StatTile } from '@/components/shared/Indicators';
 
@@ -486,11 +487,7 @@ export default function Reports() {
         </GlassPanel>
       ) : loading && !summary ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-            {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-20" />
-            ))}
-          </div>
+          <SkeletonTiles count={6} className="grid-cols-2 lg:grid-cols-6" />
           <div className="grid gap-4 lg:grid-cols-2">
             <Skeleton className="h-72" />
             <Skeleton className="h-72" />

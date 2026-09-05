@@ -26,6 +26,7 @@ const EMPTY = {
 /** Upsell and cross-sell rule setup (spec A6). */
 export default function UpsellRules() {
   const rules = useAppStore((s) => s.upsellRules);
+  const isBooted = useAppStore((s) => s.isBooted);
   const products = useAppStore((s) => s.products);
   const priceLists = useAppStore((s) => s.priceLists);
   const upsertUpsellRule = useAppStore((s) => s.upsertUpsellRule);
@@ -96,7 +97,7 @@ export default function UpsellRules() {
 
       <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
         <GlassPanel
-          title={`${rules.length} rule(s)`}
+          title={rules.length === 0 && !isBooted ? 'Loading rules…' : `${rules.length} rule(s)`}
           icon={Sparkles}
           accent="pink"
           bodyClassName="px-0 py-0 sm:px-0"

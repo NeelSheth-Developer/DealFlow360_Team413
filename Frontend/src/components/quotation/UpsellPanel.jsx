@@ -6,6 +6,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/Misc';
 import { ProgressBar } from '@/components/ui/Misc';
+import { LoadingBlock } from '@/components/ui/Loading';
 
 /**
  * Ranked upsell / cross-sell suggestions (spec B5).
@@ -34,15 +35,7 @@ export function UpsellPanel({
         no pairings for this cart" — which is an answer, and the wrong one.
       */}
       {loading && suggestions.length === 0 ? (
-        <div className="flex items-center justify-center gap-2.5 py-10">
-          <span
-            className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-600"
-            aria-hidden="true"
-          />
-          <p className="text-[11px] font-semibold text-ink-soft" role="status">
-            Ranking suggestions…
-          </p>
-        </div>
+        <LoadingBlock label="Ranking suggestions…" size="sm" className="py-10" />
       ) : error ? (
         <EmptyState
           icon={Sparkles}

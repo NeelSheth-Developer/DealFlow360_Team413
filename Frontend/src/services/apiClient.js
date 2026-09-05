@@ -38,7 +38,39 @@ import {
 const DEFAULT_BASE_URL = 'https://api.dealflow360.teamvector.space/api/v1';
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
-const TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 15000);
+
+const DEFAULT_TIMEOUT_MS = 30000;
+const MIN_TIMEOUT_MS = 1000;
+
+/**
+ * Request timeout, read from the environment but never trusted blindly.
+ *
+ * `Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 30000)` was the previous form and it
+ * has a trap: `??` only substitutes for null and undefined, so a MALFORMED value survives
+ * it and `Number()` turns it into NaN. `setTimeout(fn, NaN)` does not mean "no timeout" —
+ * it coerces to 0 and fires on the next tick, aborting every request the instant it is
+ * sent. A single stray character in a .env file (`8000ss`) therefore took the entire app
+ * down, and it presented as "The server took too long to respond" on every screen, which
+ * points at the network rather than at the typo that caused it.
+ *
+ * So the value has to be finite and sane before it is used, and a floor stops a `0` or a
+ * `50` from doing the same thing more slowly. An unusable value falls back to the default
+ * and says so once, because failing silently here is what made this expensive to find.
+ */
+const TIMEOUT_MS = (() => {
+  const raw = import.meta.env.VITE_API_TIMEOUT_MS;
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_TIMEOUT_MS;
+
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= MIN_TIMEOUT_MS) return parsed;
+
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[api] VITE_API_TIMEOUT_MS="${raw}" is not a number of milliseconds >= ${MIN_TIMEOUT_MS}. ` +
+      `Falling back to ${DEFAULT_TIMEOUT_MS}ms.`,
+  );
+  return DEFAULT_TIMEOUT_MS;
+})();
 
 export function isBackendConfigured() {
   return BASE_URL.length > 0;

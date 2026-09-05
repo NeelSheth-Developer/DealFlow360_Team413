@@ -14,6 +14,7 @@ import { Drawer } from '@/components/ui/Dialog';
 import { EmptyState, Switch } from '@/components/ui/Misc';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
+import { SkeletonTable } from '@/components/ui/Loading';
 
 const CATEGORIES = ['hardware', 'service', 'subscription', 'accessories'].map((c) => ({
   value: c,
@@ -39,6 +40,7 @@ const EMPTY = {
 /** Product and price list management (spec A2). */
 export default function Products() {
   const products = useAppStore((s) => s.products);
+  const productsLoading = useAppStore((s) => s.productsLoading);
   const priceLists = useAppStore((s) => s.priceLists);
   const upsertProduct = useAppStore((s) => s.upsertProduct);
   const setProductActive = useAppStore((s) => s.setProductActive);
@@ -123,11 +125,17 @@ export default function Products() {
       </GlassCard>
 
       <GlassPanel
-        title={`${filtered.length} product(s)`}
+        title={productsLoading && products.length === 0 ? 'Loading catalogue…' : `${filtered.length} product(s)`}
         icon={Package}
         bodyClassName="px-0 py-0 sm:px-0"
       >
-        {filtered.length === 0 ? (
+        {/*
+          "No products match" is a statement about the search, and it is wrong while the
+          catalogue is still arriving — the two states have to be told apart.
+        */}
+        {productsLoading && products.length === 0 ? (
+          <SkeletonTable rows={8} columns={6} />
+        ) : filtered.length === 0 ? (
           <EmptyState icon={Search} title="No products match" description="Try a different search." />
         ) : (
           <Table>

@@ -5,7 +5,6 @@ import {
   Award,
   FlaskConical,
   Layers,
-  Loader2,
   Plus,
   Trash2,
   UserCheck,
@@ -22,6 +21,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Table, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/Table';
 import { RiskGauge } from '@/components/shared/RiskGauge';
+import { Spinner } from '@/components/ui/Loading';
 
 const APPROVER_OPTIONS = [
   { value: 'none', label: 'Auto-approve (no reviewer)' },
@@ -360,7 +360,7 @@ export default function DiscountTiers() {
             accent="teal"
             actions={
               scoring ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" aria-hidden="true" />
+                <Spinner size="sm" className="text-brand-500" />
               ) : (
                 <Badge tone={scored.source === 'server' ? 'success' : 'neutral'} size="xs">
                   {scored.source === 'server'

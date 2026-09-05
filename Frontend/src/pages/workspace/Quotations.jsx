@@ -13,6 +13,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { SegmentedControl } from '@/components/ui/Tabs';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { EmptyState, Avatar } from '@/components/ui/Misc';
+import { SkeletonTable } from '@/components/ui/Loading';
 import { RiskBadge } from '@/components/shared/RiskGauge';
 import { RelativeTime, StageBadge, StaleBadge, TierBadge } from '@/components/shared/Indicators';
 
@@ -46,7 +47,13 @@ export default function Quotations() {
     <div>
       <PageHeader
         title="Quotations"
-        description={`${rows.length} quotation(s) · ${money(totalValue)} total pipeline value`}
+        // "0 quotation(s) · ₹0" is an answer, and the wrong one while the fetch is
+        // still open. Say what is actually happening until there is something to count.
+        description={
+          isLoading && rows.length === 0
+            ? 'Loading quotations…'
+            : `${rows.length} quotation(s) · ${money(totalValue)} total pipeline value`
+        }
         actions={
           <>
             <SegmentedControl
@@ -112,16 +119,9 @@ export default function Quotations() {
           this branch an in-flight GET /quotations rendered "No quotations match these
           filters", which reads as an answer rather than a request still running.
         */}
+        {/* Shaped like the table it is replacing, so the panel keeps its height. */}
         {isLoading && rows.length === 0 ? (
-          <div className="flex items-center justify-center gap-3 px-4 py-14">
-            <span
-              className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-600"
-              aria-hidden="true"
-            />
-            <p className="text-xs font-semibold text-ink-soft" role="status">
-              Loading quotations…
-            </p>
-          </div>
+          <SkeletonTable rows={8} columns={6} />
         ) : loadError && rows.length === 0 ? (
           <EmptyState
             icon={FileText}
