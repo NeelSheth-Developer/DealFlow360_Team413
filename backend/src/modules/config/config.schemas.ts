@@ -16,6 +16,15 @@ export const tierCeilingsSchema = z
   })
   .strict();
 
+export const patchTierCeilingsSchema = z
+  .object({
+    bronze: percentage.optional(),
+    silver: percentage.optional(),
+    gold: percentage.optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one tier must be provided' });
+
 export const categoryCeilingsSchema = z
   .object({
     hardware: percentage,
@@ -24,6 +33,16 @@ export const categoryCeilingsSchema = z
     accessories: percentage,
   })
   .strict();
+
+export const patchCategoryCeilingsSchema = z
+  .object({
+    hardware: percentage.optional(),
+    service: percentage.optional(),
+    subscription: percentage.optional(),
+    accessories: percentage.optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one category must be provided' });
 
 const APPROVER_ROLES = ['sales_manager', 'finance', 'admin'] as const;
 
@@ -62,7 +81,19 @@ export const dashboardConfigSchema = z
   })
   .strict();
 
+export const patchDashboardConfigSchema = z
+  .object({
+    stallThresholdDays: z.number().int().min(1).max(365).optional(),
+    anomalySensitivity: z.number().min(1).max(10).optional(),
+    approvalSlaHours: z.number().int().min(1).max(720).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field must be provided' });
+
 export type TierCeilingsInput = z.infer<typeof tierCeilingsSchema>;
+export type PatchTierCeilingsInput = z.infer<typeof patchTierCeilingsSchema>;
 export type CategoryCeilingsInput = z.infer<typeof categoryCeilingsSchema>;
+export type PatchCategoryCeilingsInput = z.infer<typeof patchCategoryCeilingsSchema>;
 export type ApprovalRuleInput = z.infer<typeof approvalRuleSchema>;
 export type DashboardConfigInput = z.infer<typeof dashboardConfigSchema>;
+export type PatchDashboardConfigInput = z.infer<typeof patchDashboardConfigSchema>;
