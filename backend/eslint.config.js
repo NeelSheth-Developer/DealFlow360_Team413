@@ -33,5 +33,10 @@ export default tseslint.config(
     files: ['*.config.js', '*.config.ts', 'drizzle.config.ts'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // CLI scripts talk to an operator on stdout, not through the request logger.
+    files: ['src/scripts/**/*.ts'],
+    rules: { 'no-console': 'off' },
+  },
   prettier,
 );

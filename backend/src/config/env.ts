@@ -46,8 +46,9 @@ const envSchema = z.object({
   // Tighter bucket for credential endpoints, which are what gets brute-forced.
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
 
-  // Demo-only role switching. Must stay false in production.
-  ENABLE_ROLE_SWITCH: z
+  // Returns the OTP in the API response so the flow can be exercised without a
+  // working email provider. Double-gated: this flag AND a non-production NODE_ENV.
+  EXPOSE_DEV_OTP: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),

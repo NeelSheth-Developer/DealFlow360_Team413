@@ -7,7 +7,7 @@
 > `src/middleware/{auth,rate-limit}.ts`.
 >
 > Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
-> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md)
+> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`04-ROLES-API.md`](./04-ROLES-API.md)
 
 ---
 
@@ -30,12 +30,11 @@
 | 13 | [`POST /auth/refresh`](#13-post-authrefresh) |
 | 14 | [`POST /auth/logout`](#14-post-authlogout) |
 | 15 | [`GET /auth/me`](#15-get-authme) |
-| 16 | [`POST /auth/switch-role`](#16-post-authswitch-role) |
-| 17 | [Middleware](#17-middleware) |
-| 18 | [Sanitization](#18-sanitization) |
-| 19 | [Error catalogue](#19-error-catalogue) |
-| 20 | [Security decisions](#20-security-decisions) |
-| 21 | [Setup & testing](#21-setup--testing) |
+| 16 | [Middleware](#16-middleware) |
+| 17 | [Sanitization](#17-sanitization) |
+| 18 | [Error catalogue](#18-error-catalogue) |
+| 19 | [Security decisions](#19-security-decisions) |
+| 20 | [Setup & testing](#20-setup--testing) |
 
 ---
 
@@ -53,7 +52,7 @@ authenticate against; everything else is shared.
                     │                                           │
               USERS table                              CUSTOMERS table
               role = 'sales_rep'  (forced)             tier = 'bronze'  (forced)
-              team = null                              currency = 'INR'
+                                                       currency = 'INR'
                     │                                           │
                     └─────────────────┬─────────────────────────┘
                                       ▼
@@ -77,7 +76,7 @@ authenticate against; everything else is shared.
 
 ```
 1. ROLE AND TIER COME FROM THE DATABASE ROW, NEVER THE REQUEST
-   Schemas are .strict(), so `role`, `team`, `tier`, `currency` are REJECTED
+   Schemas are .strict(), so `role`, `tier` and `currency` are REJECTED
    with 400 FIELD_NOT_ALLOWED — not silently dropped. A field that is never
    accepted cannot be honoured by accident in a later refactor.
 
@@ -95,7 +94,10 @@ authenticate against; everything else is shared.
 
 ## 2. Conventions
 
-**Base URL** — `http://localhost:5000/api/v1` · `https://api.teamvector.space/api/v1`
+**Base URL** — `http://localhost:5050/api/v1` · `https://api.teamvector.space/api/v1`
+
+> Port 5050, not 5000 — macOS AirPlay Receiver listens on 5000 and silently
+> answers `403` to everything.
 
 **Success**
 
@@ -189,7 +191,6 @@ Three tables. Generated migration: `drizzle/0000_auth_tables.sql`.
 | `email` | `varchar(255)` | **unique**, stored lower-cased |
 | `password_hash` | `text` | `scrypt$N$r$p$salt$hash` |
 | `role` | `role` enum | **default `sales_rep`** — never from the request |
-| `team` | `varchar(120)` | nullable, admin-assigned |
 | `email_verified_at` | `timestamptz` | `null` until OTP verified |
 | `active` | `boolean` | default `true`; `false` blocks login instantly |
 | `created_at` / `updated_at` | `timestamptz` | |
@@ -251,6 +252,12 @@ there is no sweeper job and no way to forget one.
 to take over an account mid-signup. The HMAC is keyed by purpose and email, so a code
 minted for a password reset cannot be spent on a signup.
 
+**If the email fails to send** the request still returns `201`. The account row exists
+and the code is live in Redis, so the signup itself succeeded — reporting failure for
+work that was actually done would leave the caller unable to tell a delivery problem
+from a real rejection. The failure is logged at `error` level; the user can request a
+new code.
+
 **OTP rules**
 
 ```
@@ -302,15 +309,32 @@ Creates an account. **Both kinds self-register** — `type` selects the table.
 > | Field | Set to | Changed later by |
 > |---|---|---|
 > | `role` | always `sales_rep` | admin — `PATCH /users/:id` |
-> | `team` | `null` | admin — `PATCH /users/:id` |
 > | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id` |
 > | `currency` | `INR` | rep — `PATCH /customers/:id` |
 >
 > Sending any of them returns **`400 FIELD_NOT_ALLOWED`**. Rejected, not ignored:
 > a field that is never accepted cannot be honoured by accident later.
 >
-> **Consequence:** nobody can self-register as an `admin`. The first admin must come
-> from seed data. That is intentional.
+> ### Admin is unreachable from the API
+>
+> ```
+> POST /auth/signup      always writes role = 'sales_rep'
+>                        role in the body → 400 FIELD_NOT_ALLOWED
+>          ↓
+> PATCH /users/:id       the only way to change a role
+>                        requires an EXISTING admin
+> ```
+>
+> Those two rules leave no path to `admin` from outside. The first one is planted
+> from the backend by someone with database access:
+>
+> ```bash
+> npm run seed:admin -- admin@teamvector.space "Neha Gupta" "S3cure!pass"
+> ```
+>
+> Every admin after that is promoted by an existing admin, so the change has an
+> actor. `POST /auth/switch-role` used to undercut all of this — any signed-in user
+> could mint an admin token — and has been **removed**.
 
 ### Behaviour
 
@@ -337,6 +361,19 @@ Does this email already exist in the selected table?
 
 An **unverified** account signing up again gets the identical body, so the endpoint
 cannot be used to test which addresses are registered.
+
+> ### Testing without an email provider
+>
+> With `EXPOSE_DEV_OTP=true` **and** a non-production `NODE_ENV`, the response also
+> carries the code:
+>
+> ```json
+> { "success": true, "message": "OTP sent successfully", "devOtp": "418302" }
+> ```
+>
+> Two independent guards, so a single misconfiguration cannot start leaking codes.
+> The same field appears on `resend-otp` and `forgot-password`. Defaults to `false`;
+> **must stay false in production.**
 
 ### Response `200` — existing verified account
 
@@ -632,9 +669,14 @@ Step 2. Verifies the code and sets the new password in one call.
 | Code | HTTP | Cause |
 |---|---|---|
 | `OTP_INVALID` | `400` | Wrong code |
-| `PASSWORD_REUSED` | `400` | Same as the current password |
+| `PASSWORD_REUSED` | `400` | Same as the current password — **the code is not consumed** |
 | `OTP_EXPIRED` | `410` | Older than 10 minutes |
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts |
+
+> **A reused password does not burn the code.** The OTP is checked without being
+> consumed, the new password is validated, and only then is the code spent. Typing
+> your old password by mistake would otherwise cost you the code and force a second
+> email. Attempts are still counted, so this is not a free guessing window.
 
 ---
 
@@ -804,45 +846,7 @@ frontend holds only a token and needs to know which shell to render.
 
 ---
 
-## 16. `POST /auth/switch-role`
-
-Demo convenience so one laptop can walk a Rep → Manager → Finance approval chain
-without three logins.
-
-**Requires** a staff access token, and `ENABLE_ROLE_SWITCH=true`.
-
-### Request
-
-```json
-{ "role": "finance" }
-```
-
-### Response `200`
-
-```json
-{
-  "success": true,
-  "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "expiresIn": 900,
-    "role": "finance"
-  }
-}
-```
-
-### Errors
-
-| Code | HTTP | Cause |
-|---|---|---|
-| `FEATURE_DISABLED` | `403` | `ENABLE_ROLE_SWITCH` is false — **the production default** |
-| `WRONG_KIND` | `403` | Customer token |
-
-> With this enabled, anyone who can sign in can grant themselves any role. It defaults
-> to **off** and must stay off in production.
-
----
-
-## 17. Middleware
+## 16. Middleware
 
 ### `requireAuth`
 
@@ -891,7 +895,7 @@ a customer JWT carries no `role` claim at all.
 
 ---
 
-## 18. Sanitization
+## 17. Sanitization
 
 Applied by the Zod schemas **before** validation, so every rule downstream sees one
 canonical shape.
@@ -917,12 +921,12 @@ reason to skip output encoding — they defend different things.
 
 ---
 
-## 19. Error catalogue
+## 18. Error catalogue
 
 | `code` | HTTP | Meaning |
 |---|---|---|
 | `VALIDATION_FAILED` | `400` | Zod rejected the body; `details` lists path + message |
-| `FIELD_NOT_ALLOWED` | `400` | A server-assigned field (`role`, `team`, `tier`, `currency`) was sent |
+| `FIELD_NOT_ALLOWED` | `400` | A server-assigned field (`role`, `tier`, `currency`) was sent |
 | `OTP_INVALID` | `400` | Wrong 6-digit code |
 | `PASSWORD_REUSED` | `400` | New password equals the current one |
 | `INVALID_CREDENTIALS` | `401` | Unknown email, wrong password, or missing/invalid token |
@@ -931,8 +935,8 @@ reason to skip output encoding — they defend different things.
 | `ACCOUNT_DISABLED` | `403` | `active = false` |
 | `WRONG_KIND` | `403` | Staff token on a portal route, or the reverse |
 | `FORBIDDEN` | `403` | Role does not permit the action |
-| `FEATURE_DISABLED` | `403` | `switch-role` with `ENABLE_ROLE_SWITCH=false` |
 | `NOT_FOUND` | `404` | Unknown route or account |
+| `LAST_ADMIN` | `409` | Demoting or deactivating the only active admin (see [`04-ROLES-API.md`](./04-ROLES-API.md)) |
 | `OTP_EXPIRED` | `410` | Code older than 10 minutes, or already used |
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts — the code is destroyed |
 | `OTP_RESEND_TOO_SOON` | `429` | New code requested within 60 seconds |
@@ -970,7 +974,7 @@ reason to skip output encoding — they defend different things.
 
 ---
 
-## 20. Security decisions
+## 19. Security decisions
 
 ### Password hashing — scrypt
 
@@ -1047,7 +1051,7 @@ alone reveals which addresses are registered, no matter how careful the message 
 
 ---
 
-## 21. Setup & testing
+## 20. Setup & testing
 
 ### Environment
 
@@ -1061,28 +1065,32 @@ Required to boot: `DATABASE_URL`, `UPSTASH_REDIS_REST_URL`,
 Everything else has a working default. `src/config/env.ts` validates on boot and exits
 with a readable report listing every missing variable.
 
-### Migrate and run
+### Migrate, seed an admin, run
 
 ```bash
 npm install
-npm run db:migrate      # applies drizzle/0000_auth_tables.sql
+npm run db:migrate      # applies drizzle/*.sql
+npm run seed:admin -- admin@teamvector.space "Neha Gupta" "S3cure!pass"
 npm run dev
 ```
 
+`seed:admin` promotes the account if it already exists, or creates it pre-verified if
+it does not. It is the only way an `admin` can come into being.
+
 ### Walk the flow
 
-Outside production the OTP is printed to the server log, so the whole flow works
-without a verified sending domain.
+Set `EXPOSE_DEV_OTP=true` in `.env` and the code comes back in the response, so the
+whole flow works without a verified sending domain.
 
 ```bash
-BASE=http://localhost:5000/api/v1
+BASE=http://localhost:5050/api/v1
 
 # 1. sign up
 curl -s -X POST $BASE/auth/signup -H 'content-type: application/json' \
   -d '{"name":"Priya Sharma","email":"priya@teamvector.space","password":"S3cure!pass","type":"internal"}'
-# → {"success":true,"message":"OTP sent successfully"}
+# → {"success":true,"message":"OTP sent successfully","devOtp":"418302"}
 
-# 2. verify (read the code from the server log)
+# 2. verify (devOtp came back in step 1)
 curl -s -X POST $BASE/auth/verify-otp -H 'content-type: application/json' \
   -d '{"email":"priya@teamvector.space","otp":"418302","type":"internal"}'
 # → tokens
@@ -1138,6 +1146,5 @@ All three pass clean on the current implementation.
 | `POST` | `/auth/refresh` | public | Rotates the pair |
 | `POST` | `/auth/logout` | public | Revoke one refresh token |
 | `GET` | `/auth/me` | bearer | Session restore |
-| `POST` | `/auth/switch-role` | bearer, staff | Demo only, flag-gated |
 
-**11 endpoints.**
+**10 endpoints.**

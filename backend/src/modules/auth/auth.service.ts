@@ -1,5 +1,5 @@
 import { and, eq, isNull, lt, ne, or } from 'drizzle-orm';
-import { env } from '../../config/env.js';
+import { env, isProduction } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { db } from '../../db/index.js';
 import { customers, refreshTokens, users, type SubjectKind } from '../../db/schema.js';
@@ -148,7 +148,7 @@ async function revokeAllSessions(subjectId: string, kind: SubjectKind): Promise<
 // ---------------------------------------------------------------------------
 
 export type SignupResult =
-  | { status: 'otp_sent' }
+  | { status: 'otp_sent'; code: string }
   | { status: 'signed_in'; account: Account; session: Session };
 
 /**
@@ -179,23 +179,23 @@ export async function signup(
       return { status: 'signed_in', account: existing, session };
     }
 
-    await sendCode('signup', type, existing.email, existing.name);
-    return { status: 'otp_sent' };
+    const code = await sendCode('signup', type, existing.email, existing.name);
+    return { status: 'otp_sent', code };
   }
 
   const passwordHash = await hashPassword(input.password);
 
   if (type === 'internal') {
-    // role defaults to 'sales_rep' and team to null at the database level — neither
-    // is accepted from the request body.
+    // role defaults to 'sales_rep' at the database level and is never accepted
+    // from the request body.
     await db.insert(users).values({ name: input.name, email: input.email, passwordHash });
   } else {
     // tier defaults to 'bronze' and currency to 'INR' at the database level.
     await db.insert(customers).values({ name: input.name, email: input.email, passwordHash });
   }
 
-  await sendCode('signup', type, input.email, input.name);
-  return { status: 'otp_sent' };
+  const code = await sendCode('signup', type, input.email, input.name);
+  return { status: 'otp_sent', code };
 }
 
 /** Issues a code and emails it, honouring the resend cooldown. */
@@ -204,7 +204,7 @@ async function sendCode(
   type: AccountType,
   email: string,
   name: string,
-): Promise<void> {
+): Promise<string> {
   const kind = kindOf(type);
   if (await isOnCooldown(purpose, kind, email)) {
     throw ApiError.tooManyRequests(
@@ -224,6 +224,17 @@ async function sendCode(
     // rejection. Log loudly instead; the user can request a new code.
     logger.error({ err: error, purpose }, 'OTP email delivery failed — code still issued');
   }
+
+  return code;
+}
+
+/**
+ * The OTP, but only when BOTH guards allow it: a non-production NODE_ENV and an
+ * explicit opt-in flag. Two independent conditions, so a single misconfiguration
+ * cannot start leaking codes to anyone who can reach the signup endpoint.
+ */
+export function devOtp(code: string): { devOtp?: string } {
+  return !isProduction && env.EXPOSE_DEV_OTP ? { devOtp: code } : {};
 }
 
 export async function verifyOtpAndSignIn(
@@ -278,13 +289,13 @@ export async function resendOtp(
   type: AccountType,
   email: string,
   purpose: OtpPurpose,
-): Promise<void> {
+): Promise<string | null> {
   const account = await findAccount(type, email);
   // Silently succeed for unknown addresses so the endpoint cannot enumerate accounts.
-  if (!account || !account.active) return;
-  if (purpose === 'signup' && account.verified) return;
+  if (!account || !account.active) return null;
+  if (purpose === 'signup' && account.verified) return null;
 
-  await sendCode(purpose, type, account.email, account.name);
+  return sendCode(purpose, type, account.email, account.name);
 }
 
 // ---------------------------------------------------------------------------
@@ -413,12 +424,15 @@ export async function logout(token: string): Promise<void> {
 // Password reset / change
 // ---------------------------------------------------------------------------
 
-export async function forgotPassword(type: AccountType, email: string): Promise<void> {
+export async function forgotPassword(
+  type: AccountType,
+  email: string,
+): Promise<string | null> {
   const account = await findAccount(type, email);
   // Always report success — otherwise this endpoint confirms which emails exist.
-  if (!account || !account.active) return;
+  if (!account || !account.active) return null;
 
-  await sendCode('password_reset', type, account.email, account.name);
+  return sendCode('password_reset', type, account.email, account.name);
 }
 
 export async function resetPassword(
@@ -428,7 +442,10 @@ export async function resetPassword(
   newPassword: string,
 ): Promise<{ sessionsRevoked: number }> {
   const kind = kindOf(type);
-  const verdict = await verifyOtp('password_reset', kind, email, code);
+  // Checked WITHOUT consuming: if the new password turns out to be the current one,
+  // the user gets to retry with the same code instead of having to request another.
+  // Attempts are still counted, so this is not a free guessing window.
+  const verdict = await verifyOtp('password_reset', kind, email, code, false);
 
   if (!verdict.ok) {
     if (verdict.reason === 'expired') {

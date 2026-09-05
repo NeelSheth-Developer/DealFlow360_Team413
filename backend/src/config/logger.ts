@@ -8,7 +8,14 @@ export const logger = pino({
     : {
         transport: {
           target: 'pino-pretty',
-          options: { colorize: true, translateTime: 'SYS:HH:MM:ss', ignore: 'pid,hostname' },
+          options: {
+            colorize: true,
+            translateTime: 'SYS:HH:MM:ss',
+            ignore: 'pid,hostname',
+            // Without this the transport worker buffers, so logs appear out of order
+            // with stdout and are lost entirely if the process is killed.
+            sync: true,
+          },
         },
       }),
   redact: {

@@ -2,7 +2,7 @@
   "name": "team413-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Team_413 backend — Express + TypeScript, Neon Postgres, Upstash Redis, Resend, Cloudinary",
+  "description": "Team_413 backend \u2014 Express + TypeScript, Neon Postgres, Upstash Redis, Resend, Cloudinary",
   "type": "module",
   "main": "dist/server.js",
   "engines": {
@@ -19,7 +19,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "seed:admin": "tsx src/scripts/seed-admin.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
