@@ -214,7 +214,16 @@ async function sendCode(
   }
 
   const code = await issueOtp(purpose, kind, email);
-  await sendOtpEmail({ to: email, name, code, purpose });
+
+  try {
+    await sendOtpEmail({ to: email, name, code, purpose });
+  } catch (error) {
+    // The account row exists and the code is live in Redis, so the signup itself
+    // succeeded. Failing the request here would report failure for work that was
+    // actually done, and the caller could not tell the difference from a real
+    // rejection. Log loudly instead; the user can request a new code.
+    logger.error({ err: error, purpose }, 'OTP email delivery failed — code still issued');
+  }
 }
 
 export async function verifyOtpAndSignIn(
