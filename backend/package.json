@@ -22,11 +22,13 @@
     "db:studio": "drizzle-kit studio",
     "seed:admin": "tsx src/scripts/seed-admin.ts",
     "verify:risk": "tsx src/scripts/verify-risk.ts",
-    "verify:engines": "tsx src/scripts/verify-engines.ts"
+    "verify:engines": "tsx src/scripts/verify-engines.ts",
+    "e2e": "tsx src/scripts/e2e.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "@upstash/redis": "^1.35.7",
+    "cloudinary": "^2.11.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -34,6 +36,7 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "pdfkit": "^0.20.2",
     "pino": "^9.13.1",
     "pino-http": "^10.5.0",
     "resend": "^6.2.0",
@@ -46,6 +49,7 @@
     "@types/express": "^5.0.5",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.9.2",
+    "@types/pdfkit": "^0.17.6",
     "drizzle-kit": "^0.31.6",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",

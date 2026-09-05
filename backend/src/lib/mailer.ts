@@ -93,7 +93,10 @@ export async function deliver(message: Message): Promise<boolean> {
     });
     return true;
   } catch (error) {
-    logger.error({ err: error, subject: message.subject, to: message.to }, 'Transactional email failed');
+    logger.error(
+      { err: error, subject: message.subject, to: message.to },
+      'Transactional email failed',
+    );
     return false;
   }
 }

@@ -19,7 +19,12 @@ function isUnrecognizedKeys(error: ZodError): boolean {
   return error.issues.some((issue) => issue.code === 'unrecognized_keys');
 }
 
-export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
+export function errorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+): void {
   if (err instanceof ZodError) {
     const unknownKeys = isUnrecognizedKeys(err);
     res.status(400).json({

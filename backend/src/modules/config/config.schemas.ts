@@ -1,10 +1,7 @@
 import { z } from 'zod';
 import { cleanText } from '../../lib/sanitize.js';
 
-const percentage = z
-  .number()
-  .min(0, 'Cannot be negative')
-  .max(100, 'Cannot exceed 100');
+const percentage = z.number().min(0, 'Cannot be negative').max(100, 'Cannot exceed 100');
 
 /**
  * All three tiers at once, not one at a time. Ceilings are read together by the risk

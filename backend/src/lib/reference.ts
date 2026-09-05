@@ -31,16 +31,28 @@ const PAD: Record<Prefix, number> = {
 
 /** The next unused reference for a table, e.g. `Q-1042`. */
 export async function nextReference(prefix: Prefix, table: string): Promise<string> {
-  // `substring` past the prefix and the dash, cast to int. Rows whose reference does
-  // not match the pattern are excluded so a hand-inserted oddity cannot poison the max.
   const pattern = `^${prefix}-[0-9]+$`;
+
+  /**
+   * `split_part` rather than `SUBSTRING(reference FROM n)`.
+   *
+   * A bound parameter in the `FROM` position of `SUBSTRING` is inferred as text, which
+   * silently selects the REGEX overload — `SUBSTRING('Q-1001' FROM '3')` matches the
+   * pattern `3` against the string and returns null, not `'1001'`. The MAX then
+   * collapses to 0 and every call hands back the same starting reference, so only the
+   * first insert in a table could ever succeed. `split_part` takes its delimiter and
+   * index unambiguously and has no such overload.
+   *
+   * Rows whose reference does not match the pattern are excluded, so a hand-inserted
+   * oddity cannot poison the maximum.
+   */
   const result = await db.execute(
-    sql`SELECT COALESCE(MAX(SUBSTRING(reference FROM ${prefix.length + 2})::bigint), 0) AS top
+    sql`SELECT COALESCE(MAX(NULLIF(split_part(reference, '-', 2), '')::bigint), 0) AS top
         FROM ${sql.identifier(table)}
         WHERE reference ~ ${pattern}`,
   );
 
-  const top = Number((result.rows[0] as Record<string, unknown> | undefined)?.top ?? 0);
+  const top = Number(result.rows[0]?.top ?? 0);
   const next = Math.max(top + 1, START[prefix]);
   return `${prefix}-${String(next).padStart(PAD[prefix], '0')}`;
 }

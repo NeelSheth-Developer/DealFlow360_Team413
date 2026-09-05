@@ -41,7 +41,12 @@ export const createProductSchema = z
     costPrice: moneyValue,
     unit: text(24).default('unit'),
     taxPct: z.number().min(0).max(100).default(0),
-    description: z.string().transform(cleanText).pipe(z.string().max(2000)).nullable().default(null),
+    description: z
+      .string()
+      .transform(cleanText)
+      .pipe(z.string().max(2000))
+      .nullable()
+      .default(null),
     variants: z.array(variantSchema).max(50).default([]),
   })
   .strict();
@@ -66,7 +71,7 @@ export const listProductsQuerySchema = z
       .optional(),
     search: z.string().max(255).optional(),
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(200).default(50),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
   })
   .strict();
 

@@ -111,12 +111,7 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = loginSchema.parse(req.body);
-    const { account, session } = await login(
-      body.type,
-      body.email,
-      body.password,
-      meta(req),
-    );
+    const { account, session } = await login(body.type, body.email, body.password, meta(req));
 
     res.json({
       success: true,

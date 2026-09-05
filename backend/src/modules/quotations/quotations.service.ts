@@ -108,10 +108,7 @@ export async function listQuotations(actor: AuditActor, query: ListQuotationsQue
    * So the restriction is on drafts specifically, not on the whole list.
    */
   if (actor.role === 'sales_rep') {
-    const visible = or(
-      sql`${quotations.stage} <> 'draft'`,
-      eq(quotations.ownerId, actor.id ?? ''),
-    );
+    const visible = or(sql`${quotations.stage} <> 'draft'`, eq(quotations.ownerId, actor.id ?? ''));
     if (visible) filters.push(visible);
   }
 
@@ -278,10 +275,7 @@ export async function updateQuotation(actor: AuditActor, id: string, input: Upda
 
   // An order discount moves every line's effective discount at once, so it is a
   // governance event in the same way a line discount is.
-  if (
-    input.orderDiscountPct !== undefined &&
-    input.orderDiscountPct !== loaded.orderDiscountPct
-  ) {
+  if (input.orderDiscountPct !== undefined && input.orderDiscountPct !== loaded.orderDiscountPct) {
     await audit({
       entityType: 'quotation',
       entityId: id,
@@ -427,8 +421,7 @@ export async function updateLine(
   if (input.discountPct !== undefined && input.discountPct !== line.discountPct) {
     const ceilings = await loadCeilings();
     const ceiling = bindingCeiling(line.category, loaded.tier, ceilings);
-    const effective =
-      input.discountPct + loaded.orderDiscountPct * (1 - input.discountPct / 100);
+    const effective = input.discountPct + loaded.orderDiscountPct * (1 - input.discountPct / 100);
 
     await audit({
       entityType: 'quotation',
@@ -550,7 +543,10 @@ export async function shareQuotation(actor: AuditActor, id: string) {
   assertOwnerOrManager(actor, loaded);
 
   if (loaded.lines.length === 0) {
-    throw ApiError.conflict('EMPTY_QUOTATION', 'Add at least one line before sharing this quotation');
+    throw ApiError.conflict(
+      'EMPTY_QUOTATION',
+      'Add at least one line before sharing this quotation',
+    );
   }
   if (loaded.stage !== 'draft' && loaded.stage !== 'sent') {
     throw ApiError.conflict(
@@ -886,4 +882,3 @@ function roleLabel(role: string | undefined): string {
   };
   return role ? (labels[role] ?? role) : 'further';
 }
-

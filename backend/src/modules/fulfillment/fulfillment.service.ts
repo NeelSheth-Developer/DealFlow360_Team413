@@ -113,8 +113,7 @@ export async function getPlan(id: string) {
       backorders: openBackorders.map((row) => ({
         lineId: row.lineId,
         productId: row.productId,
-        productName:
-          loaded.lines.find((line) => line.id === row.lineId)?.productName ?? 'Unknown',
+        productName: loaded.lines.find((line) => line.id === row.lineId)?.productName ?? 'Unknown',
         qty: row.qty,
         etaDate: row.etaDate,
       })),
@@ -317,11 +316,9 @@ export async function overridePlan(actor: AuditActor, id: string, allocations: A
   }
 
   if (errors.length > 0) {
-    throw ApiError.unprocessable(
-      'INVALID_ALLOCATION',
-      'Fix the highlighted allocations.',
-      { errors },
-    );
+    throw ApiError.unprocessable('INVALID_ALLOCATION', 'Fix the highlighted allocations.', {
+      errors,
+    });
   }
 
   const suggestion = computeSplit(allocatableLines(loaded), views);
@@ -419,11 +416,7 @@ export async function consolidate(actor: AuditActor, id: string) {
   };
 }
 
-export async function setBackorderPolicy(
-  actor: AuditActor,
-  id: string,
-  policy: BackorderPolicy,
-) {
+export async function setBackorderPolicy(actor: AuditActor, id: string, policy: BackorderPolicy) {
   const loaded = await loadQuotation(id);
 
   await db
@@ -510,7 +503,13 @@ function present(
   loaded: LoadedQuotation,
   data: {
     allocations: Allocation[];
-    backorders: { lineId: string; productId: string; productName: string; qty: number; etaDate: string | null }[];
+    backorders: {
+      lineId: string;
+      productId: string;
+      productName: string;
+      qty: number;
+      etaDate: string | null;
+    }[];
     shipmentCount: number;
     estimatedCost: number;
     warehousesUsed: string[];

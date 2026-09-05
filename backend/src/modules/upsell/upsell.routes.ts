@@ -3,11 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireKind, requireRole } from '../../middleware/auth.js';
 import { resolveActor } from '../../lib/actor.js';
 import { asyncHandler } from '../../utils/async-handler.js';
-import {
-  createUpsellRuleSchema,
-  suggestSchema,
-  updateUpsellRuleSchema,
-} from './upsell.schemas.js';
+import { createUpsellRuleSchema, suggestSchema, updateUpsellRuleSchema } from './upsell.schemas.js';
 import { createRule, deleteRule, listRules, suggest, updateRule } from './upsell.service.js';
 
 export const upsellRouter = Router();

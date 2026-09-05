@@ -7,8 +7,7 @@ import type { SubjectKind } from '../db/schema.js';
 export type { OtpPurpose };
 
 export type OtpVerdict =
-  | { ok: true }
-  | { ok: false; reason: 'invalid' | 'expired' | 'too_many_attempts' };
+  { ok: true } | { ok: false; reason: 'invalid' | 'expired' | 'too_many_attempts' };
 
 /**
  * Codes live in Redis rather than Postgres: they are short-lived, high-churn, and
