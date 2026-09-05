@@ -5,6 +5,7 @@ import { resolveActor } from '../../lib/actor.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import {
   createWarehouseSchema,
+  splitOrderSchema,
   updateStockSchema,
   updateWarehouseSchema,
 } from './warehouses.schemas.js';
@@ -13,6 +14,7 @@ import {
   getWarehouse,
   listWarehouses,
   restock,
+  splitOrder,
   updateStock,
   updateWarehouse,
 } from './warehouses.service.js';
@@ -89,5 +91,20 @@ warehousesRouter.post(
     const id = idParam.parse(req.params.id);
     const actor = await resolveActor(req);
     res.json({ success: true, data: await restock(actor, id) });
+  }),
+);
+
+/**
+ * POST /warehouses/split
+ *
+ * Given a list of order lines (product_id + qty), returns which warehouse
+ * dispatches each product and any quantities that cannot be fulfilled (backorder).
+ * Active warehouses only, cheapest shipping-cost-weight first.
+ */
+warehousesRouter.post(
+  '/split',
+  asyncHandler(async (req, res) => {
+    const input = splitOrderSchema.parse(req.body);
+    res.json({ success: true, data: await splitOrder(input) });
   }),
 );

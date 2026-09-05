@@ -4,6 +4,19 @@ import { isProduction } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { ApiError } from '../utils/api-error.js';
 
+function isDuplicateConstraint(err: unknown, constraintName: string): boolean {
+  const hasKey = (e: unknown) =>
+    typeof e === 'object' &&
+    e !== null &&
+    'message' in e &&
+    typeof (e as { message: unknown }).message === 'string' &&
+    (e as { message: string }).message.includes(constraintName);
+  if (hasKey(err)) return true;
+  if (typeof err === 'object' && err !== null && 'cause' in err)
+    return hasKey((err as { cause: unknown }).cause);
+  return false;
+}
+
 export function notFoundHandler(req: Request, res: Response) {
   res.status(404).json({
     success: false,
@@ -51,6 +64,14 @@ export function errorHandler(
         message: err.message,
         ...(err.details ? { details: err.details } : {}),
       },
+    });
+    return;
+  }
+
+  if (isDuplicateConstraint(err, 'warehouses_name_key')) {
+    res.status(409).json({
+      success: false,
+      error: { code: 'WAREHOUSE_NAME_TAKEN', message: 'A warehouse with that name already exists' },
     });
     return;
   }

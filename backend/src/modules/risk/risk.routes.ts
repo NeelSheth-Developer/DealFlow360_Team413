@@ -1,8 +1,20 @@
 import { Router } from 'express';
 import { requireAuth, requireKind, requireRole } from '../../middleware/auth.js';
-import { loadCeilings, loadChain, scoreLines, type RiskLine } from '../../lib/risk.js';
+import { logger } from '../../config/logger.js';
+import {
+  computeBlendedScore,
+  loadCeilings,
+  loadChain,
+  scoreLines,
+  type RiskLine,
+} from '../../lib/risk.js';
 import { asyncHandler } from '../../utils/async-handler.js';
-import { scoreBatchSchema, scoreSchema, type ScoreInput } from './risk.schemas.js';
+import {
+  blendedScoreSchema,
+  scoreBatchSchema,
+  scoreSchema,
+  type ScoreInput,
+} from './risk.schemas.js';
 
 export const riskRouter = Router();
 
@@ -112,5 +124,45 @@ riskRouter.get(
         approvalChain: chain,
       },
     });
+  }),
+);
+
+/**
+ * Lightweight blended discount risk score for live UI preview.
+ *
+ * Accepts lines with discount % and pre-computed line totals directly — no saved
+ * quotation needed. Designed to be called on every discount/qty change in the UI
+ * (debounced) so the rep sees the risk impact before saving.
+ *
+ * Formula:
+ *   effective_ceiling = min(tier_ceiling, category_ceiling)
+ *   overage           = max(0, discount_pct - effective_ceiling)
+ *   blended_score     = SUM(overage * line_total) / SUM(line_total)
+ *
+ * approval_level is resolved by matching blended_score against the chain's
+ * minScore/maxScore bands only — singleLineTrip is not considered here.
+ */
+riskRouter.post(
+  '/blended-score',
+  asyncHandler(async (req, res) => {
+    const input = blendedScoreSchema.parse(req.body);
+    const [ceilings, chain] = await Promise.all([loadCeilings(), loadChain()]);
+
+    logger.debug({ ceilings, chain }, '[blended-score] loaded config from DB');
+
+    const data = computeBlendedScore(input, ceilings, chain);
+
+    logger.debug(
+      {
+        customerTier: input.customerTier,
+        lines: input.lines,
+        blended_score: data.blended_score,
+        flagged_lines: data.flagged_lines,
+        approval_level: data.approval_level,
+      },
+      '[blended-score] computed result',
+    );
+
+    res.json({ success: true, data });
   }),
 );
