@@ -25,6 +25,20 @@ export function listUsers({ role, active, teamId, q, page = 1, pageSize = 25 } =
   return api.list(`/users${buildQuery({ role, active, teamId, q, page, pageSize })}`);
 }
 
+/**
+ * The whole staff directory. `pageSize` caps at 100, and the owner pickers, the rep
+ * filters on the reporting screen and the directory table all read `state.users`
+ * directly — a rep past the hundredth row would simply not be selectable.
+ *
+ * @returns {Promise<{items: Array, meta: Object|null}>}
+ */
+export function listAllUsers({ role, active, teamId, q } = {}) {
+  return api.listAll(
+    ({ page, pageSize }) => `/users${buildQuery({ role, active, teamId, q, page, pageSize })}`,
+    { pageSize: 100 },
+  );
+}
+
 export function getUser(userId) {
   return api.get(`/users/${encodeURIComponent(userId)}`);
 }

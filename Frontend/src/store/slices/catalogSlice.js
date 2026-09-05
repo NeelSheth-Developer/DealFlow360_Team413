@@ -29,11 +29,15 @@ export function createCatalogSlice(set, get) {
      * Load the catalogue. `pageSize` is deliberately large: the seed carries 200
      * products and the builder's picker filters client-side once they are in hand.
      */
-    async loadProducts({ category, active, search, page = 1, pageSize = 200 } = {}) {
+    async loadProducts({ category, active, search } = {}) {
       set({ productsLoading: true, catalogError: null });
       try {
+        // Every page. `pageSize` caps at 200 server-side and the catalogue is larger
+        // than that, so the previous single maximal request dropped the tail — and a
+        // product missing from the picker is indistinguishable from one that was never
+        // created.
         const [{ items, meta }, priceLists] = await Promise.all([
-          productsApi.listProducts({ category, active, search, page, pageSize }),
+          productsApi.listAllProducts({ category, active, search }),
           productsApi.listPriceLists(),
         ]);
         set({ products: items, priceLists, productsMeta: meta });
@@ -46,10 +50,10 @@ export function createCatalogSlice(set, get) {
       }
     },
 
-    async loadCustomers({ q, tier, page = 1, pageSize = 100 } = {}) {
+    async loadCustomers({ q, tier } = {}) {
       set({ customersLoading: true });
       try {
-        const { items, meta } = await customersApi.listCustomers({ q, tier, page, pageSize });
+        const { items, meta } = await customersApi.listAllCustomers({ q, tier });
         set({ customers: items, customersMeta: meta });
         return { ok: true, items };
       } catch (error) {

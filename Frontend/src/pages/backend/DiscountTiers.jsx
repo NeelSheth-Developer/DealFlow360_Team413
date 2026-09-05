@@ -65,6 +65,9 @@ export default function DiscountTiers() {
         // able to preview an unsaved change.
         const result = await scoreLines({
           lines: sandboxLines,
+          // The tier is required by the schema, not decorative: the server picks the
+          // stored tier ceiling from it whenever the override below is absent.
+          tier: sandboxTier,
           categoryCeilings,
           tierCeiling: tierCeilings[sandboxTier] ?? 0,
           orderDiscountPct: 0,

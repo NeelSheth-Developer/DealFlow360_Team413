@@ -55,12 +55,18 @@ export function ConsolidationWatcher() {
       return;
     }
 
-    // `saving` is the server's own figure for what merging actually avoided.
+    // `saving` is the server's own figure for what merging actually avoided, and it is
+    // an OBJECT — { shipmentsSaved, costSaved } — not a number. Passing it straight to
+    // `money()` rendered the amount from an object rather than the figure inside it.
     const shipments = result.plan?.shipmentCount;
+    const costSaved = Number(result.saving?.costSaved) || 0;
+    const shipmentsSaved = Number(result.saving?.shipmentsSaved) || 0;
+
     toast.success('Backorder consolidated', {
       description: [
         shipments ? `${quote.reference} now ships in ${shipments} shipment(s).` : null,
-        result.saving ? `Saves ${money(result.saving, quote.currency)} in shipping.` : null,
+        shipmentsSaved > 0 ? `${shipmentsSaved} fewer shipment(s).` : null,
+        costSaved > 0 ? `Saves ${money(costSaved, quote.currency)} in shipping.` : null,
       ]
         .filter(Boolean)
         .join(' '),

@@ -25,14 +25,72 @@ import * as portalApi from '@/services/customerPortalService';
  * a link that grants access is a credential, and a forwarded one would hand a competitor
  * the full commercial terms.
  */
+/**
+ * Every `/customer/quotations/:id` sub-route parses `:id` as a uuid before it does
+ * anything else, so a reference like "Q-1035" is rejected with
+ * 400 VALIDATION_FAILED "Invalid quotation id".
+ *
+ * This is used to tell the two apart, because the list projection may or may not carry
+ * the uuid depending on which build of the API is deployed. See PORTAL_ID_MISSING below.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value) {
+  return UUID_RE.test(String(value ?? ''));
+}
+
+/**
+ * The one thing on this screen the client cannot work around.
+ *
+ * `projectForCustomer` (portal.projection.ts) builds an allow-list that starts at
+ * `reference` and never copies `loaded.id`. But the detail, comment, request, confirm
+ * and PDF routes all take the quotation UUID and reject anything else at the edge. So a
+ * customer session has no path to the id those five routes need — six of the seven
+ * portal endpoints are unreachable from the list the seventh returns.
+ *
+ * WHAT THIS SLICE DOES ABOUT IT. The list payload is the FULL projection for every
+ * quotation, so a detail screen keyed on the reference can still render completely from
+ * the cached row rather than bouncing the customer to a 404. What it cannot do is act:
+ * posting a comment, proposing terms or confirming needs the id. Those return
+ * `PORTAL_ID_MISSING` so the page can say the action is unavailable, which is honest,
+ * rather than firing a request that comes back as an unexplained 400.
+ *
+ * THE FIX IS ONE LINE OF BACKEND: add `id: loaded.id` to the object
+ * `projectForCustomer` returns. Nothing else here changes when it lands — `idFor`
+ * picks the uuid up the moment the payload carries it.
+ */
+const PORTAL_ID_MISSING = {
+  ok: false,
+  code: 'PORTAL_ID_MISSING',
+  error:
+    'This action is not available yet — the server has not sent an id for this quotation. Please contact your account manager.',
+};
+
 export function createCustomerSlice(set, get) {
   /**
-   * The projection carries `reference` ("Q-1035") but no separate uuid, so the reference
-   * is what routes and cache keys use. `id` is read first anyway in case a deployment
-   * includes it — the two are different fields per §0 and must not be conflated.
+   * The key a route and the cache use. Prefers the uuid, falls back to the reference,
+   * because the projection carries `reference` but not always `id`.
    */
   function keyOf(view) {
     return view?.id ?? view?.reference ?? null;
+  }
+
+  /**
+   * Resolve whatever the route gave us into the uuid the API needs.
+   *
+   * A uuid passes straight through. A reference is looked up against the cached
+   * projections, which covers the case where a future build starts returning `id` while
+   * old links still carry references.
+   */
+  function idFor(routeKey) {
+    if (isUuid(routeKey)) return routeKey;
+
+    const state = get();
+    const cached =
+      state.myQuotationViews[routeKey] ??
+      state.myQuotations.find((q) => q.reference === routeKey || q.id === routeKey);
+
+    return isUuid(cached?.id) ? cached.id : null;
   }
 
   function cache(view) {
@@ -83,14 +141,42 @@ export function createCustomerSlice(set, get) {
      * answer as "does not exist" on purpose — so it is reported as not-found rather
      * than as a permission problem.
      */
-    async loadMyQuotation(quotationId) {
-      if (!quotationId) return { ok: false, error: 'No quotation.' };
+    async loadMyQuotation(routeKey) {
+      if (!routeKey) return { ok: false, error: 'No quotation.' };
 
       set({ portalLoading: true, portalError: null });
+
+      const quotationId = idFor(routeKey);
+
+      /**
+       * No uuid available, so GET /customer/quotations/:id would answer 400 rather
+       * than 404 and the page would send the customer away from a quotation that
+       * exists. Fall back to the list, which returns the FULL projection per row —
+       * everything this screen renders is already in it.
+       */
+      if (!quotationId) {
+        const cached = get().myQuotationViews[routeKey];
+        if (!cached) await get().loadMyQuotations();
+
+        const view =
+          get().myQuotationViews[routeKey] ??
+          get().myQuotations.find((q) => q.reference === routeKey) ??
+          null;
+
+        set({ portalLoading: false });
+        if (!view) return { ok: false, notFound: true, error: 'Quotation not found.' };
+
+        // Flagged rather than silently degraded: the page disables the actions that
+        // need an id and says why, instead of offering buttons that cannot work.
+        cache({ ...view, actionsUnavailable: true });
+        return { ok: true, view, actionsUnavailable: true };
+      }
+
       try {
         const view = await portalApi.getMyQuotation(quotationId);
+        // Cached under the key the route used, so a reference-keyed URL still resolves.
         set((state) => ({
-          myQuotationViews: { ...state.myQuotationViews, [quotationId]: view },
+          myQuotationViews: { ...state.myQuotationViews, [routeKey]: view, [quotationId]: view },
           portalLoading: false,
         }));
         return { ok: true, view };
@@ -112,8 +198,11 @@ export function createCustomerSlice(set, get) {
      * a customer waiting on a decision must still be able to chase it. Only a closed
      * quotation blocks messaging, and the server is the one that decides.
      */
-    async customerAddComment(quotationId, lineId, message) {
+    async customerAddComment(routeKey, lineId, message) {
       if (!message?.trim()) return { ok: false, error: 'Type a message first.' };
+
+      const quotationId = idFor(routeKey);
+      if (!quotationId) return PORTAL_ID_MISSING;
 
       try {
         const view = await portalApi.addComment(quotationId, lineId, message.trim());
@@ -131,7 +220,10 @@ export function createCustomerSlice(set, get) {
      * 409 ACTION_NOT_AVAILABLE when the previous request is still under review; the
      * server's message explains that, so it is surfaced verbatim.
      */
-    async customerSubmitRequest(quotationId, { counterDiscountPct = null, justification = '' } = {}) {
+    async customerSubmitRequest(routeKey, { counterDiscountPct = null, justification = '' } = {}) {
+      const quotationId = idFor(routeKey);
+      if (!quotationId) return PORTAL_ID_MISSING;
+
       try {
         const view = await portalApi.submitRequest(quotationId, {
           counterDiscountPct,
@@ -156,7 +248,10 @@ export function createCustomerSlice(set, get) {
      * governance data. Only `requiredApprovers` comes back, and even that is reported as
      * "needs a further sign-off" rather than as a count of who.
      */
-    async customerConfirm(quotationId) {
+    async customerConfirm(routeKey) {
+      const quotationId = idFor(routeKey);
+      if (!quotationId) return PORTAL_ID_MISSING;
+
       try {
         const result = await portalApi.confirmQuotation(quotationId);
         if (result?.quotation) cache(result.quotation);
@@ -172,7 +267,10 @@ export function createCustomerSlice(set, get) {
     },
 
     /** The customer's own quotation as a PDF. Ownership is re-checked server-side. */
-    async customerQuotationPdf(quotationId) {
+    async customerQuotationPdf(routeKey) {
+      const quotationId = idFor(routeKey);
+      if (!quotationId) return PORTAL_ID_MISSING;
+
       try {
         return { ok: true, ...(await portalApi.getMyQuotationPdf(quotationId)) };
       } catch (error) {

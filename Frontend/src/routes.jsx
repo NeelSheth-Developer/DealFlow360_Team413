@@ -20,6 +20,7 @@ import { Forbidden, NotFound } from '@/pages/ErrorPages';
 import Dashboard from '@/pages/workspace/Dashboard';
 import Pipeline from '@/pages/workspace/Pipeline';
 import Quotations from '@/pages/workspace/Quotations';
+import Approvals from '@/pages/workspace/Approvals';
 import NewQuotation from '@/pages/workspace/NewQuotation';
 import QuotationBuilder from '@/pages/workspace/QuotationBuilder';
 import QuotationApproval from '@/pages/workspace/QuotationApproval';
@@ -43,6 +44,13 @@ import CustomerQuotationDetail from '@/pages/customer/CustomerQuotationDetail';
 import CustomerConfirmed from '@/pages/customer/CustomerConfirmed';
 
 const BACKEND_ROLES = ['admin', 'sales_manager', 'finance'];
+
+/**
+ * GET /approvals/queue is restricted to the roles that can actually act on a step
+ * (§12.5). A sales_rep reaching it would get a 403 and an empty screen, so the route is
+ * gated rather than left to fail.
+ */
+const APPROVER_ROLES = ['admin', 'sales_manager', 'finance'];
 
 /**
  * Three separate route trees:
@@ -121,6 +129,9 @@ export default function AppRoutes() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="pipeline" element={<Pipeline />} />
           <Route path="quotations" element={<Quotations />} />
+          <Route element={<RequireRole allow={APPROVER_ROLES} />}>
+            <Route path="approvals" element={<Approvals />} />
+          </Route>
           <Route path="quotations/new" element={<NewQuotation />} />
           <Route path="quotations/:id" element={<QuotationBuilder />} />
           <Route path="quotations/:id/approval" element={<QuotationApproval />} />

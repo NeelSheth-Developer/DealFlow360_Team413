@@ -29,6 +29,18 @@ export function listCustomers({ q, tier, page = 1, pageSize = 25 } = {}) {
   return api.list(`/customers${buildQuery({ q, tier, page, pageSize })}`);
 }
 
+/**
+ * The whole customer book. `pageSize` caps at 100 server-side, so anything past the
+ * hundredth customer was invisible to the picker and to the tier screen.
+ *
+ * @returns {Promise<{items: Array, meta: Object|null}>}
+ */
+export function listAllCustomers({ q, tier } = {}) {
+  return api.listAll(({ page, pageSize }) => `/customers${buildQuery({ q, tier, page, pageSize })}`, {
+    pageSize: 100,
+  });
+}
+
 /** One customer including `quotationCount`. 404 when unknown. */
 export function getCustomer(customerId) {
   return api.get(`/customers/${encodeURIComponent(customerId)}`);

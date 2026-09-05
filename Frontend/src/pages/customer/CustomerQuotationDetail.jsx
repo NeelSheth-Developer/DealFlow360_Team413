@@ -79,6 +79,14 @@ export default function CustomerQuotationDetail() {
 
   const status = statusMeta(view);
 
+  /**
+   * True when this quotation was resolved from the list by its reference because the
+   * payload carried no uuid. Everything on the page still renders — the list returns the
+   * full projection — but the routes that need an id cannot be called, so the controls
+   * that would hit them are disabled and the banner below says so.
+   */
+  const actionsUnavailable = Boolean(view.actionsUnavailable);
+
   const handleSend = (lineId) => async (message) => {
     const result = await customerAddComment(id, lineId, message);
     if (result.ok) {
@@ -186,11 +194,36 @@ export default function CustomerQuotationDetail() {
             </RawBadge>
             {/* Rendered by the server, with ownership re-checked before anything is
                 drawn — the PDF route does not skip the scoping the others apply. */}
-            <Button size="xs" variant="ghost" icon={Download} onClick={handleDownload}>
+            <Button
+              size="xs"
+              variant="ghost"
+              icon={Download}
+              disabled={view.actionsUnavailable}
+              onClick={handleDownload}
+            >
               Download PDF
             </Button>
           </div>
         </div>
+
+        {actionsUnavailable && (
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-accent-amber/35 bg-accent-amber/10 p-3">
+            <AlertTriangle
+              className="mt-0.5 h-4 w-4 shrink-0 text-accent-amber"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-accent-amber">
+                Messaging and confirmation are temporarily unavailable
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">
+                You can review every line and total below. Replying, proposing new terms and
+                confirming are not available for this quotation right now — please contact your
+                account manager and they can action it for you.
+              </p>
+            </div>
+          </div>
+        )}
 
         {view.statusNote && (
           <div
@@ -288,7 +321,7 @@ export default function CustomerQuotationDetail() {
                   <div className="mt-3">
                     <ChatThread
                       line={line}
-                      canMessage={view.canMessage}
+                      canMessage={view.canMessage && !actionsUnavailable}
                       onSend={handleSend(line.id)}
                       autoFocus
                     />
@@ -326,7 +359,7 @@ export default function CustomerQuotationDetail() {
       </GlassPanel>
 
       {/* --------------------------------------------- counter discount */}
-      {view.canProposeTerms && (
+      {view.canProposeTerms && !actionsUnavailable && (
         <GlassPanel
           title="Propose different terms"
           description="Tell us what would work and we'll review it internally."
@@ -379,23 +412,29 @@ export default function CustomerQuotationDetail() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-sm font-bold text-ink">
-              {view.canConfirm ? 'Ready to move forward?' : 'Nothing to action right now'}
+              {actionsUnavailable
+                ? 'Review only'
+                : view.canConfirm
+                  ? 'Ready to move forward?'
+                  : 'Nothing to action right now'}
             </p>
             <p className="mt-0.5 max-w-lg text-xs leading-relaxed text-ink-soft">
-              {view.canConfirm
-                ? 'Confirming accepts the terms above. If they need internal sign-off we handle that automatically — you won’t need to do anything else.'
-                : view.isDecided
-                  ? 'Terms are agreed. Your account manager will be in touch with next steps.'
-                  : 'Your request is with our team. You can keep messaging on any line while you wait.'}
+              {actionsUnavailable
+                ? 'Everything above is the current agreed position. To confirm or ask for a change, contact your account manager.'
+                : view.canConfirm
+                  ? 'Confirming accepts the terms above. If they need internal sign-off we handle that automatically — you won’t need to do anything else.'
+                  : view.isDecided
+                    ? 'Terms are agreed. Your account manager will be in touch with next steps.'
+                    : 'Your request is with our team. You can keep messaging on any line while you wait.'}
             </p>
           </div>
 
           {/* Three independent capabilities, so the two buttons are gated separately.
               They happen to move together today, but reading one off the other would
               break the moment the server's table changes. */}
-          {(view.canProposeTerms || view.canConfirm) && (
+          {(view.canProposeTerms || view.canConfirm) && !actionsUnavailable && (
             <div className="flex flex-wrap gap-2">
-              {view.canProposeTerms && (
+              {view.canProposeTerms && !actionsUnavailable && (
                 <Button
                   variant="secondary"
                   icon={Send}

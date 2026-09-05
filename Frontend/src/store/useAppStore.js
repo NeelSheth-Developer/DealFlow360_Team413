@@ -101,6 +101,7 @@ export const useAppStore = create(
       fulfillmentPlans: {},
       billingViews: {},
       invoicesMeta: null,
+      invoicesLoading: false,
 
       // ------------------------------------------------------- runtime flags
       isReloading: false,
@@ -169,6 +170,10 @@ export const useAppStore = create(
           get().loadNotifications(),
           get().loadUsers(),
           get().loadTeams(),
+          // Nothing fetched these before, so `state.invoices` stayed empty for the whole
+          // session: the Invoice tab never unlocked from `hasInvoice`, and
+          // `selectInvoiceForQuote` answered null on a quotation that has been billed.
+          get().loadInvoices(),
         ]);
         return { ok: true };
       },

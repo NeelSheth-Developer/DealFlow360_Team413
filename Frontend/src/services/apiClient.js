@@ -133,6 +133,61 @@ const NO_REFRESH_PATHS = [
   '/auth/logout',
 ];
 
+/* ------------------------------------------------------------------ retries */
+
+/**
+ * Bounded retry for READS only.
+ *
+ * The list endpoints that fan out per row — GET /quotations, GET /invoices and
+ * GET /customer/quotations each load every line, comment and approval step for every
+ * row they return — intermittently answer 500 under load, and the failure rate climbs
+ * with `pageSize`. A single 500 on the boot fetch left the whole workspace showing an
+ * empty pipeline, which reads as "there are no deals" rather than "one request failed".
+ *
+ * Only GET is replayed, and only on a transport failure or a 5xx. A POST, PUT, PATCH or
+ * DELETE is never retried here: the server may well have applied it before the
+ * connection broke, and a second attempt would add a line, record a second payment or
+ * approve a step twice. Payments carry an Idempotency-Key for exactly that reason, and
+ * that is the mechanism a write retry belongs in — not this one.
+ *
+ * 4xx is never retried either. A 400, 403, 404 or 409 is a real answer, and asking again
+ * gets the same one more slowly.
+ */
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
+const MAX_READ_ATTEMPTS = 3;
+const RETRY_BASE_MS = 400;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableRead(method, error) {
+  if (method !== 'GET') return false;
+  if (!(error instanceof ApiError)) return false;
+  if (error.status === 0) return error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT';
+  return RETRYABLE_STATUS.has(error.status);
+}
+
+/**
+ * Run `attempt` up to MAX_READ_ATTEMPTS times with exponential backoff.
+ *
+ * The jitter matters: `loadReferenceData` fires eleven requests at once, and a fixed
+ * delay would line their retries up into the same second and reproduce the load that
+ * caused the failure.
+ */
+async function withReadRetry(method, attempt) {
+  const maxAttempts = method === 'GET' ? MAX_READ_ATTEMPTS : 1;
+
+  for (let i = 0; ; i += 1) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (i >= maxAttempts - 1 || !isRetryableRead(method, error)) throw error;
+      await sleep(RETRY_BASE_MS * 2 ** i + Math.random() * 250);
+    }
+  }
+}
+
 let refreshInFlight = null;
 
 async function performRefresh() {
@@ -225,8 +280,10 @@ async function rawRequest(method, path, body, withAuth = true, unwrap = true, ex
 }
 
 async function request(method, path, body, unwrap = true, extraHeaders) {
+  const send = () => withReadRetry(method, () => rawRequest(method, path, body, true, unwrap, extraHeaders));
+
   try {
-    return await rawRequest(method, path, body, true, unwrap, extraHeaders);
+    return await send();
   } catch (err) {
     const retryable =
       err instanceof ApiError &&
@@ -245,7 +302,7 @@ async function request(method, path, body, unwrap = true, extraHeaders) {
       throw new ApiError('Your session has expired. Please sign in again.', 401, 'SESSION_EXPIRED', null);
     }
 
-    return rawRequest(method, path, body, true, unwrap, extraHeaders);
+    return send();
   }
 }
 
@@ -326,8 +383,13 @@ async function rawPdfRequest(path) {
 }
 
 async function pdfRequest(path) {
+  // A PDF route is a GET, so it gets the same 5xx retry as any other read. Rendering
+  // one is the heaviest thing the API does, which is exactly when a transient failure
+  // is most likely.
+  const send = () => withReadRetry('GET', () => rawPdfRequest(path));
+
   try {
-    return await rawPdfRequest(path);
+    return await send();
   } catch (err) {
     const retryable = err instanceof ApiError && err.status === 401 && getRefreshToken();
     if (!retryable) throw err;
@@ -338,7 +400,7 @@ async function pdfRequest(path) {
       clearAuthTokens();
       throw new ApiError('Your session has expired. Please sign in again.', 401, 'SESSION_EXPIRED', null);
     }
-    return rawPdfRequest(path);
+    return send();
   }
 }
 
@@ -383,6 +445,102 @@ export const api = {
       items: Array.isArray(envelope?.data) ? envelope.data : [],
       meta: envelope?.meta ?? null,
     };
+  },
+
+  /**
+   * Every page of a paginated list, walked in order.
+   *
+   * Two problems this solves, and both of them showed up as "the data isn't there":
+   *
+   *  1. A PAGE CAP IS NOT A TOTAL. `GET /products` caps `pageSize` at 200 and the
+   *     catalogue holds more than that, so a single maximal request silently dropped
+   *     the tail — a rep simply could not find those products in the picker.
+   *  2. A BIG PAGE IS NOT A CHEAP PAGE. `GET /quotations` loads every line, comment and
+   *     approval step for every row it returns. On one deployment that is fine; on a
+   *     smaller one it answers 500 for every `pageSize=100` request while small pages
+   *     succeed. Which host `VITE_API_BASE_URL` points at decides which is true.
+   *
+   * SO THE PAGE SIZE ADAPTS. The walk starts at `pageSize` — the biggest the endpoint
+   * allows, which is usually the whole collection in one request. If the FIRST page comes
+   * back as a server error and `fallbackPageSize` is set, the walk restarts at the
+   * smaller size. That gets the fast, exact answer where the server can give one, and
+   * still gets an answer where it cannot.
+   *
+   * FEWER PAGES IS ALSO MORE CORRECT, which is why the big page is tried first rather
+   * than being a mere optimisation. `GET /quotations` orders by `lastActivityAt DESC`
+   * with LIMIT/OFFSET, and that column is not unique — seeded rows share a timestamp to
+   * the millisecond. Postgres may order those ties differently between the two queries
+   * that serve page 1 and page 2, so a row can appear on both while another is skipped
+   * entirely: walking 100 quotations in pages of 25 yields 100 rows of which only 98 are
+   * distinct. One page of 100 has no boundary to lose a row across.
+   *
+   * DEDUPED BY `id` regardless, because when the fallback does run, a duplicate is
+   * visible — the same quote number twice in the list, and its value counted twice in the
+   * pipeline header. The row skipped in that case is NOT recoverable on this side; only a
+   * stable tiebreaker in the server's ORDER BY can fix that.
+   *
+   * SEQUENTIAL ON PURPOSE when it does page. Firing pages in parallel puts the same load
+   * back on the server in one burst, which is what fails. Each page also carries the read
+   * retry from `request`, so one flaky page does not lose the whole collection.
+   *
+   * `onPage` is called with the rows accumulated so far after each page, so a caller can
+   * paint the first batch immediately instead of holding a blank screen for the walk.
+   *
+   * `buildPath` receives `{ page, pageSize }` and returns the full path with its query.
+   * `maxPages` is a stop so a server that always reports another page cannot spin here.
+   */
+  listAll: async (
+    buildPath,
+    { pageSize = 25, fallbackPageSize = null, maxPages = 40, onPage } = {},
+  ) => {
+    const walk = async (size) => {
+      const items = [];
+      const seen = new Set();
+      let lastMeta = null;
+
+      for (let page = 1; page <= maxPages; page += 1) {
+        const { items: pageItems, meta } = await api.list(buildPath({ page, pageSize: size }));
+        lastMeta = meta;
+
+        for (const item of pageItems) {
+          // Rows without an id cannot be deduped, so they are kept as-is rather than
+          // collapsed onto each other by `undefined`.
+          const key = item?.id;
+          if (key !== undefined && key !== null) {
+            if (seen.has(key)) continue;
+            seen.add(key);
+          }
+          items.push(item);
+        }
+
+        onPage?.(items.slice(), meta);
+
+        // No meta means the endpoint does not paginate — one pass is the whole answer.
+        if (!meta) break;
+        if (pageItems.length === 0) break;
+        if (page >= (meta.totalPages ?? 1)) break;
+      }
+
+      return {
+        items,
+        // `page`/`pageSize` are rewritten to describe what was actually returned: this is
+        // one collection, not page 4 of it. `total` stays the server's own count so a
+        // screen can still tell whether the walk came up short.
+        meta: lastMeta ? { ...lastMeta, page: 1, pageSize: items.length, totalPages: 1 } : null,
+      };
+    };
+
+    if (!fallbackPageSize || fallbackPageSize >= pageSize) return walk(pageSize);
+
+    try {
+      return await walk(pageSize);
+    } catch (error) {
+      // Only a server-side failure means "that page was too big to build". A 401, 403 or
+      // a bad filter would fail identically at any size, so those are re-thrown.
+      const tooBig = error instanceof ApiError && RETRYABLE_STATUS.has(error.status);
+      if (!tooBig) throw error;
+      return walk(fallbackPageSize);
+    }
   },
 
   /**

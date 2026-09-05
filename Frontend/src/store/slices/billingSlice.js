@@ -22,7 +22,14 @@ export function createBillingSlice(set, get) {
     return billing;
   }
 
-  /** Invoices arrive nested in a billing payload or standalone; merge either shape. */
+  /**
+   * Merge an invoice into the cache.
+   *
+   * The billing payload does NOT nest one — it carries `invoiceId` and
+   * `invoiceReference` only — so `syncInvoiceFromBilling` below fetches it by id
+   * instead. This still takes a whole invoice from the routes that do return one
+   * (GET /invoices/:id, POST /invoices/:id/send, POST /invoices/:id/payments).
+   */
   function absorbInvoice(invoice) {
     if (!invoice?.id) return null;
     set((state) => {
@@ -34,6 +41,28 @@ export function createBillingSlice(set, get) {
       };
     });
     return invoice;
+  }
+
+  /**
+   * Pull the invoice a billing payload REFERS to into the invoice cache.
+   *
+   * `GET /quotations/:id/billing` names the invoice (`invoiceId`, `invoiceReference`)
+   * without embedding it, so nothing but an explicit fetch can put it in the store. It
+   * is skipped when the id is already cached — the only thing that changes an invoice is
+   * a send or a payment, and both write it back themselves.
+   */
+  async function syncInvoiceFromBilling(billing) {
+    const invoiceId = billing?.invoiceId;
+    if (!invoiceId) return null;
+    if (get().invoices.some((i) => i.id === invoiceId)) return null;
+
+    try {
+      return absorbInvoice(await invoicesApi.getInvoice(invoiceId));
+    } catch {
+      // A missing invoice must not fail the billing screen — the screen's own data has
+      // already arrived, and the Invoice tab simply stays as it was.
+      return null;
+    }
   }
 
   function fail(error) {
@@ -52,7 +81,7 @@ export function createBillingSlice(set, get) {
       try {
         const billing = await billingApi.getBilling(quoteId);
         storeBilling(quoteId, billing);
-        if (billing?.invoice) absorbInvoice(billing.invoice);
+        await syncInvoiceFromBilling(billing);
         return { ok: true, billing };
       } catch (error) {
         return fail(error);
@@ -80,15 +109,23 @@ export function createBillingSlice(set, get) {
       try {
         const billing = await billingApi.buildBilling(quoteId);
         storeBilling(quoteId, billing);
-        if (billing?.invoice) absorbInvoice(billing.invoice);
+        // Building is what CREATES the invoice, so this is the moment it has to reach
+        // the cache — the Invoice tab and `selectInvoiceForQuote` both read from there.
+        await syncInvoiceFromBilling(billing);
         return { ok: true, billing };
       } catch (error) {
         return fail(error);
       }
     },
 
+    /**
+     * The recurring lines with their occurrence schedules.
+     *
+     * The payload calls this `recurringRows`; there is no `schedules` key on it, so the
+     * previous accessor answered an empty array for every quotation with a subscription.
+     */
     getBillingSchedules(quoteId) {
-      return get().billingViews[quoteId]?.schedules ?? [];
+      return get().billingViews[quoteId]?.recurringRows ?? [];
     },
 
     getInvoiceForQuote(quoteId) {
@@ -100,12 +137,18 @@ export function createBillingSlice(set, get) {
     },
 
     async loadInvoices(filters = {}) {
+      set({ invoicesLoading: true });
       try {
-        const { items, meta } = await invoicesApi.listInvoices({ pageSize: 100, ...filters });
+        // Paged rather than one `pageSize: 100` request: each row is the full detail
+        // object with its lines and payments, and asking for a hundred of them at once
+        // is the shape that 500s.
+        const { items, meta } = await invoicesApi.listAllInvoices(filters);
         set({ invoices: items, invoicesMeta: meta });
         return { ok: true, items };
       } catch (error) {
         return fail(error);
+      } finally {
+        set({ invoicesLoading: false });
       }
     },
 

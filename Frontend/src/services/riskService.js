@@ -45,21 +45,31 @@ export function riskInputKey(quotation, categoryCeilings, tierCeilings) {
 }
 
 /**
- * Build the §10.1 payload.
+ * Build the §10.1 payload for scoring a REAL quotation.
  *
- * `tierCeiling` and `categoryCeilings` are honoured ONLY for admin and sales_manager,
- * who own the configuration and use the risk sandbox to preview a change before saving
- * it. For every other role the server ignores them and uses stored config — so sending
- * them unconditionally is safe, and the server rather than the client is what stops a
- * rep scoring against a ceiling they invented.
+ * NO CEILING OVERRIDES ARE SENT. `tierCeiling` and `categoryCeilings` are optional
+ * overrides that the server honours for admin and sales_manager — the two roles that own
+ * the configuration and use the sandbox to preview a change before saving it. Sending
+ * them on the routing path was actively wrong for exactly those two roles:
+ *
+ *   · The store starts with `tierCeilings: {}`, and `loadDiscountConfig()` has not
+ *     resolved on the first render. So the first score of every quotation went out as
+ *     `tierCeiling: 0` — a ceiling of zero makes every line a violation. A gold order
+ *     at 20% off scored 24 points and resolved to "Manager + Finance" when the real
+ *     answer against stored config is 9 points and "Manager approval".
+ *   · A sales_rep never sees the difference, because the server ignores overrides from
+ *     them. That is what kept this hidden: it is wrong only for the roles that approve.
+ *
+ * Omitting them makes the server use stored config, which is the same config
+ * `submit-approval` re-scores against — so the chain shown on screen is the chain the
+ * quotation will actually route to. The sandbox still previews an unsaved ceiling
+ * through `scoreLines`, which is the one caller that should be sending them.
  */
-function buildPayload(quotation, categoryCeilings, tierCeilings) {
+function buildPayload(quotation) {
   return {
     quotationId: quotation.id ?? null,
     tier: quotation.tier,
     orderDiscountPct: Number(quotation.orderDiscountPct) || 0,
-    tierCeiling: tierCeilings?.[quotation.tier] ?? 0,
-    categoryCeilings,
     lines: (quotation.lines ?? []).map((l) => ({
       id: l.id,
       productName: l.productName,
@@ -107,8 +117,8 @@ function normalise(raw) {
  * the cache entry so the gauge can say "score unavailable" rather than showing a zero
  * that reads like "no violations".
  */
-export async function scoreQuotation({ quotation, categoryCeilings, tierCeilings }) {
-  const raw = await api.post('/risk/score', buildPayload(quotation, categoryCeilings, tierCeilings));
+export async function scoreQuotation({ quotation }) {
+  const raw = await api.post('/risk/score', buildPayload(quotation));
   return normalise(raw);
 }
 
@@ -122,14 +132,14 @@ export async function scoreQuotation({ quotation, categoryCeilings, tierCeilings
  * @returns {Promise<Object>} keyed by quotation id. A quotation the server omitted is
  *   simply absent rather than filled in with a guess.
  */
-export async function scoreQuotations({ quotations, categoryCeilings, tierCeilings }) {
+export async function scoreQuotations({ quotations }) {
   const byId = {};
   const CHUNK = 50;
 
   for (let i = 0; i < quotations.length; i += CHUNK) {
     const slice = quotations.slice(i, i + CHUNK);
     const raw = await api.post('/risk/score-batch', {
-      quotations: slice.map((q) => buildPayload(q, categoryCeilings, tierCeilings)),
+      quotations: slice.map((q) => buildPayload(q)),
     });
 
     for (const entry of raw?.results ?? []) {
@@ -146,9 +156,19 @@ export async function scoreQuotations({ quotations, categoryCeilings, tierCeilin
  * than a separate copy of it. `quotationId: null` is expected by the server here and
  * must not 404.
  */
-export async function scoreLines({ lines, categoryCeilings, tierCeiling, orderDiscountPct = 0 }) {
+export async function scoreLines({
+  lines,
+  tier,
+  categoryCeilings,
+  tierCeiling,
+  orderDiscountPct = 0,
+}) {
   const raw = await api.post('/risk/score', {
     quotationId: null,
+    // REQUIRED, and it was missing. `scoreSchema` has no default for `tier`, and every
+    // request body is `.strict()`, so omitting it meant the sandbox answered
+    // 400 VALIDATION_FAILED on every keystroke and never rendered a score at all.
+    tier,
     tierCeiling,
     categoryCeilings,
     orderDiscountPct,

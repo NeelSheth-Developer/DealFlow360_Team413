@@ -26,6 +26,23 @@ export function listProducts({ category, active, search, page = 1, pageSize = 50
   return api.list(`/products${buildQuery({ category, active, search, page, pageSize })}`);
 }
 
+/**
+ * THE WHOLE CATALOGUE, not the first page of it.
+ *
+ * `pageSize` is capped at 200 server-side and the catalogue is larger than that, so a
+ * single maximal request quietly returned a truncated list — and a product missing from
+ * the builder's picker looks like a product that does not exist. The builder filters
+ * client side, so it needs every row, not a page.
+ *
+ * @returns {Promise<{items: Array, meta: Object|null}>}
+ */
+export function listAllProducts({ category, active, search } = {}) {
+  return api.listAll(
+    ({ page, pageSize }) => `/products${buildQuery({ category, active, search, page, pageSize })}`,
+    { pageSize: 200 },
+  );
+}
+
 export function getProduct(productId) {
   return api.get(`/products/${encodeURIComponent(productId)}`);
 }

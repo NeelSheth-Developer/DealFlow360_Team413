@@ -20,13 +20,14 @@ import * as usersApi from '@/services/usersService';
 export function createDirectorySlice(set, get) {
   return {
     /**
-     * pageSize 100: the directory is a single table with no pager, and a staff list is
-     * tens of rows, not thousands.
+     * Every page. The directory is a single table with no pager, and the owner pickers
+     * read `state.users` directly — a staff member past the server's 100-row page cap
+     * would not be assignable at all.
      */
-    async loadUsers({ role, active, teamId, q, page = 1, pageSize = 100 } = {}) {
+    async loadUsers({ role, active, teamId, q } = {}) {
       set({ directoryLoading: true, directoryError: null });
       try {
-        const { items, meta } = await usersApi.listUsers({ role, active, teamId, q, page, pageSize });
+        const { items, meta } = await usersApi.listAllUsers({ role, active, teamId, q });
         set({ users: items, usersMeta: meta ?? null, directoryLoading: false });
         return { ok: true, items };
       } catch (error) {

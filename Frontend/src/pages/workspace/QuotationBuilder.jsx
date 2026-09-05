@@ -12,17 +12,18 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import {
+  resolveTotals,
   selectCatalogForQuote,
   selectCustomerRequests,
   selectDismissedSuggestions,
-  selectSuggestions,
 } from '@/store/selectors';
-import { quoteTotals } from '@/lib/pricing';
+import { approvalPathLabel } from '@/lib/riskEngine';
 import { isEditable } from '@/lib/stageMachine';
 import { cn } from '@/lib/utils';
 import { dateShort } from '@/lib/format';
 import { useRisk } from '@/hooks/useRisk';
 import { useQuotation } from '@/hooks/useQuotation';
+import { useUpsellSuggestions } from '@/hooks/useUpsell';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/Button';
@@ -48,7 +49,6 @@ export default function QuotationBuilder() {
   const categoryCeilings = useAppStore((s) => s.categoryCeilings);
 
   const catalog = useAppStore((s) => (quote ? selectCatalogForQuote(s, id) : []));
-  const suggestions = useAppStore((s) => (quote ? selectSuggestions(s, id) : []));
   const dismissed = useAppStore((s) => (quote ? selectDismissedSuggestions(s, id) : []));
   const requests = useAppStore((s) =>
     quote ? selectCustomerRequests(s, id) : { threads: [], unansweredCount: 0, counter: null },
@@ -76,13 +76,25 @@ export default function QuotationBuilder() {
   // Risk is fetched from the backend, never computed here.
   const { risk, approvalPath, isLoading: riskLoading, isFallback } = useRisk(id);
 
+  // Ranked server-side too (POST /upsell-rules/suggest). The margin floor is a hard
+  // drop, so a second local copy of the rule could put a loss-making add-on on screen.
+  const {
+    suggestions,
+    loading: suggestionsLoading,
+    error: suggestionsError,
+  } = useUpsellSuggestions(id);
+
   // "Still loading" and "does not exist" are different answers — only the second
   // redirects. A deep link or hard refresh renders before any list has arrived.
   if (resolving && !quote) return <QuoteLoading />;
   if (missing || !quote) return <Navigate to="/404" replace />;
 
   const editable = isEditable(quote.stage);
-  const totals = quoteTotals(quote);
+  // The server computes totals from the lines on every read and they are the numbers
+  // the approval screen, the invoice and the audit trail all quote. `resolveTotals`
+  // lets the server win and fills in only the presentation breakdowns it does not
+  // return; the bare local rollup used here before could disagree with the record.
+  const totals = resolveTotals(quote);
 
   const ceilingFor = (category) => {
     const categoryCeiling = categoryCeilings[category] ?? 100;
@@ -124,15 +136,26 @@ export default function QuotationBuilder() {
       });
       navigate(`/app/quotations/${id}/fulfillment`);
     } else {
-      toast.success(`Sent for ${result.path.label.toLowerCase()}`, {
-        description: `Blended risk ${result.risk.score.toFixed(2)} pts · ${result.risk.violationCount} line(s) over ceiling.`,
+      // `submitForApproval` resolves to { ok, autoApproved, risk, approvers, label } —
+      // there is no `path` on it, so reading `result.path.label` threw a TypeError and
+      // the rep saw a crashed screen instead of the routing decision. Both the label and
+      // the score are also optional in principle, so neither is dereferenced blind.
+      const label = result.label ?? approvalPathLabel(result.approvers ?? []);
+      const score = Number(result.risk?.score);
+
+      toast.success(`Sent for ${String(label).toLowerCase()}`, {
+        description: Number.isFinite(score)
+          ? `Blended risk ${score.toFixed(2)} pts · ${result.risk.violationCount} line(s) over ceiling.`
+          : 'The server has routed it to the approvers the chain requires.',
       });
       navigate(`/app/quotations/${id}/approval`);
     }
   };
 
-  const handleSend = () => {
-    const result = sendToCustomer(id);
+  const handleSend = async () => {
+    // `sendToCustomer` is async. Without the await this read `.ok` off a Promise, which
+    // is undefined — so a successful share always reported `toast.error(undefined)`.
+    const result = await sendToCustomer(id);
     if (!result.ok) {
       toast.error(result.error);
       return;
@@ -311,15 +334,20 @@ export default function QuotationBuilder() {
                   <Select
                     label="Owning rep"
                     value={quote.ownerId}
-                    onChange={(e) => {
-                      const result = assignOwner(id, e.target.value);
+                    onChange={async (e) => {
+                      const result = await assignOwner(id, e.target.value);
                       if (result.ok) {
                         toast.success(`Reassigned to ${result.owner.name}`);
                       } else {
                         toast.error(result.error);
                       }
                     }}
-                    options={reps.map((u) => ({ value: u.id, label: `${u.name} · ${u.team}` }))}
+                    // `team` is null for an unassigned rep (§3.1), which printed
+                    // "Priya Sharma · null" in the picker.
+                    options={reps.map((u) => ({
+                      value: u.id,
+                      label: u.team ? `${u.name} · ${u.team}` : u.name,
+                    }))}
                     hint="Only an Admin or Sales Manager can reassign."
                   />
                 ) : (
@@ -355,14 +383,23 @@ export default function QuotationBuilder() {
             <UpsellPanel
               suggestions={suggestions}
               dismissed={dismissed}
+              loading={suggestionsLoading}
+              error={suggestionsError}
               currency={quote.currency}
               disabled={!editable}
-              onAccept={(productId) => {
-                const result = acceptSuggestion(id, productId);
+              onAccept={async (productId) => {
+                // Await, and read the name from the suggestion we already have: the
+                // action resolves to { ok, quotation }, so `result.line.productName`
+                // threw — and without the await it threw on a Promise every time.
+                const name =
+                  suggestions.find((s) => s.productId === productId)?.productName ?? 'Product';
+                const result = await acceptSuggestion(id, productId);
                 if (result.ok) {
-                  toast.success(`${result.line.productName} added to the quote`, {
+                  toast.success(`${name} added to the quote`, {
                     description: 'Total, margin and risk updated.',
                   });
+                } else {
+                  toast.error('Could not add that suggestion', { description: result.error });
                 }
               }}
               onDismiss={(productId) => dismissSuggestion(id, productId)}

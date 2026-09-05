@@ -18,6 +18,8 @@ export function UpsellPanel({
   dismissed,
   currency,
   disabled,
+  loading = false,
+  error = null,
   onAccept,
   onDismiss,
   onUndoDismiss,
@@ -26,7 +28,28 @@ export function UpsellPanel({
 
   return (
     <div className="flex h-full flex-col">
-      {suggestions.length === 0 ? (
+      {/*
+        Three different facts, three different panels. Ranking is a request now, so
+        "still asking" and "the request failed" both used to collapse into "there are
+        no pairings for this cart" — which is an answer, and the wrong one.
+      */}
+      {loading && suggestions.length === 0 ? (
+        <div className="flex items-center justify-center gap-2.5 py-10">
+          <span
+            className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-600"
+            aria-hidden="true"
+          />
+          <p className="text-[11px] font-semibold text-ink-soft" role="status">
+            Ranking suggestions…
+          </p>
+        </div>
+      ) : error ? (
+        <EmptyState
+          icon={Sparkles}
+          title="Couldn't load suggestions"
+          description={error}
+        />
+      ) : suggestions.length === 0 ? (
         <EmptyState
           icon={Sparkles}
           title="No suggestions right now"
