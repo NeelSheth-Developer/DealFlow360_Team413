@@ -353,7 +353,7 @@ is written to. Customers are never created by a rep.
 > | `team` | `null` | admin — `PATCH /users/:id { "team": "West" }` |
 > | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id { "tier": "gold" }` |
 > | `currency` | `INR` | rep — `PATCH /customers/:id { "currency": "USD" }` |
-> >
+>
 > Sending any of these returns **`400 FIELD_NOT_ALLOWED`**, naming the offending field.
 >
 > **Why reject rather than ignore.** `role` and `tier` are the two fields that decide
