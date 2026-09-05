@@ -30,6 +30,7 @@ import {
   signup,
   verifyOtpAndSignIn,
 } from './auth.service.js';
+// Note: publicAccount is still used by /login and /verify-otp handlers below
 import type { Request } from 'express';
 
 export const authRouter = Router();
@@ -59,18 +60,10 @@ authRouter.post(
       meta(req),
     );
 
-    if (result.status === 'otp_sent') {
-      res.status(201).json({
-        success: true,
-        message: 'OTP sent successfully',
-        ...devOtp(result.code),
-      });
-      return;
-    }
-
-    res.status(200).json({
+    res.status(201).json({
       success: true,
-      data: { ...publicAccount(body.type, result.account), ...result.session },
+      message: 'OTP sent successfully',
+      ...devOtp(result.code),
     });
   }),
 );

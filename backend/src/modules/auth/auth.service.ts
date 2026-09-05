@@ -3,7 +3,7 @@ import { env, isProduction } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { db } from '../../db/index.js';
 import { customers, refreshTokens, users, type SubjectKind } from '../../db/schema.js';
-import { toCustomerCode } from '../../lib/customer-code.js';
+import { generateCustomerId, toCustomerCode } from '../../lib/customer-code.js';
 import { sendOtpEmail } from '../../lib/email.js';
 import { generateRefreshToken, hashRefreshToken, signAccessToken } from '../../lib/jwt.js';
 import { clearOtp, isOnCooldown, issueOtp, verifyOtp, type OtpPurpose } from '../../lib/otp.js';
@@ -35,6 +35,7 @@ type Account = {
   active: boolean;
   role?: 'sales_rep' | 'sales_manager' | 'finance' | 'admin';
   seq?: number;
+  customerId?: string;
   contactName?: string | null;
   tier?: 'bronze' | 'silver' | 'gold';
   currency?: string;
@@ -65,6 +66,7 @@ async function findAccount(type: AccountType, email: string): Promise<Account | 
     verified: row.emailVerifiedAt !== null,
     active: row.active,
     seq: row.seq,
+    customerId: row.customerId,
     contactName: row.contactName,
     tier: row.tier,
     currency: row.currency,
@@ -88,6 +90,7 @@ export function publicAccount(type: AccountType, account: Account) {
     customer: {
       id: account.id,
       customerCode: toCustomerCode(account.seq ?? 0),
+      customerId: account.customerId,
       name: account.name,
       contactName: account.contactName ?? null,
       email: account.email,
@@ -147,18 +150,15 @@ async function revokeAllSessions(subjectId: string, kind: SubjectKind): Promise<
 // Signup / verification
 // ---------------------------------------------------------------------------
 
-export type SignupResult =
-  | { status: 'otp_sent'; code: string }
-  | { status: 'signed_in'; account: Account; session: Session };
+export type SignupResult = { status: 'otp_sent'; code: string };
 
 /**
- * Signup, resend-on-unverified, and login-if-already-registered all funnel through
- * here so the response cannot be used to discover which addresses exist:
+ * Signup behaviour:
  *
- *   new email                  → create + send OTP
- *   exists, not yet verified   → send a fresh OTP   (same response as new)
- *   exists, verified, correct  → sign in
- *   exists, wrong password     → 401, same message as any other credential failure
+ *   new email                → create row + send OTP → 201 otp_sent
+ *   exists, verified         → 409 EMAIL_ALREADY_REGISTERED (hint: login)
+ *   exists, not verified     → 409 EMAIL_ALREADY_REGISTERED (hint: check inbox)
+ *   exists, disabled         → 403 ACCOUNT_DISABLED
  */
 export async function signup(
   type: AccountType,
@@ -168,19 +168,21 @@ export async function signup(
   const existing = await findAccount(type, input.email);
 
   if (existing) {
-    const matches = await verifyPassword(input.password, existing.passwordHash);
-    if (!matches) throw ApiError.invalidCredentials();
     if (!existing.active) {
       throw ApiError.forbidden('ACCOUNT_DISABLED', 'This account is no longer active');
     }
 
     if (existing.verified) {
-      const session = await createSession(type, existing, meta);
-      return { status: 'signed_in', account: existing, session };
+      throw ApiError.conflict(
+        'EMAIL_ALREADY_REGISTERED',
+        'An account with this email already exists. Please log in instead.',
+      );
     }
 
-    const code = await sendCode('signup', type, existing.email, existing.name);
-    return { status: 'otp_sent', code };
+    throw ApiError.conflict(
+      'EMAIL_ALREADY_REGISTERED',
+      'This email is pending verification. Please check your inbox or request a new code.',
+    );
   }
 
   const passwordHash = await hashPassword(input.password);
@@ -191,7 +193,19 @@ export async function signup(
     await db.insert(users).values({ name: input.name, email: input.email, passwordHash });
   } else {
     // tier defaults to 'bronze' and currency to 'INR' at the database level.
-    await db.insert(customers).values({ name: input.name, email: input.email, passwordHash });
+    // Generate a unique customerId, retrying with a different salt on collision.
+    let customerId = '';
+    for (let salt = 0; salt < 10; salt++) {
+      const candidate = generateCustomerId(input.name, input.email, salt);
+      const [existing] = await db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.customerId, candidate))
+        .limit(1);
+      if (!existing) { customerId = candidate; break; }
+    }
+    if (!customerId) throw new ApiError(500, 'INTERNAL_ERROR', 'Could not generate a unique customer ID');
+    await db.insert(customers).values({ name: input.name, email: input.email, passwordHash, customerId });
   }
 
   const code = await sendCode('signup', type, input.email, input.name);
@@ -406,6 +420,7 @@ async function findAccountById(type: AccountType, id: string): Promise<Account |
     verified: row.emailVerifiedAt !== null,
     active: row.active,
     seq: row.seq,
+    customerId: row.customerId,
     contactName: row.contactName,
     tier: row.tier,
     currency: row.currency,
@@ -555,6 +570,7 @@ export async function me(kind: SubjectKind, id: string) {
     kind,
     id: account.id,
     customerCode: toCustomerCode(account.seq ?? 0),
+    customerId: account.customerId,
     name: account.name,
     email: account.email,
     tier: account.tier,

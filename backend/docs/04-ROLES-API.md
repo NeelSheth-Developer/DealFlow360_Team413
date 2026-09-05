@@ -6,7 +6,7 @@
 > Implemented in `src/modules/users/`, `src/scripts/seed-admin.ts`.
 >
 > Companion documents: [`01-PROJECT-OVERVIEW.md`](./01-PROJECT-OVERVIEW.md) ·
-> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`03-AUTH-API.md`](./03-AUTH-API.md)
+> [`02-API-REFERENCE.md`](./02-API-REFERENCE.md) · [`03-AUTH-API.md`](./03-AUTH-API.md) · [`05-CUSTOMERS-API.md`](./05-CUSTOMERS-API.md) · [`06-ADMIN-ROLE.md`](./06-ADMIN-ROLE.md)
 
 ---
 
