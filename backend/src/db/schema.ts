@@ -427,7 +427,12 @@ export const subscriptionPlanProducts = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: 'cascade' }),
   },
-  (table) => [primaryKey({ columns: [table.planId, table.productId] })],
+  (table) => [
+    primaryKey({ columns: [table.planId, table.productId] }),
+    // The composite key leads on planId, so a lookup by product alone — which is
+    // exactly what default-plan resolution does — cannot use it.
+    index('subscription_plan_products_product_idx').on(table.productId),
+  ],
 );
 
 /**
@@ -457,6 +462,7 @@ export const upsellRules = pgTable(
   },
   (table) => [
     uniqueIndex('upsell_rules_pair_key').on(table.triggerProductId, table.suggestedProductId),
+    index('upsell_rules_suggested_idx').on(table.suggestedProductId),
   ],
 );
 
@@ -520,6 +526,7 @@ export const quotations = pgTable(
     index('quotations_owner_idx').on(table.ownerId),
     index('quotations_stage_idx').on(table.stage),
     index('quotations_activity_idx').on(table.lastActivityAt),
+    index('quotations_created_by_idx').on(table.createdById),
   ],
 );
 
@@ -553,7 +560,13 @@ export const quotationLines = pgTable(
     position: integer('position').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('quotation_lines_quotation_idx').on(table.quotationId)],
+  (table) => [
+    index('quotation_lines_quotation_idx').on(table.quotationId),
+    // Joined when checking stock already promised elsewhere, and grouped by in the
+    // product performance report.
+    index('quotation_lines_product_idx').on(table.productId),
+    index('quotation_lines_plan_idx').on(table.planId),
+  ],
 );
 
 /**
@@ -600,6 +613,7 @@ export const approvalSteps = pgTable(
   (table) => [
     uniqueIndex('approval_steps_order_key').on(table.quotationId, table.stepOrder),
     index('approval_steps_status_idx').on(table.status),
+    index('approval_steps_reviewer_idx').on(table.reviewerId),
   ],
 );
 
@@ -639,7 +653,11 @@ export const fulfillmentAllocations = pgTable(
       .references(() => warehouses.id),
     qty: integer('qty').notNull(),
   },
-  (table) => [index('fulfillment_allocations_quotation_idx').on(table.quotationId)],
+  (table) => [
+    index('fulfillment_allocations_quotation_idx').on(table.quotationId),
+    index('fulfillment_allocations_line_idx').on(table.lineId),
+    index('fulfillment_allocations_warehouse_idx').on(table.warehouseId),
+  ],
 );
 
 export const backorders = pgTable(
@@ -659,7 +677,12 @@ export const backorders = pgTable(
     etaDate: date('eta_date'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   },
-  (table) => [index('backorders_quotation_idx').on(table.quotationId)],
+  (table) => [
+    index('backorders_quotation_idx').on(table.quotationId),
+    index('backorders_line_idx').on(table.lineId),
+    // `quotationsAwaiting` filters on this to raise the consolidation prompt.
+    index('backorders_product_idx').on(table.productId),
+  ],
 );
 
 // =============================================================================
@@ -713,6 +736,8 @@ export const creditNotes = pgTable(
   (table) => [
     uniqueIndex('credit_notes_reference_key').on(table.reference),
     index('credit_notes_quotation_idx').on(table.quotationId),
+    index('credit_notes_line_idx').on(table.lineId),
+    index('credit_notes_created_by_idx').on(table.createdById),
   ],
 );
 
@@ -773,7 +798,10 @@ export const invoiceLines = pgTable(
     taxPct: numeric('tax_pct', { precision: 5, scale: 2 }).notNull(),
     total: numeric('total', { precision: 14, scale: 2 }).notNull(),
   },
-  (table) => [index('invoice_lines_invoice_idx').on(table.invoiceId)],
+  (table) => [
+    index('invoice_lines_invoice_idx').on(table.invoiceId),
+    index('invoice_lines_line_idx').on(table.lineId),
+  ],
 );
 
 /**
@@ -803,6 +831,7 @@ export const payments = pgTable(
   (table) => [
     uniqueIndex('payments_idempotency_key').on(table.idempotencyKey),
     index('payments_invoice_idx').on(table.invoiceId),
+    index('payments_recorded_by_idx').on(table.recordedById),
   ],
 );
 
@@ -843,16 +872,20 @@ export const auditLog = pgTable(
  * a queue. Only the operator actions taken against one need to survive, so only those
  * are stored.
  */
-export const alertStates = pgTable('alert_states', {
-  alertKey: varchar('alert_key', { length: 80 }).primaryKey(),
-  quotationId: uuid('quotation_id')
-    .notNull()
-    .references(() => quotations.id, { onDelete: 'cascade' }),
-  type: alertTypeEnum('type').notNull(),
-  escalated: boolean('escalated').notNull().default(false),
-  escalatedAt: timestamp('escalated_at', { withTimezone: true }),
-  nudgedAt: timestamp('nudged_at', { withTimezone: true }),
-});
+export const alertStates = pgTable(
+  'alert_states',
+  {
+    alertKey: varchar('alert_key', { length: 80 }).primaryKey(),
+    quotationId: uuid('quotation_id')
+      .notNull()
+      .references(() => quotations.id, { onDelete: 'cascade' }),
+    type: alertTypeEnum('type').notNull(),
+    escalated: boolean('escalated').notNull().default(false),
+    escalatedAt: timestamp('escalated_at', { withTimezone: true }),
+    nudgedAt: timestamp('nudged_at', { withTimezone: true }),
+  },
+  (table) => [index('alert_states_quotation_idx').on(table.quotationId)],
+);
 
 /** In-app notifications stand in for the emails a production deployment would send. */
 export const notifications = pgTable(

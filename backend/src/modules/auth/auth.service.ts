@@ -153,9 +153,27 @@ export type SignupResult = { status: 'otp_sent'; code: string };
  * Signup behaviour:
  *
  *   new email                → create row + send OTP → 201 otp_sent
+ *   exists, NOT verified     → overwrite the pending row + send a fresh OTP
  *   exists, verified         → 409 EMAIL_ALREADY_REGISTERED (hint: login)
- *   exists, not verified     → 409 EMAIL_ALREADY_REGISTERED (hint: check inbox)
  *   exists, disabled         → 403 ACCOUNT_DISABLED
+ *
+ * The unverified case used to return 409 "check your inbox", which was wrong in two
+ * ways.
+ *
+ * It stranded people. If the first email never arrived — a spent provider quota, a
+ * typo in the address, a spam folder — the account could not be verified, could not
+ * be logged into, and could not be registered again. There was no way forward from
+ * inside the product.
+ *
+ * And it let anyone lock an address permanently. Typing a stranger's email at signup
+ * created a pending row that blocked the real owner from ever registering. Refusing
+ * here protected nothing, because a pending row means precisely that NOBODY has
+ * proved they control the inbox.
+ *
+ * So an unverified row is overwritten rather than defended: the name and password are
+ * replaced and a new code is sent. Whoever actually reads the inbox is the one who can
+ * complete it, which is the only claim that was ever meaningful. The resend cooldown
+ * inside `sendCode` stops this being a way to spam an address.
  */
 export async function signup(
   type: AccountType,
@@ -175,10 +193,16 @@ export async function signup(
       );
     }
 
-    throw ApiError.conflict(
-      'EMAIL_ALREADY_REGISTERED',
-      'This email is pending verification. Please check your inbox or request a new code.',
-    );
+    // Pending registration — take it over and re-issue the code.
+    const passwordHash = await hashPassword(input.password);
+    const table = type === 'internal' ? users : customers;
+    await db
+      .update(table)
+      .set({ name: input.name, passwordHash, updatedAt: new Date() })
+      .where(eq(table.id, existing.id));
+
+    const code = await sendCode('signup', type, input.email, input.name);
+    return { status: 'otp_sent', code };
   }
 
   const passwordHash = await hashPassword(input.password);

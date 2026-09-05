@@ -1,9 +1,37 @@
+import nodemailer, { type Transporter } from 'nodemailer';
 import { Resend } from 'resend';
-import { env, isProduction } from '../config/env.js';
+import { env, gmailConfigured, isProduction } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import type { OtpPurpose } from './otp-purpose.js';
 
 const resend = new Resend(env.RESEND_API_KEY);
+
+/**
+ * Gmail's SMTP transport, built on first use.
+ *
+ * Created lazily so a deployment with no Gmail credentials never opens a connection,
+ * and reused afterwards — nodemailer pools, and building one per message would open a
+ * fresh TLS handshake for every OTP.
+ */
+let gmail: Transporter | null = null;
+
+function gmailTransport(): Transporter {
+  gmail ??= nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: env.GMAIL_USER, pass: env.GMAIL_APP_PASSWORD },
+  });
+  return gmail;
+}
+
+/**
+ * Gmail rewrites the From header to the authenticated account unless the address has
+ * been verified under "Send mail as". Sending the Resend identity through it would
+ * therefore produce a message that claims one sender and shows another — so the
+ * fallback is honest about which account it came from.
+ */
+function gmailFrom(): string {
+  return `DealFlow360 <${env.GMAIL_USER ?? ''}>`;
+}
 
 type SendEmailOptions = {
   to: string;
@@ -22,26 +50,92 @@ const FOOTER_HTML = `
 const FOOTER_TEXT =
   '\n\n---\nThis message was sent from an unmonitored address — please do not reply.';
 
-/**
- * Sends through Resend from the no-reply sender. No Reply-To is set: replies bounce
- * rather than landing in a mailbox nobody reads.
- */
-export async function sendEmail({ to, subject, html, text }: SendEmailOptions) {
+type Body = { html: string; text: string };
+
+/** Resend's HTTP API — the primary route, sending from the verified domain. */
+async function viaResend(to: string, subject: string, body: Body) {
   const { data, error } = await resend.emails.send({
     from: env.EMAIL_FROM,
     to: [to],
     subject,
-    html: html + FOOTER_HTML,
-    text: text + FOOTER_TEXT,
+    ...body,
   });
 
-  if (error) {
-    logger.error({ err: error, subject }, 'Resend failed to send email');
-    throw new Error(`Email delivery failed: ${error.message}`);
+  // The SDK reports failure in the payload rather than by throwing, so this has to
+  // be turned into one for the fallback below to catch it.
+  if (error) throw new Error(error.message);
+
+  return { id: data?.id ?? null, transport: 'resend' as const };
+}
+
+/** Gmail over SMTP — the fallback, and usable on its own via EMAIL_TRANSPORT=gmail. */
+async function viaGmail(to: string, subject: string, body: Body) {
+  const info = await gmailTransport().sendMail({
+    from: gmailFrom(),
+    to,
+    subject,
+    ...body,
+  });
+
+  return { id: info.messageId, transport: 'gmail' as const };
+}
+
+/**
+ * The single place mail leaves the application.
+ *
+ * Resend first, Gmail if Resend refuses. The fallback exists because the failure it
+ * covers is routine rather than exotic: a daily quota runs out mid-afternoon and every
+ * OTP after that point silently fails, blocking signups for reasons the user cannot
+ * see or fix. Retrying through a second provider turns that into a log line.
+ *
+ * Both are attempted only for the SAME message — there is no retry loop and no queue.
+ * If both refuse, the error propagates and the caller decides; every caller in this
+ * codebase treats a failed send as non-fatal and logs it, so a business action never
+ * rolls back because mail was slow.
+ *
+ * No Reply-To is set: replies bounce rather than landing in a mailbox nobody reads.
+ */
+export async function sendEmail({ to, subject, html, text }: SendEmailOptions) {
+  const body: Body = { html: html + FOOTER_HTML, text: text + FOOTER_TEXT };
+
+  if (env.EMAIL_TRANSPORT === 'gmail') {
+    const sent = await viaGmail(to, subject, body);
+    logger.info({ ...sent, subject }, 'Email sent');
+    return sent;
   }
 
-  logger.info({ id: data?.id, subject }, 'Email sent');
-  return data;
+  try {
+    const sent = await viaResend(to, subject, body);
+    logger.info({ ...sent, subject }, 'Email sent');
+    return sent;
+  } catch (resendError) {
+    const reason = resendError instanceof Error ? resendError.message : String(resendError);
+
+    if (env.EMAIL_TRANSPORT === 'resend' || !gmailConfigured) {
+      logger.error({ err: resendError, subject, transport: 'resend' }, 'Email delivery failed');
+      throw new Error(`Email delivery failed: ${reason}`, { cause: resendError });
+    }
+
+    logger.warn({ subject, reason }, 'Resend refused the message — falling back to Gmail');
+
+    try {
+      const sent = await viaGmail(to, subject, body);
+      logger.info({ ...sent, subject, after: 'resend-failure' }, 'Email sent via fallback');
+      return sent;
+    } catch (gmailError) {
+      // Both routes are gone. Report the original refusal too — it is usually the
+      // informative one, and the Gmail error is often just "auth failed" on top of it.
+      logger.error(
+        { err: gmailError, resendReason: reason, subject },
+        'Both email transports failed',
+      );
+      throw new Error(
+        `Email delivery failed on both transports. Resend: ${reason}. ` +
+          `Gmail: ${gmailError instanceof Error ? gmailError.message : String(gmailError)}`,
+        { cause: gmailError },
+      );
+    }
+  }
 }
 
 const COPY: Record<OtpPurpose, { subject: string; lead: string }> = {

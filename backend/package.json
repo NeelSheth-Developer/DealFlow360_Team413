@@ -2,7 +2,7 @@
   "name": "team413-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Team_413 backend \u2014 Express + TypeScript, Neon Postgres, Upstash Redis, Resend, Cloudinary",
+  "description": "Team_413 backend — Express + TypeScript, Neon Postgres, Upstash Redis, Resend, Cloudinary",
   "type": "module",
   "main": "dist/server.js",
   "engines": {
@@ -23,7 +23,7 @@
     "seed:admin": "tsx src/scripts/seed-admin.ts",
     "verify:risk": "tsx src/scripts/verify-risk.ts",
     "verify:engines": "tsx src/scripts/verify-engines.ts",
-    "e2e": "tsx src/scripts/e2e.ts"
+    "seed": "tsx src/scripts/seed.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -36,6 +36,7 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.0.0",
     "pdfkit": "^0.20.2",
     "pino": "^9.13.1",
     "pino-http": "^10.5.0",
@@ -49,6 +50,7 @@
     "@types/express": "^5.0.5",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.9.2",
+    "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",
     "drizzle-kit": "^0.31.6",
     "eslint": "^10.10.0",

@@ -25,9 +25,31 @@ const envSchema = z.object({
   REDIS_PREFIX: z.string().default('team413'),
   REDIS_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 
-  // Resend
+  // Resend — the primary sender
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(1),
+
+  /**
+   * Gmail, used as a fallback when Resend refuses a message.
+   *
+   * Resend's free tier has a daily ceiling, and hitting it stops OTP mail dead — a
+   * signup cannot complete without the code, so the whole flow blocks on a limit that
+   * has nothing to do with the user. A second route costs little and removes that.
+   *
+   * GMAIL_APP_PASSWORD is a 16-character App Password, NOT the account password:
+   * Google refuses the account password over SMTP, and an App Password can be revoked
+   * on its own without disturbing the account.
+   *
+   * Leave either blank to disable the fallback.
+   */
+  GMAIL_USER: z.string().optional(),
+  GMAIL_APP_PASSWORD: z.string().optional(),
+
+  /**
+   * Force a transport. `auto` uses Resend and falls back to Gmail; `gmail` skips
+   * Resend entirely, which is what you want while its quota is spent.
+   */
+  EMAIL_TRANSPORT: z.enum(['auto', 'resend', 'gmail']).default('auto'),
 
   /**
    * Cloudinary — where generated quotation and invoice PDFs are stored.
@@ -82,6 +104,14 @@ if (!parsed.success) {
 export const env = parsed.data;
 
 export const isProduction = env.NODE_ENV === 'production';
+
+/** Both halves present, so the Gmail fallback can actually authenticate. */
+export const gmailConfigured = Boolean(env.GMAIL_USER && env.GMAIL_APP_PASSWORD);
+
+if (env.EMAIL_TRANSPORT === 'gmail' && !gmailConfigured) {
+  process.stderr.write('\nEMAIL_TRANSPORT=gmail requires GMAIL_USER and GMAIL_APP_PASSWORD.\n');
+  process.exit(1);
+}
 
 /** All three credentials present. Checked once, so no caller has to re-derive it. */
 export const cloudinaryConfigured = Boolean(
