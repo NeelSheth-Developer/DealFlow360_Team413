@@ -54,11 +54,11 @@ authRouter.post(
   credentialLimit,
   asyncHandler(async (req, res) => {
     const body = signupSchema.parse(req.body);
-    const result = await signup(
-      body.type,
-      { name: body.name, email: body.email, password: body.password },
-      meta(req),
-    );
+    const result = await signup(body.type, {
+      name: body.name,
+      email: body.email,
+      password: body.password,
+    });
 
     res.status(201).json({
       success: true,

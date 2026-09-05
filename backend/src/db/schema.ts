@@ -2,7 +2,6 @@ import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   index,
-  integer,
   numeric,
   pgEnum,
   pgTable,
@@ -39,15 +38,15 @@ export const users = pgTable(
 );
 
 /**
- * Customers. `seq` is a database-assigned identity; the public `CUST-0001` code is
- * derived from it (see `lib/customer-code.ts`) rather than stored, so two concurrent
- * signups can never be handed the same code.
+ * Customers. `customerId` (`DF-CMC827`) is the single public identifier: short enough
+ * to read down a phone, and revealing nothing — no sequence, no count, no tier. It is
+ * generated from the name and email (see `lib/customer-id.ts`) and made unique by the
+ * index below; the generator retries with a new salt on collision.
  */
 export const customers = pgTable(
   'customers',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    seq: integer('seq').generatedByDefaultAsIdentity().notNull(),
     customerId: varchar('customer_id', { length: 12 }).notNull(),
     name: varchar('name', { length: 200 }).notNull(),
     contactName: varchar('contact_name', { length: 120 }),
@@ -62,7 +61,6 @@ export const customers = pgTable(
   },
   (table) => [
     uniqueIndex('customers_email_key').on(table.email),
-    uniqueIndex('customers_seq_key').on(table.seq),
     uniqueIndex('customers_customer_id_key').on(table.customerId),
   ],
 );
