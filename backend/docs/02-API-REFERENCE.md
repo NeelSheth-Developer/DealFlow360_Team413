@@ -163,24 +163,73 @@ Responses carry `X-RateLimit-Limit` and `X-RateLimit-Remaining`; exceeding retur
 ## 1. Authentication & Session
 
 > Module **A1** — internal users sign up and log in with standard credentials.
-> Customers access their quotations through a portal login (magic link, or email + password).
+> Customers access their quotations through a portal login using **email and password**.
+>
+> **One login endpoint serves both.** The `type` field in the request body selects
+> which identity store to authenticate against.
 
-| Method | Path | Roles |
-|---|---|---|
-| `POST` | `/auth/signup` | public |
-| `POST` | `/auth/login` | public |
-| `POST` | `/auth/refresh` | public (refresh token) |
-| `POST` | `/auth/logout` | any authenticated |
-| `GET` | `/auth/me` | any authenticated |
-| `POST` | `/auth/switch-role` | any authenticated *(demo only)* |
-| `POST` | `/portal/auth/magic-link` | public |
-| `POST` | `/portal/auth/verify` | public |
+```
+SIGNUP (internal only)          POST /auth/signup     → OTP emailed, no token
+                                POST /auth/verify-otp → email proved, TOKEN issued
+
+FORGOT PASSWORD (both kinds)    POST /auth/forgot-password → OTP emailed
+                                POST /auth/reset-password  → OTP + new password
+
+LOGIN (both kinds)
+POST /auth/login  { email, password, type }
+                                      │
+                 ┌────────────────────┴────────────────────┐
+                 ▼                                         ▼
+          type: "internal"                          type: "customer"
+                 │                                         │
+        search the USERS table                  search the CUSTOMERS table
+                 │                                         │
+        JWT { kind: "staff",                    JWT { kind: "customer",
+               role: <from the row> }                  customerId: <row id> }
+                                                        ← no role field at all
+```
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/auth/signup` | public | Create an internal account · sends OTP |
+| `POST` | `/auth/verify-otp` | public | Prove the email · **issues the token** |
+| `POST` | `/auth/resend-otp` | public | New code if the first expired |
+| `POST` | `/auth/forgot-password` | public | Step 1 of a reset · sends OTP |
+| `POST` | `/auth/reset-password` | public | Step 2 · OTP + new password |
+| `POST` | `/auth/change-password` | any authenticated | Knows the current password |
+| `POST` | `/auth/login` | public | Both kinds — see `type` |
+| `POST` | `/auth/refresh` | public (refresh token) | New access token |
+| `POST` | `/auth/logout` | any authenticated | Revoke refresh token |
+| `GET` | `/auth/me` | any authenticated | Session restore |
+| `POST` | `/auth/switch-role` | staff *(demo only)* | Walk the approval chain |
+
+### Two rules the implementation must follow
+
+```
+1. ROLE COMES FROM THE DATABASE ROW — NEVER FROM THE REQUEST
+
+   ✅  token.role = record.role          ← read from the row that matched
+   ❌  token.role = req.body.role        ← client-controlled: privilege escalation
+
+   `type` only chooses WHICH TABLE to search. It never decides what the
+   user is allowed to do. A customer row has no role column, so a customer
+   can never come out of login holding one.
+
+2. EVERY ENDPOINT CHECKS `kind`
+
+   customer token  →  /api/v1/quotations         →  403
+   staff token     →  /api/v1/portal/quotations  →  403
+
+   This server-side check IS the separation between the two applications.
+   Hiding buttons in the UI is not access control.
+```
 
 ---
 
 ### `POST /auth/signup`
 
-Create an internal user account.
+Create an **internal** user account. Customers do not self-register — a rep creates
+them (see [§3](#3-customers--tiers)).
 
 **Request**
 
@@ -202,7 +251,7 @@ Create an internal user account.
 | `role` | enum | ✅ | `sales_rep` \| `sales_manager` \| `finance` \| `admin` |
 | `team` | string | ➖ | free text |
 
-**Response `201`**
+**Response `201`** — the account exists but is **not usable yet**
 
 ```json
 {
@@ -214,29 +263,244 @@ Create an internal user account.
       "email": "priya@teamvector.space",
       "role": "sales_rep",
       "team": "West",
+      "emailVerified": false,
       "createdAt": "2026-03-01T09:00:00.000Z"
     },
-    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-    "refreshToken": "rt_4c8a91e0...",
-    "expiresIn": 604800
+    "otpSent": true,
+    "otpExpiresInSeconds": 600,
+    "message": "We sent a 6-digit code to priya@teamvector.space.",
+    "redirectTo": "/verify-otp"
   }
 }
 ```
+
+> **No `accessToken` is issued here.** The address has not been proved yet. The user
+> must call [`POST /auth/verify-otp`](#post-authverify-otp) with the emailed code —
+> that is where the token comes from. Attempting `POST /auth/login` before verifying
+> returns `403 EMAIL_NOT_VERIFIED`.
 
 **Errors** — `400` validation · `409` email already registered
 
 ---
 
-### `POST /auth/login`
+---
 
-```http
-POST /api/v1/auth/login
+### `POST /auth/verify-otp`
+
+Signup does **not** create a usable account on its own. The address must be proved
+first: signup emails a 6-digit code, and this endpoint checks it.
+
+```
+POST /auth/signup          account created, emailVerified = false
+        ↓                  6-digit OTP emailed, valid 10 minutes
+        ↓                  NO accessToken issued yet
+POST /auth/verify-otp      code checked
+        ↓                  emailVerified = true
+        ↓                  accessToken issued — user is now logged in
 ```
 
 **Request**
 
 ```json
-{ "email": "anita@teamvector.space", "password": "S3cure!pass" }
+{
+  "email": "priya@teamvector.space",
+  "otp": "418302",
+  "purpose": "signup"
+}
+```
+
+| Field | Type | Required | Rules |
+|---|---|:---:|---|
+| `email` | string | ✅ | the address that received the code |
+| `otp` | string | ✅ | exactly 6 digits |
+| `purpose` | enum | ✅ | `signup` \| `password_reset` \| `email_change` |
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "usr_8f21c3",
+      "name": "Priya Sharma",
+      "email": "priya@teamvector.space",
+      "role": "sales_rep",
+      "emailVerified": true
+    },
+    "kind": "staff",
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "rt_4c8a91e0...",
+    "expiresIn": 604800,
+    "redirectTo": "/app/dashboard"
+  }
+}
+```
+
+**Errors**
+
+| Code | `error.code` | Cause |
+|---|---|---|
+| `400` | `OTP_INVALID` | Wrong code |
+| `410` | `OTP_EXPIRED` | Older than 10 minutes — request a new one |
+| `429` | `OTP_TOO_MANY_ATTEMPTS` | 5 wrong attempts; the code is burned, request a new one |
+
+**OTP rules**
+
+```
+length          6 digits
+lifetime        10 minutes
+attempts        5, then the code is destroyed
+reuse           single-use — destroyed on success
+storage         hashed, never stored in plain text
+concurrent      requesting a new code invalidates the previous one
+```
+
+---
+
+### `POST /auth/resend-otp`
+
+**Request** `{ "email": "priya@teamvector.space", "purpose": "signup" }`
+
+**Response `200`** — always the same message, whether or not the address exists.
+
+```json
+{
+  "success": true,
+  "data": { "message": "If that address needs a code, one has been sent.", "retryAfterSeconds": 60 }
+}
+```
+
+**Errors** — `429` a new code was requested less than 60 seconds ago
+
+---
+
+### `POST /auth/forgot-password`
+
+Step 1 of a password reset. Emails a 6-digit code. Works for **both** kinds — `type`
+selects which store to look in, exactly as at login.
+
+**Request**
+
+```json
+{ "email": "buyer@acmecorp.com", "type": "customer" }
+```
+
+**Response `200`** — always `200`, always this message
+
+```json
+{
+  "success": true,
+  "data": { "message": "If that address matches an account, a reset code has been sent.", "retryAfterSeconds": 60 }
+}
+```
+
+> Never reveal whether the address exists. A different response for a real address
+> turns this endpoint into a way to discover your users and customers.
+
+---
+
+### `POST /auth/reset-password`
+
+Step 2. Verifies the code and sets the new password in one call.
+
+**Request**
+
+```json
+{
+  "email": "buyer@acmecorp.com",
+  "otp": "740915",
+  "newPassword": "N3wS3cure!pass",
+  "type": "customer"
+}
+```
+
+| Field | Type | Required | Rules |
+|---|---|:---:|---|
+| `email` | string | ✅ | |
+| `otp` | string | ✅ | 6 digits, from the reset email |
+| `newPassword` | string | ✅ | min 8 chars; must differ from the current one |
+| `type` | enum | ✅ | `internal` \| `customer` |
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Password updated. Please sign in with your new password.",
+    "sessionsRevoked": 3
+  }
+}
+```
+
+> **All existing refresh tokens are revoked** (`sessionsRevoked`). If the account was
+> compromised, resetting the password logs the attacker out everywhere. The user signs
+> in again — no token is issued here.
+
+**Errors**
+
+| Code | `error.code` | Cause |
+|---|---|---|
+| `400` | `OTP_INVALID` | Wrong code |
+| `400` | `PASSWORD_REUSED` | Same as the current password |
+| `410` | `OTP_EXPIRED` | Older than 10 minutes |
+| `429` | `OTP_TOO_MANY_ATTEMPTS` | 5 wrong attempts |
+
+---
+
+### `POST /auth/change-password`
+
+For a user who is already signed in and knows their current password. No OTP needed.
+
+**Request**
+
+```json
+{ "currentPassword": "S3cure!pass", "newPassword": "N3wS3cure!pass" }
+```
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": { "message": "Password updated.", "sessionsRevoked": 2, "currentSessionKept": true }
+}
+```
+
+Other sessions are revoked; the session making the request stays signed in.
+
+**Errors** — `401` `currentPassword` is wrong · `400` `PASSWORD_REUSED`
+
+---
+
+### `POST /auth/login`
+
+The single login endpoint for both applications.
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+```
+
+| Field | Type | Required | Rules |
+|---|---|:---:|---|
+| `email` | string | ✅ | valid email |
+| `password` | string | ✅ | min 8 chars |
+| `type` | enum | ✅ | `internal` \| `customer` — selects the identity store |
+
+---
+
+#### Internal user
+
+**Request**
+
+```json
+{
+  "email": "anita@teamvector.space",
+  "password": "S3cure!pass",
+  "type": "internal"
+}
 ```
 
 **Response `200`**
@@ -252,36 +516,30 @@ POST /api/v1/auth/login
       "role": "sales_manager",
       "team": "National"
     },
+    "kind": "staff",
     "accessToken": "eyJhbGciOiJIUzI1NiIs...",
     "refreshToken": "rt_9d21b4f7...",
-    "expiresIn": 604800
+    "expiresIn": 604800,
+    "redirectTo": "/app/dashboard"
   }
 }
 ```
 
-**Errors** — `400` validation · `401` invalid credentials
+Token payload: `{ "sub": "usr_2b77de", "kind": "staff", "role": "sales_manager" }`
 
 ---
 
-### `POST /auth/refresh`
+#### Customer
 
-**Request** `{ "refreshToken": "rt_9d21b4f7..." }`
+**Request**
 
-**Response `200`** `{ "success": true, "data": { "accessToken": "...", "expiresIn": 604800 } }`
-
-**Errors** — `401` expired or revoked refresh token
-
----
-
-### `POST /auth/logout`
-
-Revokes the refresh token. **Response `204`** (no body).
-
----
-
-### `GET /auth/me`
-
-Returns the current user plus their effective permissions.
+```json
+{
+  "email": "buyer@acmecorp.com",
+  "password": "Acme@2026",
+  "type": "customer"
+}
+```
 
 **Response `200`**
 
@@ -289,6 +547,91 @@ Returns the current user plus their effective permissions.
 {
   "success": true,
   "data": {
+    "customer": {
+      "id": "cus_acme01",
+      "name": "Acme Corp",
+      "contactName": "R. Iyer",
+      "email": "buyer@acmecorp.com",
+      "tier": "gold",
+      "currency": "INR"
+    },
+    "kind": "customer",
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "rt_2f81c003...",
+    "expiresIn": 86400,
+    "redirectTo": "/portal/quotations"
+  }
+}
+```
+
+Token payload: `{ "sub": "cus_acme01", "kind": "customer" }` — **no `role` field.**
+
+> `tier` is returned because the portal shows tier-resolved prices. It is a label,
+> not a permission — it grants nothing.
+
+---
+
+#### Errors
+
+Every failure returns the **same** `401` with the **same** message, whether the email
+does not exist, the password is wrong, or the email exists only in the *other* store.
+Distinct messages would let an attacker discover who your customers are.
+
+```json
+{
+  "success": false,
+  "error": { "message": "Invalid email or password" }
+}
+```
+
+`400` is returned only for a malformed body (missing `type`, invalid email format).
+
+`403 EMAIL_NOT_VERIFIED` is returned when the credentials are correct but the signup
+OTP was never confirmed — the response carries `redirectTo: "/verify-otp"` so the
+frontend can send the user straight to the code screen.
+
+---
+
+### `POST /auth/refresh`
+
+Works for both kinds. The new token carries the same `kind` and `role` as the original.
+
+**Request** `{ "refreshToken": "rt_9d21b4f7..." }`
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": { "accessToken": "eyJ...", "kind": "staff", "expiresIn": 604800 }
+}
+```
+
+**Errors** — `401` expired or revoked refresh token
+
+---
+
+### `POST /auth/logout`
+
+Revokes the refresh token. Works for both kinds.
+
+**Request** `{ "refreshToken": "rt_9d21b4f7..." }`
+
+**Response `204`** (no body)
+
+---
+
+### `GET /auth/me`
+
+Who am I, and what may I do. Call this on page load to restore a session.
+
+**Response `200` — staff**
+
+```json
+{
+  "success": true,
+  "data": {
+    "kind": "staff",
     "id": "usr_2b77de",
     "name": "Anita Desai",
     "role": "sales_manager",
@@ -305,60 +648,37 @@ Returns the current user plus their effective permissions.
 }
 ```
 
----
-
-### `POST /auth/switch-role`
-
-Demo convenience so one laptop can walk a Rep → Manager → Finance approval chain
-without four logins. Should be disabled in production.
-
-**Request** `{ "role": "finance" }`
-
-**Response `200`** — a new `accessToken` carrying the requested role.
-
-**Errors** — `403` when demo mode is disabled
-
----
-
-### `POST /portal/auth/magic-link`
-
-Customer requests a link to their quotations.
-
-**Request** `{ "email": "buyer@acmecorp.com" }`
-
-**Response `200`** — always `200` regardless of whether the email exists, so the
-endpoint cannot be used to enumerate customers.
-
-```json
-{
-  "success": true,
-  "data": { "message": "If that address matches a customer, a link has been sent." }
-}
-```
-
----
-
-### `POST /portal/auth/verify`
-
-Exchange a magic-link token for the quotation token(s) it grants.
-
-**Request** `{ "token": "ml_7f3a91c2e8b04d15" }`
-
-**Response `200`**
+**Response `200` — customer**
 
 ```json
 {
   "success": true,
   "data": {
-    "customer": { "id": "cus_acme01", "name": "Acme Corp" },
-    "quotations": [
-      { "id": "Q-1042", "portalToken": "pt_9a1c...", "status": "sent", "total": 2360000 }
-    ]
+    "kind": "customer",
+    "id": "cus_acme01",
+    "name": "Acme Corp",
+    "tier": "gold",
+    "openQuotationCount": 2
   }
 }
 ```
 
-**Errors** — `401` invalid or expired magic link
+The customer response carries **no `permissions` object and no `role`** — there is
+nothing to gate, because the portal exposes only that customer's own quotations.
+
+---
+
+### `POST /auth/switch-role`
+
+Demo convenience so one laptop can walk a Rep → Manager → Finance approval chain
+without three separate logins. **Staff tokens only** — a customer token gets `403`.
+Disable in production.
+
+**Request** `{ "role": "finance" }`
+
+**Response `200`** — a new `accessToken` carrying the requested role.
+
+**Errors** — `403` demo mode disabled, or the caller is not `kind: "staff"`
 
 ---
 
@@ -1455,7 +1775,7 @@ GET /api/v1/quotations?stage=pending_approval&ownerId=usr_8f21c3&tier=gold
 
 ### `POST /quotations`
 
-Creates a draft. The tier is resolved from the customer; a `portalToken` is generated.
+Creates a draft. The tier is resolved from the customer.
 
 **Request**
 
@@ -1483,8 +1803,7 @@ Creates a draft. The tier is resolved from the customer; a `portalToken` is gene
     "lines": [],
     "orderDiscountPct": 0,
     "approvalSteps": [],
-    "portalToken": "pt_9a1c4f7e2b8d3056",
-    "portalUrl": "https://app.teamvector.space/portal/pt_9a1c4f7e2b8d3056",
+    "portalUrl": "https://app.teamvector.space/portal/quotations/Q-1042",
     "promisedDeliveryDate": "2026-03-20",
     "validUntil": "2026-03-30",
     "createdAt": "2026-03-01T10:12:00.000Z",
@@ -1600,7 +1919,7 @@ GET /api/v1/quotations/Q-1042?include=lines,totals,risk,approval,suggestions
       ],
       "currentStep": "sales_manager"
     },
-    "portalUrl": "https://app.teamvector.space/portal/pt_9a1c4f7e2b8d3056",
+    "portalUrl": "https://app.teamvector.space/portal/quotations/Q-1042",
     "lastActivityAt": "2026-03-02T09:31:00.000Z"
   }
 }
@@ -1740,8 +2059,7 @@ Marks the quote `sent`, ensures a portal token exists, returns the shareable lin
     "id": "Q-1042",
     "stage": "sent",
     "negotiationStatus": "sent",
-    "portalToken": "pt_9a1c4f7e2b8d3056",
-    "portalUrl": "https://app.teamvector.space/portal/pt_9a1c4f7e2b8d3056",
+    "portalUrl": "https://app.teamvector.space/portal/quotations/Q-1042",
     "expiresAt": "2026-03-30T23:59:59.000Z"
   }
 }
@@ -2877,29 +3195,98 @@ GET /api/v1/credit-notes?quotationId=Q-1042
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ • Token is scoped to ONE quotation, expiring and rate-limited     │
-│ • No internal JWT, no role, no user account required              │
+│ • Requires a token with  kind: "customer"  — a staff token gets   │
+│   403 here, and a customer token gets 403 on every internal route │
+│ • Every query is filtered by customerId TAKEN FROM THE TOKEN,     │
+│   never from a query parameter the client could change            │
 │ • Every response passes through toPortalView() SERVER-SIDE        │
 │ • NEVER returned: costPrice · margin · risk score · ceilings ·    │
 │   internalNotes · ownerId · approval details · other customers    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+All portal endpoints take the customer JWT in the standard header:
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
 | Method | Path | Auth |
 |---|---|---|
-| `GET` | `/portal/quotations/:token` | portal token |
-| `GET` | `/portal/quotations/:token/status` | portal token |
-| `POST` | `/portal/quotations/:token/comments` | portal token |
-| `GET` | `/portal/quotations/:token/comments` | portal token |
-| `POST` | `/portal/quotations/:token/request` | portal token |
-| `POST` | `/portal/quotations/:token/confirm` | portal token |
+| `GET` | `/portal/quotations` | customer token |
+| `GET` | `/portal/quotations/:id` | customer token |
+| `GET` | `/portal/quotations/:id/status` | customer token |
+| `GET` | `/portal/quotations/:id/comments` | customer token |
+| `POST` | `/portal/quotations/:id/comments` | customer token |
+| `POST` | `/portal/quotations/:id/request` | customer token |
+| `POST` | `/portal/quotations/:id/confirm` | customer token |
+
+### Scoping rule
+
+```
+customerId is read from the JWT, never from the request.
+
+  GET /portal/quotations/Q-9999      ← belongs to another customer
+  → 404 Not Found   (NOT 403)
+
+404 rather than 403 so the customer cannot even confirm that
+another quotation exists.
+```
 
 ---
 
-### `GET /portal/quotations/:token`
+### `GET /portal/quotations`
+
+The customer's own quotation list — the portal landing screen after login.
 
 ```http
-GET /api/v1/portal/quotations/pt_9a1c4f7e2b8d3056
+GET /api/v1/portal/quotations
+Authorization: Bearer <customer token>
+```
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "reference": "Q-1042",
+      "status": "sent",
+      "statusLabel": "Sent",
+      "total": 2269423.2,
+      "currency": "INR",
+      "validUntil": "2026-03-30",
+      "lineCount": 3,
+      "updatedAt": "2026-03-02T09:31:00.000Z",
+      "hasUnreadReply": false
+    },
+    {
+      "reference": "Q-1018",
+      "status": "confirmed",
+      "statusLabel": "Confirmed",
+      "total": 840000,
+      "currency": "INR",
+      "validUntil": "2026-02-14",
+      "lineCount": 2,
+      "updatedAt": "2026-02-10T14:02:00.000Z",
+      "hasUnreadReply": false
+    }
+  ],
+  "meta": { "total": 2 }
+}
+```
+
+Only quotations belonging to the token's `customerId` are ever returned. There is no
+`customerId` query parameter — supplying one is ignored.
+
+---
+
+### `GET /portal/quotations/:id`
+
+```http
+GET /api/v1/portal/quotations/Q-1042
+Authorization: Bearer <customer token>
 ```
 
 **Response `200`** — note what is *absent*
@@ -2956,12 +3343,14 @@ GET /api/v1/portal/quotations/pt_9a1c4f7e2b8d3056
 
 | Code | Meaning |
 |---|---|
-| `404` | Unknown token |
-| `410` | Token expired — the UI renders an "invalid or expired link" card |
+| `401` | Missing or expired token |
+| `403` | Token is `kind: "staff"` — internal users cannot read the portal surface |
+| `404` | No such quotation **for this customer** |
+| `410` | Past `validUntil` — the UI renders an "expired quotation" card |
 
 ---
 
-### `GET /portal/quotations/:token/status`
+### `GET /portal/quotations/:id/status`
 
 Lightweight poll for the status pill.
 
@@ -2987,15 +3376,18 @@ Customer-visible statuses: `sent` · `under_negotiation` · `pending_reapproval`
 
 ---
 
-### `POST /portal/quotations/:token/comments`
+### `POST /portal/quotations/:id/comments`
 
 Line-level question or comment.
 
 **Request**
 
 ```json
-{ "lineId": "ln_002", "message": "Can the onboarding be split across two phases?",
-  "requestType": "spec" }
+{
+  "lineId": "ln_002",
+  "message": "Can the onboarding be split across two phases?",
+  "requestType": "spec"
+}
 ```
 
 | Field | Type | Required | Values |
@@ -3026,7 +3418,7 @@ written with `actorRole: "customer"`.
 
 ---
 
-### `GET /portal/quotations/:token/comments`
+### `GET /portal/quotations/:id/comments`
 
 **Response `200`**
 
@@ -3048,7 +3440,7 @@ Rep replies appear here; internal notes never do.
 
 ---
 
-### `POST /portal/quotations/:token/request`
+### `POST /portal/quotations/:id/request`
 
 Submit comments plus a counter-discount proposal.
 
@@ -3080,11 +3472,11 @@ Submit comments plus a counter-discount proposal.
 Side effects: `negotiationStatus → under_negotiation`, the owning rep is notified,
 and an audit entry is written. Further customer edits are disabled until the rep responds.
 
-**Errors** — `409` quotation already `confirmed` or expired
+**Errors** — `409` quotation already `confirmed` · `410` past `validUntil`
 
 ---
 
-### `POST /portal/quotations/:token/confirm`
+### `POST /portal/quotations/:id/confirm`
 
 **The most important endpoint in the platform.** Recomputes the blended risk on the
 **final agreed terms** and branches automatically — no rep action required.
@@ -3107,7 +3499,7 @@ and an audit entry is written. Further customer edits are disabled until the rep
       "An invoice for the one-time items will follow.",
       "Your monthly subscription starts on 2026-03-01."
     ],
-    "redirectTo": "/portal/pt_9a1c4f7e2b8d3056/confirmed"
+    "redirectTo": "/portal/quotations/Q-1042/confirmed"
   }
 }
 ```
@@ -3140,10 +3532,9 @@ notifications    → sent to the first approver in the rebuilt chain
 > The customer response **never** contains the risk score, the approver roles, or the
 > reason detail — only the fact that a review is in progress.
 
-**Errors** — `409` already confirmed · `410` token expired
+**Errors** — `409` already confirmed · `410` past `validUntil`
 
 ---
-
 ## 18. Deal Health & Alerts
 
 > Module **B9** — stalled deals, discount anomalies, delivery-promise slippage;
@@ -3752,9 +4143,16 @@ Types — `approval_request` · `approval_result` · `negotiation_reply` · `ano
 | `NO_OPEN_BACKORDER` | `409` | Consolidation requested with nothing to consolidate |
 | `OVERPAYMENT` | `400` | Payment exceeds the outstanding balance |
 | `INVOICE_ALREADY_EXISTS` | `409` | A quotation may have only one one-time invoice |
-| `PORTAL_TOKEN_EXPIRED` | `410` | Link past `validUntil` |
+| `QUOTATION_EXPIRED` | `410` | Quotation past its `validUntil` |
 | `QUOTATION_LOCKED` | `409` | Customer edit attempted while awaiting a rep response |
 | `PLAN_REQUIRED` | `400` | Subscription product added without `planId` |
+| `EMAIL_NOT_VERIFIED` | `403` | Login attempted before the signup OTP was verified |
+| `OTP_INVALID` | `400` | Wrong 6-digit code |
+| `OTP_EXPIRED` | `410` | Code older than 10 minutes |
+| `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts — the code is destroyed |
+| `OTP_RESEND_TOO_SOON` | `429` | A new code was requested within 60 seconds |
+| `PASSWORD_REUSED` | `400` | New password matches the current one |
+| `WRONG_KIND` | `403` | Staff token on a portal route, or customer token on an internal route |
 
 ---
 
@@ -3766,13 +4164,16 @@ Types — `approval_request` · `approval_result` · `negotiation_reply` · `ano
 ```
 AUTH & SESSION                              A1
   POST   /auth/signup
+  POST   /auth/verify-otp
+  POST   /auth/resend-otp
+  POST   /auth/forgot-password
+  POST   /auth/reset-password
+  POST   /auth/change-password
   POST   /auth/login
   POST   /auth/refresh
   POST   /auth/logout
   GET    /auth/me
   POST   /auth/switch-role
-  POST   /portal/auth/magic-link
-  POST   /portal/auth/verify
 
 USERS & ROLES
   GET    /users
@@ -3914,12 +4315,13 @@ CREDIT NOTES
   GET    /credit-notes/:id
 
 CUSTOMER PORTAL                             B8  ← separate restricted surface
-  GET    /portal/quotations/:token
-  GET    /portal/quotations/:token/status
-  GET    /portal/quotations/:token/comments
-  POST   /portal/quotations/:token/comments
-  POST   /portal/quotations/:token/request
-  POST   /portal/quotations/:token/confirm
+  GET    /portal/quotations
+  GET    /portal/quotations/:id
+  GET    /portal/quotations/:id/status
+  GET    /portal/quotations/:id/comments
+  POST   /portal/quotations/:id/comments
+  POST   /portal/quotations/:id/request
+  POST   /portal/quotations/:id/confirm
 
 DEAL HEALTH & ALERTS                        B9
   GET    /dashboard/deal-health
@@ -3949,14 +4351,16 @@ AUDIT & NOTIFICATIONS
 
 </details>
 
-**Total: 142 endpoints across 20 groups.**
+**Total: 146 endpoints across 20 groups.**
 
 ---
 
 ## Appendix — API calls behind the 8-step Quick Test Flow
 
 ```
-1  POST /auth/login
+1  POST /auth/signup                       → OTP emailed
+   POST /auth/verify-otp                   → token issued
+   POST /auth/login                        { type: "internal" }
    PUT  /discount-config/tier-ceilings/gold
    POST /warehouses
    POST /subscription-plans
@@ -3985,9 +4389,10 @@ AUDIT & NOTIFICATIONS
    GET  /quotations/Q-1042/billing
    → oneTime {...} and recurring {...} as separate objects
 
-7  GET  /portal/quotations/pt_9a1c...                    ← no cost/margin/risk present
-   POST /portal/quotations/pt_9a1c.../request  { counterDiscountPct: 25 }
-   POST /portal/quotations/pt_9a1c.../confirm
+7  POST /auth/login                        { type: "customer" }
+   GET  /portal/quotations/Q-1042                        ← no cost/margin/risk present
+   POST /portal/quotations/Q-1042/request  { counterDiscountPct: 25 }
+   POST /portal/quotations/Q-1042/confirm
    → status "pending_reapproval", requiresReapproval true  ← AUTOMATIC
 
 8  POST /quotations/Q-1042/approval/approve

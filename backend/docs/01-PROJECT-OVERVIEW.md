@@ -261,10 +261,13 @@ One codebase, three shells, strict separation at the data layer.
 │                          API  /api/v1                                    │
 │                                                                          │
 │   INTERNAL SURFACE                      PORTAL SURFACE                   │
-│   Bearer JWT · role-scoped              opaque token · quote-scoped      │
-│   /auth /products /quotations           /portal/quotations/:token        │
-│   /approvals /fulfillment /billing      narrow, read-mostly, no cost     │
-│   /invoices /reports /audit-log         data passes toPortalView()       │
+│   JWT kind:"staff" · role-scoped        JWT kind:"customer" · no role    │
+│   /auth /products /quotations           /portal/quotations/:id           │
+│   /approvals /fulfillment /billing      scoped to that customer's own    │
+│   /invoices /reports /audit-log         quotes · passes toPortalView()   │
+│                                                                          │
+│   Every route checks `kind` server-side. A customer token on an internal  │
+│   route is 403, and a staff token on a portal route is 403.              │
 └───────────────────────────────┬──────────────────────────────────────────┘
                                 │
 ┌───────────────────────────────▼──────────────────────────────────────────┐
@@ -312,7 +315,8 @@ The PDF splits the system into a **backend configuration area (A)** and a
 ╔═══════════════════════════════════════════════════════════════════════╗
 ║  A · SALES BACKEND CONFIGURATION AREA          (Admin / Manager / Fin) ║
 ╠═══════════════════════════════════════════════════════════════════════╣
-║ A1  Authentication (Login / Signup)   internal creds + portal magic    ║
+║ A1  Authentication (Login / Signup)   email+password + OTP verify ·   ║
+║                                       forgot/reset password          ║
 ║ A2  Product & Price List Management   general · variants · price lists ║
 ║ A3  Discount Tier & Approval Chain    tier ceilings · category         ║
 ║                                       ceilings · chain rules          ║
@@ -415,7 +419,7 @@ The PDF splits the system into a **backend configuration area (A)** and a
 | **Customer** | id, name, tier (`bronze`\|`silver`\|`gold`), contactName, email, currency |
 | **Product** | id, name, sku, category, basePrice, **costPrice**, unit, taxPct, description, variants[], active |
 | **PriceListEntry** | productId, tier, currency, price |
-| **Quotation** | id, customerId, tier, ownerId, **stage**, lines[], orderDiscountPct, approvalSteps[], portalToken, negotiationStatus, createdAt, lastActivityAt, promisedDeliveryDate, validUntil, internalNotes, customerTerms |
+| **Quotation** | id, customerId, tier, ownerId, **stage**, lines[], orderDiscountPct, approvalSteps[], negotiationStatus, createdAt, lastActivityAt, promisedDeliveryDate, validUntil, internalNotes, customerTerms |
 | **QuoteLine** | id, productId, category, qty, unitPrice, **costPrice**, discountPct, taxPct, isSubscription, planId, comments[] |
 | **ApprovalStep** | role, status (`pending`\|`approved`\|`rejected`\|`returned`\|`skipped`), reviewerId, at, reason |
 | **Warehouse** | id, name, location, stock{productId→qty}, **shippingCostWeight**, baseShipCost, replenishThreshold, replenishQty, replenishLeadDays |
@@ -908,7 +912,7 @@ A **real, separate, restricted view** (PDF §7 — hard requirement).
 The single most important branch in the platform (PDF §4 B8, §28).
 
 ```
-      Rep: "Send to Customer"  →  portalToken generated, link shared
+      Rep: "Send to Customer"  →  link to /portal/quotations/Q-1042 emailed
                                           │
                                           ▼
                           ╔═══════════════════════════════╗
