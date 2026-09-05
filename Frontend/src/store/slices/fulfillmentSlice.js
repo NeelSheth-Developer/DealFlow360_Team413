@@ -1,179 +1,170 @@
-import { nowISO } from '@/lib/utils';
-import {
-  backordersFor,
-  canConsolidate,
-  consolidationSaving,
-  shipmentMetrics,
-  suggestWarehouseSplit,
-  validateOverride,
-} from '@/lib/warehouseSplit';
+import * as fulfillmentApi from '@/services/fulfillmentService';
 
 /**
- * Multi-warehouse fulfillment (spec B6). Plans are cached per quotation but
- * always recomputed from live stock when the fulfillment screen is opened or
- * when stock changes, so a plan can never quietly go stale.
+ * Warehouse split and backorders — API-REFERENCE §13.
+ *
+ * THE SERVER OWNS THE ALLOCATION ALGORITHM. It recomputes the plan from live stock on
+ * every read, unless the rep has accepted or overridden it — in which case their
+ * decision is returned verbatim, because they made that call for a reason the algorithm
+ * cannot see (a customer who wants one delivery, for instance).
+ *
+ * So there is nothing to compute here. `computeFulfillment` is now a fetch, and the
+ * local greedy allocator, the shipment-count arithmetic and the cost estimate are all
+ * gone. Keeping a second implementation would let the screen disagree with the order.
+ *
+ * `canConsolidate` also comes from the server, which excludes units already promised to
+ * OTHER live quotations — a check the client could not make correctly, since it does not
+ * hold every other order.
  */
 export function createFulfillmentSlice(set, get) {
+  function storePlan(quoteId, plan) {
+    if (!plan) return null;
+    set((state) => ({ fulfillmentPlans: { ...state.fulfillmentPlans, [quoteId]: plan } }));
+    return plan;
+  }
+
+  function fail(error) {
+    return { ok: false, error: error.message, code: error.code ?? null };
+  }
+
   return {
-    /** Recompute the suggested split from current stock. */
-    computeFulfillment(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return null;
+    fulfillmentLoading: false,
 
-      const existing = get().fulfillmentPlans[quoteId];
-      // A manually overridden, already-accepted plan is preserved — the rep's
-      // decision shouldn't be silently thrown away by a recompute.
-      if (existing?.isOverride && existing?.acceptedAt) return existing;
-
-      const plan = { ...suggestWarehouseSplit(quote.lines, get().warehouses), quotationId: quoteId };
-      set((state) => ({ fulfillmentPlans: { ...state.fulfillmentPlans, [quoteId]: plan } }));
-      return plan;
-    },
-
-    /** Rebuild plans for every quotation that has one, plus active stages. */
-    refreshFulfillmentPlans() {
-      const state = get();
-      const targets = state.quotations.filter(
-        (q) =>
-          ['approved', 'fulfillment', 'billed', 'confirmed'].includes(q.stage) ||
-          state.fulfillmentPlans[q.id],
-      );
-
-      const plans = { ...state.fulfillmentPlans };
-      for (const q of targets) {
-        const existing = plans[q.id];
-        if (existing?.isOverride && existing?.acceptedAt) continue;
-        plans[q.id] = { ...suggestWarehouseSplit(q.lines, state.warehouses), quotationId: q.id };
+    /**
+     * Fetch the plan for one quotation.
+     *
+     * Async now — it used to compute synchronously and return a plan, so callers must
+     * await it and read `result.plan`.
+     */
+    async computeFulfillment(quoteId) {
+      set({ fulfillmentLoading: true });
+      try {
+        const plan = await fulfillmentApi.getFulfillment(quoteId);
+        storePlan(quoteId, plan);
+        return { ok: true, plan };
+      } catch (error) {
+        return fail(error);
+      } finally {
+        set({ fulfillmentLoading: false });
       }
-      set({ fulfillmentPlans: plans });
     },
 
+    /** Cached read. Returns null until `computeFulfillment` has run for this quotation. */
     getFulfillmentPlan(quoteId) {
       return get().fulfillmentPlans[quoteId] ?? null;
     },
 
-    acceptSplit(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      const plan = get().fulfillmentPlans[quoteId] ?? get().computeFulfillment(quoteId);
-      if (!quote || !plan) return { ok: false, error: 'No fulfillment plan available.' };
-
-      const accepted = { ...plan, acceptedAt: nowISO(), isOverride: false };
-      set((state) => ({ fulfillmentPlans: { ...state.fulfillmentPlans, [quoteId]: accepted } }));
-
-      if (quote.stage === 'approved') get().moveStage(quoteId, 'fulfillment');
-
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Fulfillment split accepted — ${accepted.shipmentCount} shipment(s)${
-          accepted.backorders.length ? `, ${accepted.backorders.reduce((s, b) => s + b.qty, 0)} unit(s) on backorder` : ''
-        }`,
-        meta: {
-          shipments: accepted.shipmentCount,
-          cost: accepted.estimatedCost,
-          backorderQty: accepted.backorders.reduce((s, b) => s + b.qty, 0),
-        },
-      });
-
-      get().recomputeAlerts();
-      return { ok: true, plan: accepted };
-    },
-
-    /** Validate then persist a manual override. */
-    saveOverride(quoteId, allocations) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return { ok: false, error: 'Quotation not found.' };
-
-      const cleaned = allocations.filter((a) => Number(a.qty) > 0);
-      const errors = validateOverride(cleaned, quote.lines, get().warehouses);
-      if (errors.length) return { ok: false, errors };
-
-      const suggested = suggestWarehouseSplit(quote.lines, get().warehouses);
-      const plan = {
-        quotationId: quoteId,
-        allocations: cleaned,
-        backorders: backordersFor(cleaned, quote.lines, get().warehouses),
-        ...shipmentMetrics(cleaned, get().warehouses),
-        isOverride: true,
-        acceptedAt: nowISO(),
-      };
-
-      set((state) => ({ fulfillmentPlans: { ...state.fulfillmentPlans, [quoteId]: plan } }));
-
-      if (quote.stage === 'approved') get().moveStage(quoteId, 'fulfillment');
-
-      const delta = plan.estimatedCost - suggested.estimatedCost;
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Fulfillment split manually overridden — ${plan.shipmentCount} shipment(s)`,
-        meta: {
-          shipments: plan.shipmentCount,
-          cost: plan.estimatedCost,
-          costDeltaVsSuggestion: Math.round(delta * 100) / 100,
-        },
-      });
-
-      get().recomputeAlerts();
-      return { ok: true, plan, costDelta: delta };
-    },
-
-    /** Suggested allocation set used to seed / reset the override editor. */
+    /**
+     * The suggestion and the saved plan are the same object.
+     *
+     * They used to be separate: the client recomputed a fresh suggestion to diff against
+     * the stored one. The server now returns `costDelta` on an override instead, which is
+     * the only number that comparison existed to produce.
+     */
     suggestionFor(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return null;
-      return suggestWarehouseSplit(quote.lines, get().warehouses);
+      return get().fulfillmentPlans[quoteId] ?? null;
     },
 
-    /** Can an open backorder now be filled from current stock? */
+    /** True when an open backorder could now be filled from current stock. */
     canConsolidateBackorder(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      const plan = get().fulfillmentPlans[quoteId];
-      if (!quote || !plan) return false;
-      return canConsolidate(plan, quote.lines, get().warehouses);
-    },
-
-    /** Merge the remaining backorder into the plan, reporting the saving. */
-    consolidateBackorder(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      const current = get().fulfillmentPlans[quoteId];
-      if (!quote || !current) return { ok: false, error: 'No plan to consolidate.' };
-
-      const fresh = { ...suggestWarehouseSplit(quote.lines, get().warehouses), quotationId: quoteId };
-      const saving = consolidationSaving(current, fresh);
-
-      const consolidated = { ...fresh, acceptedAt: nowISO(), isOverride: false };
-      set((state) => ({ fulfillmentPlans: { ...state.fulfillmentPlans, [quoteId]: consolidated } }));
-
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Remaining backorder consolidated — ${consolidated.shipmentCount} shipment(s)`,
-        meta: saving,
-      });
-
-      get().recomputeAlerts();
-      return { ok: true, plan: consolidated, saving };
+      return Boolean(get().fulfillmentPlans[quoteId]?.canConsolidate);
     },
 
     /**
-     * Called after any stock change. Refreshes plans and surfaces which
-     * quotations just became consolidatable so the UI can raise the prompt.
+     * Accept the suggested split. Persists it and moves the stage approved → fulfillment.
+     * 409 NOTHING_TO_SHIP when the order has no physical lines.
      */
-    afterStockChange() {
-      const before = get().quotations
-        .filter((q) => ['approved', 'fulfillment'].includes(q.stage))
-        .filter((q) => (get().fulfillmentPlans[q.id]?.backorders ?? []).length > 0)
-        .map((q) => q.id);
-
-      get().refreshFulfillmentPlans();
-
-      const consolidatable = before.filter((id) => get().canConsolidateBackorder(id));
-      set({ consolidationCandidates: consolidatable });
-      get().recomputeAlerts();
-      return consolidatable;
+    async acceptSplit(quoteId) {
+      try {
+        const plan = await fulfillmentApi.acceptSplit(quoteId);
+        storePlan(quoteId, plan);
+        // The stage moved server-side, so re-read the quotation rather than guessing.
+        await get().fetchQuotation(quoteId);
+        return { ok: true, plan };
+      } catch (error) {
+        return fail(error);
+      }
     },
 
+    /**
+     * Save a manual override.
+     *
+     * On 422 INVALID_ALLOCATION the server returns per-cell errors in
+     * `error.details.errors` — line-level problems omit `warehouseId`, stock problems
+     * name it. Those are passed through as `cellErrors` so the table can highlight the
+     * exact input rather than showing one generic message.
+     *
+     * @returns {{ok, plan, costDelta}} `costDelta` is what the override cost against the
+     *   suggestion. Surface it — seeing the price of a manual choice is the whole point.
+     */
+    async saveOverride(quoteId, allocations) {
+      try {
+        const result = await fulfillmentApi.saveOverride(quoteId, allocations);
+        storePlan(quoteId, result.plan);
+        await get().fetchQuotation(quoteId);
+        return { ok: true, plan: result.plan, costDelta: result.costDelta };
+      } catch (error) {
+        return {
+          ...fail(error),
+          cellErrors: error.payload?.error?.details?.errors ?? [],
+        };
+      }
+    },
+
+    /**
+     * Merge an open backorder into fewer shipments.
+     * 409 NOTHING_TO_CONSOLIDATE when there is no open backorder.
+     *
+     * @returns {{ok, plan, saving: {shipmentsSaved, costSaved}}}
+     */
+    async consolidateBackorder(quoteId) {
+      try {
+        const result = await fulfillmentApi.consolidateBackorder(quoteId);
+        storePlan(quoteId, result.plan);
+        get().dismissConsolidationPrompt(quoteId);
+        return { ok: true, plan: result.plan, saving: result.saving };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    async setBackorderPolicy(quoteId, policy) {
+      try {
+        const plan = await fulfillmentApi.setBackorderPolicy(quoteId, policy);
+        storePlan(quoteId, plan);
+        return { ok: true, plan };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /**
+     * Called after a stock change.
+     *
+     * The server tells us which quotations a stock increase could now fill —
+     * `affectedQuotationIds` on the setStock and restock responses. That is strictly
+     * better than the old local scan, which could not know about units promised to other
+     * orders. Their plans are re-read so `canConsolidate` is current, then the prompt is
+     * raised for whichever now qualify.
+     */
+    async afterStockChange(affectedQuotationIds = []) {
+      if (affectedQuotationIds.length === 0) {
+        set({ consolidationCandidates: [] });
+        return [];
+      }
+
+      await Promise.allSettled(
+        affectedQuotationIds.map((quoteId) => get().computeFulfillment(quoteId)),
+      );
+
+      const candidates = affectedQuotationIds.filter((quoteId) =>
+        get().canConsolidateBackorder(quoteId),
+      );
+      set({ consolidationCandidates: candidates });
+      return candidates;
+    },
+
+    /** Per-quotation, so the modal does not reappear on every render. */
     dismissConsolidationPrompt(quoteId) {
       set((state) => ({
         consolidationCandidates: state.consolidationCandidates.filter((id) => id !== quoteId),

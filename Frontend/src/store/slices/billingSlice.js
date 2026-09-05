@@ -1,65 +1,94 @@
-import { nextId, nowISO, round2 } from '@/lib/utils';
-import { money, paymentMethodLabel, roleLabel } from '@/lib/format';
-import {
-  computeCancellation,
-  computeProration,
-  generateBillingSchedule,
-  generateInvoice,
-  invoiceBalances,
-  nextInvoiceStatus,
-} from '@/lib/billingEngine';
+import * as billingApi from '@/services/billingService';
+import * as invoicesApi from '@/services/invoicesService';
 
 /**
- * Hybrid billing (spec B7) and invoicing/payments (spec B10).
+ * Hybrid billing, subscriptions and invoicing — API-REFERENCE §14 and §15.
  *
- * One-time lines produce an Invoice. Recurring lines produce their own billing
- * schedule. The two never merge — that separation is the point of the feature.
+ * THE TWO STREAMS NEVER MERGE. One-time lines produce an invoice; recurring lines produce
+ * their own schedule. The server builds both from one call and returns them separately.
+ *
+ * ALL THE ARITHMETIC IS THE SERVER'S. Proration, cancellation amounts, invoice balances
+ * and status are computed there and returned — including the plain-language
+ * `explanation` string, which is rendered VERBATIM rather than rebuilt from the numbers.
+ * `amountPaid` / `balanceRemaining` / `status` are derived from the payment rows on every
+ * read and never stored, so a local copy would drift from the ledger.
  */
 export function createBillingSlice(set, get) {
-  function planFor(line) {
-    return get().subscriptionPlans.find((p) => p.id === line.planId) ?? null;
+  function storeBilling(quoteId, billing) {
+    if (!billing) return null;
+    set((state) => ({
+      billingViews: { ...state.billingViews, [quoteId]: billing },
+    }));
+    return billing;
+  }
+
+  /** Invoices arrive nested in a billing payload or standalone; merge either shape. */
+  function absorbInvoice(invoice) {
+    if (!invoice?.id) return null;
+    set((state) => {
+      const exists = state.invoices.some((i) => i.id === invoice.id);
+      return {
+        invoices: exists
+          ? state.invoices.map((i) => (i.id === invoice.id ? invoice : i))
+          : [...state.invoices, invoice],
+      };
+    });
+    return invoice;
+  }
+
+  function fail(error) {
+    return { ok: false, error: error.message, code: error.code ?? null };
   }
 
   return {
-    /** Builds the invoice (if missing) and all recurring schedules for a quote. */
-    buildBilling(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return null;
+    billingViews: {},
+    billingLoading: false,
 
-      const oneTime = quote.lines.filter((l) => !l.isSubscription);
-      const recurring = quote.lines.filter((l) => l.isSubscription);
+    /* --------------------------------------------------------------- reads */
 
-      // --- recurring schedules
-      const schedules = {};
-      for (const line of recurring) {
-        if (line.subscriptionStatus === 'cancelled') continue;
-        const plan = planFor(line);
-        schedules[line.id] = generateBillingSchedule(
-          line,
-          plan,
-          line.subscriptionStartDate ?? quote.createdAt,
-          12,
-        );
+    /** The billing view: one-time section, recurring section, schedules, credit notes. */
+    async loadBilling(quoteId) {
+      set({ billingLoading: true });
+      try {
+        const billing = await billingApi.getBilling(quoteId);
+        storeBilling(quoteId, billing);
+        if (billing?.invoice) absorbInvoice(billing.invoice);
+        return { ok: true, billing };
+      } catch (error) {
+        return fail(error);
+      } finally {
+        set({ billingLoading: false });
       }
+    },
 
-      set((state) => ({
-        billingSchedules: { ...state.billingSchedules, [quoteId]: schedules },
-      }));
+    getBillingView(quoteId) {
+      return get().billingViews[quoteId] ?? null;
+    },
 
-      // --- one-time invoice
-      let invoice = get().invoices.find((i) => i.quotationId === quoteId) ?? null;
-      if (!invoice && oneTime.length) {
-        invoice = generateInvoice(quote, oneTime, new Date(), 15);
-        set((state) => ({ invoices: [invoice, ...state.invoices] }));
-        get().logAudit({
-          entityType: 'invoice',
-          entityId: invoice.id,
-          action: `Invoice drafted for ${quote.customerName}`,
-          meta: { total: invoice.total, quotationId: quoteId },
-        });
+    /**
+     * Build the invoice and the schedules.
+     *
+     * IDEMPOTENT server-side: a second call rebuilds the schedules and returns the
+     * existing invoice, so a rebuild after a line edit is safe and a duplicate invoice is
+     * impossible. Only `scheduled` occurrences are replaced — one already invoiced or
+     * paid is a financial fact and survives.
+     *
+     * A subscription-only order produces schedules and NO invoice. That is valid, not an
+     * error. 409 STAGE_LOCKED before the quotation is approved.
+     */
+    async buildBilling(quoteId) {
+      try {
+        const billing = await billingApi.buildBilling(quoteId);
+        storeBilling(quoteId, billing);
+        if (billing?.invoice) absorbInvoice(billing.invoice);
+        return { ok: true, billing };
+      } catch (error) {
+        return fail(error);
       }
+    },
 
-      return { invoice, schedules };
+    getBillingSchedules(quoteId) {
+      return get().billingViews[quoteId]?.schedules ?? [];
     },
 
     getInvoiceForQuote(quoteId) {
@@ -70,266 +99,179 @@ export function createBillingSlice(set, get) {
       return get().invoices.find((i) => i.id === invoiceId) ?? null;
     },
 
-    getBillingSchedules(quoteId) {
-      return get().billingSchedules[quoteId] ?? {};
-    },
-
-    // ----------------------------------------------- mid-cycle subscription
-    /** Preview only — no mutation. Shown to the user before they commit. */
-    previewSubscriptionChange(quoteId, lineId, newQty) {
-      const quote = get().getQuotation(quoteId);
-      const line = quote?.lines.find((l) => l.id === lineId);
-      if (!line) return null;
-
-      const plan = planFor(line);
-      return {
-        ...computeProration({
-          line,
-          oldQty: line.qty,
-          newQty: Number(newQty) || 0,
-          plan,
-          changeDate: new Date(),
-          cycleStartDate: line.subscriptionStartDate ?? quote.createdAt,
-        }),
-        plan,
-        line,
-        currency: quote.currency,
-      };
-    },
-
-    applySubscriptionChange(quoteId, lineId, newQty) {
-      const preview = get().previewSubscriptionChange(quoteId, lineId, newQty);
-      const quote = get().getQuotation(quoteId);
-      if (!preview || !quote) return { ok: false, error: 'Unable to price that change.' };
-
-      get().updateLine(quoteId, lineId, { qty: Number(newQty) || 0 });
-
-      // A credit means money owed back — record it in the ledger.
-      if (preview.type === 'credit' && preview.amountNow < 0) {
-        get().createCreditNote(quoteId, {
-          lineId,
-          amount: Math.abs(preview.amountNow),
-          type: 'credit_note',
-          reason: `Quantity reduced mid-cycle (${preview.explanation})`,
-        });
+    async loadInvoices(filters = {}) {
+      try {
+        const { items, meta } = await invoicesApi.listInvoices({ pageSize: 100, ...filters });
+        set({ invoices: items, invoicesMeta: meta });
+        return { ok: true, items };
+      } catch (error) {
+        return fail(error);
       }
-
-      get().buildBilling(quoteId);
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Subscription quantity changed on ${preview.line.productName}: ${preview.line.qty} → ${newQty}`,
-        reason: preview.explanation,
-        meta: {
-          prorationRule: preview.plan?.prorationRule,
-          amountNow: preview.amountNow,
-          deferredAmount: preview.deferredAmount,
-        },
-      });
-
-      return { ok: true, preview };
     },
 
-    previewCancellation(quoteId, lineId) {
-      const quote = get().getQuotation(quoteId);
-      const line = quote?.lines.find((l) => l.id === lineId);
-      if (!line) return null;
-      const plan = planFor(line);
-      return {
-        ...computeCancellation({
-          line,
-          plan,
-          cancelDate: new Date(),
-          cycleStartDate: line.subscriptionStartDate ?? quote.createdAt,
-        }),
-        plan,
-        line,
-        currency: quote.currency,
-      };
-    },
-
-    cancelSubscription(quoteId, lineId) {
-      const preview = get().previewCancellation(quoteId, lineId);
-      const quote = get().getQuotation(quoteId);
-      if (!preview || !quote) return { ok: false, error: 'Unable to cancel that line.' };
-
-      get().updateLine(quoteId, lineId, { subscriptionStatus: 'cancelled' });
-
-      // Future occurrences stop being scheduled.
-      set((state) => {
-        const forQuote = { ...(state.billingSchedules[quoteId] ?? {}) };
-        if (forQuote[lineId]) {
-          forQuote[lineId] = forQuote[lineId].map((occ) =>
-            occ.status === 'scheduled' ? { ...occ, status: 'cancelled' } : occ,
-          );
-        }
-        return { billingSchedules: { ...state.billingSchedules, [quoteId]: forQuote } };
-      });
-
-      if (preview.type && preview.amount > 0) {
-        get().createCreditNote(quoteId, {
-          lineId,
-          amount: preview.amount,
-          type: preview.type,
-          reason: preview.explanation,
-        });
+    async fetchInvoice(invoiceId) {
+      try {
+        const invoice = await invoicesApi.getInvoice(invoiceId);
+        absorbInvoice(invoice);
+        return { ok: true, invoice };
+      } catch (error) {
+        return fail(error);
       }
-
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Subscription cancelled: ${preview.line.productName}`,
-        reason: preview.explanation,
-        meta: { rule: preview.plan?.cancellationRule, amount: preview.amount, type: preview.type },
-      });
-
-      return { ok: true, preview };
     },
 
-    // ----------------------------------------------------- credit notes
-    createCreditNote(quoteId, { lineId = null, amount, type = 'credit_note', reason }) {
-      const me = get().currentUser;
-      const note = {
-        id: nextId('CN'),
-        quotationId: quoteId,
-        lineId,
-        amount: round2(amount),
-        type,
-        reason,
-        createdAt: nowISO(),
-        createdById: me?.id ?? 'system',
-      };
+    /* ------------------------------------------------------- subscriptions */
 
-      set((state) => ({ creditNotes: [note, ...state.creditNotes] }));
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `${type === 'refund' ? 'Refund' : 'Credit note'} ${note.id} issued — ${round2(amount)}`,
-        reason,
-        meta: { amount: note.amount, type },
-      });
-      return note;
-    },
-
-    creditNotesForQuote(quoteId) {
-      return get().creditNotes.filter((n) => n.quotationId === quoteId);
-    },
-
-    // -------------------------------------------------- invoice & payments
-    sendInvoice(invoiceId) {
-      if (!get().canRecordPayments()) {
-        return {
-          ok: false,
-          error: 'Only Finance or an Admin can issue an invoice.',
-        };
+    /**
+     * Preview a mid-cycle quantity change. NO MUTATION — the customer-facing number has
+     * to be shown before anything is committed.
+     *
+     * `explanation` is written by the server in plain language and must be rendered as-is.
+     */
+    async previewSubscriptionChange(quoteId, lineId, newQty) {
+      try {
+        const preview = await billingApi.previewProration(quoteId, lineId, newQty);
+        return { ok: true, preview };
+      } catch (error) {
+        return fail(error);
       }
-
-      const invoice = get().getInvoice(invoiceId);
-      if (!invoice) return { ok: false, error: 'Invoice not found.' };
-      if (invoice.status !== 'draft') return { ok: false, error: 'This invoice has already been sent.' };
-
-      set((state) => ({
-        invoices: state.invoices.map((i) => (i.id === invoiceId ? { ...i, status: 'sent' } : i)),
-      }));
-
-      get().logAudit({
-        entityType: 'invoice',
-        entityId: invoiceId,
-        action: `Invoice sent to ${invoice.customerName}`,
-        meta: { total: invoice.total },
-      });
-
-      const quote = get().getQuotation(invoice.quotationId);
-      if (quote && quote.stage === 'fulfillment') get().moveStage(quote.id, 'billed');
-
-      return { ok: true };
     },
 
     /**
-     * Records a payment against an invoice.
+     * Apply the change.
      *
-     * Settling money is restricted to Finance and Admin. A sales rep or manager
-     * can see the invoice and its balance but cannot mark it paid — separating
-     * whoever sold the deal from whoever confirms the cash arrived.
+     * When the proration is NEGATIVE the server issues a credit note automatically — a
+     * mid-cycle reduction that only lowered the next invoice would quietly keep money the
+     * customer already paid for days they will not use.
      */
-    recordPayment(invoiceId, { amount, method, reference, date, notes }) {
-      const me = get().currentUser;
-
-      if (!me) return { ok: false, error: 'You are not signed in.' };
-      if (!get().canRecordPayments()) {
-        return {
-          ok: false,
-          error: `${roleLabel(me.role)} cannot record payments. Only Finance or an Admin can confirm a payment has been received.`,
-        };
+    async applySubscriptionChange(quoteId, lineId, newQty) {
+      try {
+        const result = await billingApi.changeSubscriptionQty(quoteId, lineId, newQty);
+        storeBilling(quoteId, result.billing);
+        await get().fetchQuotation(quoteId);
+        return { ok: true, billing: result.billing, proration: result.proration };
+      } catch (error) {
+        return fail(error);
       }
+    },
 
-      const invoice = get().getInvoice(invoiceId);
-      if (!invoice) return { ok: false, error: 'Invoice not found.' };
-      if (invoice.status === 'draft') {
-        return { ok: false, error: 'Issue the invoice before recording a payment against it.' };
+    /** What cancelling would produce, per the plan's cancellation rule. No mutation. */
+    async previewCancellation(quoteId, lineId) {
+      try {
+        const preview = await billingApi.previewCancellation(quoteId, lineId);
+        return { ok: true, preview };
+      } catch (error) {
+        return fail(error);
       }
+    },
 
-      const value = round2(Number(amount) || 0);
-      if (value <= 0) return { ok: false, error: 'Enter a payment amount greater than zero.' };
-
-      const { balanceRemaining } = invoiceBalances(invoice);
-      if (value > balanceRemaining + 0.01) {
-        return {
-          ok: false,
-          error: `That exceeds the outstanding balance of ${money(balanceRemaining, invoice.currency)}.`,
-        };
+    /**
+     * Cancel. Flips every future `scheduled` occurrence to `cancelled` and creates the
+     * refund or credit note the plan's rule calls for (`no_refund` creates neither).
+     */
+    async cancelSubscription(quoteId, lineId) {
+      try {
+        const result = await billingApi.cancelSubscription(quoteId, lineId);
+        if (result?.billing) storeBilling(quoteId, result.billing);
+        else await get().loadBilling(quoteId);
+        await get().fetchQuotation(quoteId);
+        return { ok: true, result };
+      } catch (error) {
+        return fail(error);
       }
+    },
 
-      const payment = {
-        id: nextId('pay'),
-        invoiceId,
-        amount: value,
-        method: method ?? 'bank_transfer',
-        reference: reference ?? '',
-        recordedById: me?.id ?? 'system',
-        recordedByName: me?.name ?? 'System',
-        date: date || nowISO().slice(0, 10),
-        notes: notes ?? '',
-      };
+    /* -------------------------------------------------------- credit notes */
 
-      const updated = { ...invoice, payments: [...invoice.payments, payment] };
-      const status = nextInvoiceStatus(updated);
-      const balances = invoiceBalances(updated);
+    creditNotesForQuote(quoteId) {
+      return get().billingViews[quoteId]?.creditNotes ?? [];
+    },
 
-      set((state) => ({
-        invoices: state.invoices.map((i) => (i.id === invoiceId ? { ...updated, status } : i)),
-      }));
+    async loadCreditNotes(quoteId) {
+      try {
+        const creditNotes = await billingApi.listCreditNotes(quoteId);
+        set((state) => ({
+          billingViews: {
+            ...state.billingViews,
+            [quoteId]: { ...(state.billingViews[quoteId] ?? {}), creditNotes },
+          },
+        }));
+        return { ok: true, creditNotes };
+      } catch (error) {
+        return fail(error);
+      }
+    },
 
-      get().logAudit({
-        entityType: 'invoice',
-        entityId: invoiceId,
-        action: `Payment recorded — ${money(value, invoice.currency)} by ${paymentMethodLabel(payment.method)}`,
-        meta: {
-          amount: value,
-          balanceAfter: balances.balanceRemaining,
-          status,
-          reference: payment.reference,
-        },
-      });
+    /** FINANCE / ADMIN only, like every money action. Emails the customer. */
+    async createCreditNote(quoteId, { lineId = null, amount, type = 'credit_note', reason }) {
+      try {
+        await billingApi.createCreditNote(quoteId, { lineId, amount, type, reason });
+        await get().loadCreditNotes(quoteId);
+        return { ok: true };
+      } catch (error) {
+        return fail(error);
+      }
+    },
 
-      // Fully paid closes the deal.
-      if (status === 'paid') {
-        const quote = get().getQuotation(invoice.quotationId);
-        if (quote && ['billed', 'fulfillment'].includes(quote.stage)) {
-          if (quote.stage === 'fulfillment') get().moveStage(quote.id, 'billed');
-          get().moveStage(invoice.quotationId, 'confirmed');
-        }
-        get().notify({
-          userId: quote?.ownerId ?? me?.id,
-          type: 'system',
-          title: `${invoice.id} fully paid`,
-          body: `${invoice.customerName} · ${money(invoice.total, invoice.currency)} settled.`,
-          link: `/app/quotations/${invoice.quotationId}/invoice`,
+    /* --------------------------------------------------- invoice lifecycle */
+
+    /**
+     * Issue the invoice. draft → sent, and moves the quotation fulfillment → billed.
+     * FINANCE / ADMIN only. 409 INVOICE_ALREADY_SENT on a second call.
+     */
+    async sendInvoice(invoiceId) {
+      try {
+        const invoice = await invoicesApi.sendInvoice(invoiceId);
+        absorbInvoice(invoice);
+        if (invoice?.quotationId) await get().fetchQuotation(invoice.quotationId);
+        return { ok: true, invoice };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /**
+     * Record a payment. The most security-sensitive call in the app.
+     *
+     * The server enforces finance/admin only, that the invoice is issued
+     * (409 INVOICE_NOT_ISSUED), no overpayment (422 OVERPAYMENT naming the outstanding
+     * figure), and that the actor is its own view of who called — which is why no
+     * `recordedBy` is sent. Full settlement moves the quotation to `confirmed`.
+     *
+     * An Idempotency-Key is attached per attempt inside the service, so a double click or
+     * a network retry cannot write a second payment. `replayed: true` means the key had
+     * been seen and the ORIGINAL payment came back unchanged — worth telling the user,
+     * because otherwise a retry looks like it silently did nothing.
+     *
+     * @returns {{ok, invoice, payment, status, quotationStage, replayed}}
+     */
+    async recordPayment(invoiceId, { amount, method, reference, date, notes }) {
+      try {
+        const result = await invoicesApi.recordPayment(invoiceId, {
+          amount,
+          method,
+          reference,
+          date,
+          notes,
         });
-      }
+        absorbInvoice(result.invoice);
+        if (result.invoice?.quotationId) await get().fetchQuotation(result.invoice.quotationId);
 
-      get().recomputeAlerts();
-      return { ok: true, payment, status, balances };
+        return {
+          ok: true,
+          invoice: result.invoice,
+          payment: result.payment,
+          status: result.status,
+          quotationStage: result.quotationStage,
+          replayed: Boolean(result.replayed),
+        };
+      } catch (error) {
+        // OVERPAYMENT carries the outstanding balance in details, which is more useful to
+        // show than the generic message alone.
+        return {
+          ...fail(error),
+          balanceRemaining: error.payload?.error?.details?.balanceRemaining ?? null,
+        };
+      }
     },
   };
 }

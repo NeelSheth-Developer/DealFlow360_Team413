@@ -14,6 +14,7 @@ import {
 import Landing from '@/pages/Landing';
 import Login from '@/pages/Login';
 import Signup from '@/pages/Signup';
+import ForgotPassword from '@/pages/ForgotPassword';
 import { Forbidden, NotFound } from '@/pages/ErrorPages';
 
 import Dashboard from '@/pages/workspace/Dashboard';
@@ -74,6 +75,12 @@ export default function AppRoutes() {
             </RedirectIfAuthenticated>
           }
         />
+        {/*
+          Shared by both identity spaces. `?type=customer` targets the customer
+          space; the default is staff. Not wrapped in RedirectIfAuthenticated so
+          a signed-in user can still reset their password from a link.
+        */}
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/403" element={<Forbidden />} />
       </Route>
 

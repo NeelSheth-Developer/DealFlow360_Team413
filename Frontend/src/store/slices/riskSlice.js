@@ -42,16 +42,36 @@ export function createRiskSlice(set, get) {
         },
       }));
 
-      const result = await scoreQuotation({
-        quotation,
-        categoryCeilings: get().categoryCeilings,
-        tierCeilings: get().tierCeilings,
-        approvalChain: get().approvalChain,
-      });
+      try {
+        const result = await scoreQuotation({
+          quotation,
+          categoryCeilings: get().categoryCeilings,
+          tierCeilings: get().tierCeilings,
+        });
 
-      const entry = { ...result, inputKey: key, status: 'ready', scoredAt: new Date().toISOString() };
-      set((state) => ({ riskCache: { ...state.riskCache, [quoteId]: entry } }));
-      return entry;
+        const entry = {
+          ...result,
+          inputKey: key,
+          status: 'ready',
+          scoredAt: new Date().toISOString(),
+        };
+        set((state) => ({ riskCache: { ...state.riskCache, [quoteId]: entry } }));
+        return entry;
+      } catch (error) {
+        // There is no local fallback any more, and that is deliberate — an invented
+        // score would resolve a different approval chain than the server will. Record
+        // the failure so the gauge can say "score unavailable" rather than showing a
+        // zero, which reads as "no violations".
+        const entry = {
+          ...PENDING_RISK,
+          inputKey: key,
+          status: 'error',
+          error: error.message,
+          approvalPath: { approvers: [], ruleId: null, label: 'Score unavailable' },
+        };
+        set((state) => ({ riskCache: { ...state.riskCache, [quoteId]: entry } }));
+        return entry;
+      }
     },
 
     /**
@@ -68,24 +88,38 @@ export function createRiskSlice(set, get) {
 
       if (stale.length === 0) return {};
 
-      const results = await scoreQuotations({
-        quotations: stale,
-        categoryCeilings: state.categoryCeilings,
-        tierCeilings: state.tierCeilings,
-        approvalChain: state.approvalChain,
-      });
-
       const now = new Date().toISOString();
       const patch = {};
-      for (const quotation of stale) {
-        const result = results[quotation.id];
-        if (!result) continue;
-        patch[quotation.id] = {
-          ...result,
-          inputKey: currentKey(quotation),
-          status: 'ready',
-          scoredAt: now,
-        };
+
+      try {
+        const results = await scoreQuotations({
+          quotations: stale,
+          categoryCeilings: state.categoryCeilings,
+          tierCeilings: state.tierCeilings,
+        });
+
+        for (const quotation of stale) {
+          const result = results[quotation.id];
+          // A quotation the server omitted stays unscored rather than being filled in
+          // with a guess.
+          if (!result) continue;
+          patch[quotation.id] = {
+            ...result,
+            inputKey: currentKey(quotation),
+            status: 'ready',
+            scoredAt: now,
+          };
+        }
+      } catch (error) {
+        for (const quotation of stale) {
+          patch[quotation.id] = {
+            ...PENDING_RISK,
+            inputKey: currentKey(quotation),
+            status: 'error',
+            error: error.message,
+            approvalPath: { approvers: [], ruleId: null, label: 'Score unavailable' },
+          };
+        }
       }
 
       set((s) => ({ riskCache: { ...s.riskCache, ...patch } }));

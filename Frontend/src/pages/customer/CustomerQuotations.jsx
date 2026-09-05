@@ -2,24 +2,28 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, FileText, MessageSquare, Repeat } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useCustomerQuotes } from '@/hooks/useCustomerQuotes';
-import { CUSTOMER_STATUS_META } from '@/lib/customerView';
+import { portalQuoteKey, statusMeta } from '@/services/customerPortalService';
 import { dateShort, money, relativeTime, tierLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { RawBadge } from '@/components/ui/Badge';
-import { EmptyState } from '@/components/ui/Misc';
+import { EmptyState, Skeleton } from '@/components/ui/Misc';
 
-/** A customer's own quotation list. Scoped entirely to their organisation. */
+/**
+ * A customer's own quotation list.
+ *
+ * Every row here is the server's allow-list projection, fetched from
+ * GET /customer/quotations and scoped by the session's own customer id in the query
+ * itself. There is no filtering on this side, and a draft never appears because the
+ * server does not return one.
+ */
 export default function CustomerQuotations() {
-  const customerUser = useAppStore((s) => s.customerUser);
-  const customers = useAppStore((s) => s.customers);
-  const quotes = useCustomerQuotes();
-
-  const customer = customers.find((c) => c.id === customerUser?.id) ?? customerUser;
+  const customer = useAppStore((s) => s.currentCustomer());
+  const { quotes, loading } = useCustomerQuotes();
 
   const awaiting = quotes.filter((q) => q.canConfirm).length;
   const unread = quotes.filter((q) => q.unreadFromSeller).length;
-  const totalValue = quotes.reduce((sum, q) => sum + q.totals.grandTotal, 0);
+  const totalValue = quotes.reduce((sum, q) => sum + (q.totals?.grandTotal ?? 0), 0);
 
   return (
     <div className="space-y-5">
@@ -44,7 +48,13 @@ export default function CustomerQuotations() {
         icon={FileText}
         accent="teal"
       >
-        {quotes.length === 0 ? (
+        {loading && quotes.length === 0 ? (
+          <div className="space-y-2.5">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+        ) : quotes.length === 0 ? (
           <EmptyState
             icon={FileText}
             title="Nothing to review yet"
@@ -53,14 +63,16 @@ export default function CustomerQuotations() {
         ) : (
           <ul className="space-y-2.5">
             {quotes.map((quote) => {
-              const status = CUSTOMER_STATUS_META[quote.stage] ?? CUSTOMER_STATUS_META.sent;
-              const recurring = quote.lines.filter((l) => l.isRecurring).length;
-              const comments = quote.lines.reduce((n, l) => n + l.comments.length, 0);
+              const status = statusMeta(quote);
+              const key = portalQuoteKey(quote);
+              const lines = quote.lines ?? [];
+              const recurring = lines.filter((l) => l.isRecurring).length;
+              const comments = quote.messageCount ?? 0;
 
               return (
-                <li key={quote.reference}>
+                <li key={key}>
                   <Link
-                    to={`/customer/quotations/${quote.reference}`}
+                    to={`/customer/quotations/${key}`}
                     className="group flex flex-wrap items-center gap-3 rounded-xl border border-brand-500/12 bg-white/60 p-4 transition-all hover:-translate-y-0.5 hover:border-accent-teal/40 hover:shadow-glass"
                   >
                     <div className="min-w-0 flex-1">
@@ -106,9 +118,9 @@ export default function CustomerQuotations() {
 
                     <div className="text-right">
                       <p className="num text-lg font-extrabold text-ink">
-                        {money(quote.totals.grandTotal, quote.currency)}
+                        {money(quote.totals?.grandTotal, quote.currency)}
                       </p>
-                      {quote.totals.savings > 0 && (
+                      {quote.totals?.savings > 0 && (
                         <p className="num text-[11px] font-semibold text-state-success">
                           saving {money(quote.totals.savings, quote.currency)}
                         </p>

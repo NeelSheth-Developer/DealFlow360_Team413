@@ -22,6 +22,7 @@ import { isEditable } from '@/lib/stageMachine';
 import { cn } from '@/lib/utils';
 import { dateShort } from '@/lib/format';
 import { useRisk } from '@/hooks/useRisk';
+import { useQuotation } from '@/hooks/useQuotation';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/Button';
@@ -29,6 +30,7 @@ import { Input, Select, Textarea } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { StageBadge, TierBadge } from '@/components/shared/Indicators';
 import { QuoteNav } from '@/components/quotation/QuoteNav';
+import { QuoteLoading } from '@/components/quotation/QuoteLoading';
 import { CatalogPanel } from '@/components/quotation/CatalogPanel';
 import { OrderLinesTable } from '@/components/quotation/OrderLinesTable';
 import { UpsellPanel } from '@/components/quotation/UpsellPanel';
@@ -40,7 +42,7 @@ export default function QuotationBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const quote = useAppStore((s) => s.quotations.find((q) => q.id === id));
+  const { quote, resolving, missing } = useQuotation(id);
   const plans = useAppStore((s) => s.subscriptionPlans);
   const tierCeilings = useAppStore((s) => s.tierCeilings);
   const categoryCeilings = useAppStore((s) => s.categoryCeilings);
@@ -74,7 +76,10 @@ export default function QuotationBuilder() {
   // Risk is fetched from the backend, never computed here.
   const { risk, approvalPath, isLoading: riskLoading, isFallback } = useRisk(id);
 
-  if (!quote) return <Navigate to="/404" replace />;
+  // "Still loading" and "does not exist" are different answers — only the second
+  // redirects. A deep link or hard refresh renders before any list has arrived.
+  if (resolving && !quote) return <QuoteLoading />;
+  if (missing || !quote) return <Navigate to="/404" replace />;
 
   const editable = isEditable(quote.stage);
   const totals = quoteTotals(quote);
@@ -88,15 +93,19 @@ export default function QuotationBuilder() {
     };
   };
 
-  const handleAdd = (productId, planId) => {
+  const handleAdd = async (productId, planId) => {
     if (!editable) {
       toast.error('This quotation is locked', {
         description: `Lines can only be edited in Draft or Under Negotiation. Currently ${quote.stage.replace(/_/g, ' ')}.`,
       });
       return;
     }
-    const line = addLine(id, productId, 1, planId);
-    if (line) toast.success(`${line.productName} added`);
+    const result = await addLine(id, productId, 1, planId);
+    if (!result.ok) {
+      toast.error('Could not add that line', { description: result.error });
+      return;
+    }
+    toast.success('Line added');
   };
 
   const handleSubmit = async () => {
@@ -145,8 +154,11 @@ export default function QuotationBuilder() {
     <div>
       <PageHeader
         title={quote.customerName}
-        description={`Quotation ${quote.id} · created ${dateShort(quote.createdAt)} · valid until ${dateShort(quote.validUntil)}`}
-        breadcrumbs={[{ label: 'Quotations', to: '/app/quotations' }, { label: quote.id }]}
+        description={`Quotation ${quote.reference ?? quote.id} · created ${dateShort(quote.createdAt)} · valid until ${dateShort(quote.validUntil)}`}
+        breadcrumbs={[
+          { label: 'Quotations', to: '/app/quotations' },
+          { label: quote.reference ?? quote.id },
+        ]}
         badge={
           <div className="flex flex-wrap items-center gap-2">
             <StageBadge stage={quote.stage} />
