@@ -21,7 +21,8 @@ export function uploadBuffer(
         resource_type: 'auto',
       },
       (error, result) => {
-        if (error) return reject(error);
+        if (error)
+          return reject(new Error(error.message ?? 'Cloudinary upload failed', { cause: error }));
         if (!result) return reject(new Error('Cloudinary returned an empty response'));
         resolve(result);
       },

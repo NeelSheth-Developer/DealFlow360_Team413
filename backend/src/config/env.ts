@@ -14,9 +14,7 @@ const envSchema = z.object({
   API_URL: z.url().default('http://localhost:5000'),
   CLIENT_URL: z.url().default('http://localhost:5173'),
   CORS_ORIGINS: z.string().default('*').transform(csv),
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-    .default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   // Neon Postgres
   DATABASE_URL: z.string().startsWith('postgres'),
@@ -51,7 +49,9 @@ if (!parsed.success) {
   const issues = parsed.error.issues
     .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
     .join('\n');
-  console.error(`\nInvalid environment variables:\n${issues}\n\nCheck .env against .env.example.\n`);
+  process.stderr.write(
+    `\nInvalid environment variables:\n${issues}\n\nCheck .env against .env.example.\n`,
+  );
   process.exit(1);
 }
 
