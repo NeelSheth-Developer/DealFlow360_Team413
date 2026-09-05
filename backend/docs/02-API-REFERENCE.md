@@ -240,9 +240,12 @@ SIGNUP (both kinds)             POST /auth/signup      → OTP emailed, no token
                                 CUSTOMER CODE (CUST-0001) which they give
                                 to their sales rep, who then quotes them.
 
-                                Signup takes ONLY email + password (+ name
-                                for staff). role=sales_rep and tier=bronze
-                                are forced by the server, never sent.
+                                Signup takes ONLY name + email + password.
+                                role=sales_rep and tier=bronze are forced
+                                by the server and never accepted from the
+                                body. There is NO endpoint that lets a user
+                                change their own role — only an admin can,
+                                via PATCH /users/:id.
 
 FORGOT PASSWORD (both kinds)    POST /auth/forgot-password → OTP emailed
                                 POST /auth/reset-password  → OTP + new password
@@ -273,7 +276,6 @@ POST /auth/login  { email, password, type }
 | `POST` | `/auth/refresh` | public (refresh token) | New access token |
 | `POST` | `/auth/logout` | any authenticated | Revoke refresh token |
 | `GET` | `/auth/me` | any authenticated | Session restore |
-| `POST` | `/auth/switch-role` | staff *(demo only)* | Walk the approval chain |
 
 ### Two rules the implementation must follow
 
@@ -350,8 +352,7 @@ is written to. Customers are never created by a rep.
 > | Field | Set to | Changed later by |
 > |---|---|---|
 > | `role` | always `sales_rep` | admin — `PATCH /users/:id { "role": "sales_manager" }` |
-> | `team` | `null` | admin — `PATCH /users/:id { "team": "West" }` |
-> | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id { "tier": "gold" }` |
+> > | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id { "tier": "gold" }` |
 > | `currency` | `INR` | rep — `PATCH /customers/:id { "currency": "USD" }` |
 >
 > Sending any of these returns **`400 FIELD_NOT_ALLOWED`**, naming the offending field.
@@ -854,7 +855,6 @@ Who am I, and what may I do. Call this on page load to restore a session.
     "id": "usr_2b77de",
     "name": "Anita Desai",
     "role": "sales_manager",
-    "team": "National",
     "permissions": {
       "canConfigureCatalog": false,
       "canConfigureDiscounts": true,
@@ -888,38 +888,53 @@ nothing to gate, because the portal exposes only that customer's own quotations.
 
 ---
 
-### `POST /auth/switch-role`
-
-Demo convenience so one laptop can walk a Rep → Manager → Finance approval chain
-without three separate logins. **Staff tokens only** — a customer token gets `403`.
-Disable in production.
-
-**Request** `{ "role": "finance" }`
-
-**Response `200`** — a new `accessToken` carrying the requested role.
-
-**Errors** — `403` demo mode disabled, or the caller is not `kind: "staff"`
-
----
-
 ## 2. Users & Roles
 
 | Method | Path | Roles |
 |---|---|---|
-| `GET` | `/users` | admin, manager |
-| `POST` | `/users` | admin |
-| `GET` | `/users/:id` | admin, manager |
-| `PATCH` | `/users/:id` | admin |
-| `DELETE` | `/users/:id` | admin |
-| `GET` | `/roles` | any authenticated |
+| `GET` | `/users` | **admin** |
+| `GET` | `/users/:id` | **admin** |
+| `PATCH` | `/users/:id` | **admin** |
+| `GET` | `/roles` | **admin** |
+
+> Full detail — role model, guards, and the admin bootstrap — is in
+> [`04-ROLES-API.md`](./04-ROLES-API.md).
+
+> ### Admin only, and there is no `POST`
+>
+> Staff accounts are created **exclusively** by `POST /auth/signup`, so every account
+> has proved its own email and chosen its own password. An admin-created account would
+> need an invite flow to do either, which is the machinery that was deliberately
+> removed.
+>
+> ```
+> POST /auth/signup   always role = 'sales_rep'   (role in body → 400)
+>          ↓
+> PATCH /users/:id    the only way to change a role — admin only
+> ```
+>
+> The **first** admin cannot come from this API at all. It is seeded from the backend:
+>
+> ```bash
+> npm run seed:admin -- admin@teamvector.space "Neha Gupta" "S3cure!pass"
+> ```
 
 ---
 
 ### `GET /users`
 
+The list an admin uses to see who holds which role.
+
 ```http
-GET /api/v1/users?role=sales_rep&team=West&page=1&limit=25
+GET /api/v1/users?role=sales_rep&active=true&q=priya&page=1&limit=25
 ```
+
+| Query | Type | Description |
+|---|---|---|
+| `role` | enum | `sales_rep` \| `sales_manager` \| `finance` \| `admin` |
+| `active` | boolean | `false` shows deactivated accounts |
+| `q` | string | matches name or email |
+| `page` / `limit` | number | default `1` / `25`, max `100` |
 
 **Response `200`**
 
@@ -927,45 +942,95 @@ GET /api/v1/users?role=sales_rep&team=West&page=1&limit=25
 {
   "success": true,
   "data": [
-    { "id": "usr_8f21c3", "name": "Priya Sharma", "email": "priya@teamvector.space",
-      "role": "sales_rep", "team": "West", "active": true }
+    {
+      "id": "b50f51dd-5aa8-48de-8424-df0b515a4485",
+      "name": "Priya Sharma",
+      "email": "priya@teamvector.space",
+      "role": "sales_rep",
+      "active": true,
+      "verified": true,
+      "createdAt": "2026-03-01T09:00:00.000Z"
+    }
   ],
   "meta": { "page": 1, "limit": 25, "total": 6, "totalPages": 1 }
 }
 ```
 
+`password_hash` is never selected, so it cannot leak through this endpoint.
+
 ---
 
-### `POST /users`
+### `GET /users/:id`
 
-**Request**
+**Auth** — admin only.
 
-```json
-{ "name": "Vikram Rao", "email": "vikram@teamvector.space",
-  "password": "S3cure!pass", "role": "finance", "team": "National" }
+```http
+GET /api/v1/users/b50f51dd-5aa8-48de-8424-df0b515a4485
 ```
 
-**Response `201`** — the created user. **Errors** — `409` duplicate email
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "b50f51dd-5aa8-48de-8424-df0b515a4485",
+    "name": "Priya Sharma",
+    "email": "priya@teamvector.space",
+    "role": "sales_rep",
+    "active": true,
+    "verified": true,
+    "createdAt": "2026-03-01T09:00:00.000Z"
+  }
+}
+```
+
+**Errors** — `400` invalid uuid · `404` no such user
 
 ---
 
 ### `PATCH /users/:id`
 
-Every signup produces a `sales_rep` with no team. **This is where an admin promotes
-them and assigns a team** — the two fields `/auth/signup` refuses to accept.
+Every signup produces a `sales_rep`. **This is the only way anyone becomes anything
+else** — `role` is the field `/auth/signup` refuses to accept.
 
-**Request** — any subset of writable fields
+**Request** — any subset; at least one field required
 
 ```json
-{ "role": "sales_manager", "team": "National", "active": true }
+{
+  "success": true,
+  "data": {
+    "id": "b50f51dd-5aa8-48de-8424-df0b515a4485",
+    "name": "Priya Sharma",
+    "email": "priya@teamvector.space",
+    "role": "sales_manager",
+    "active": true,
+    "verified": true,
+    "createdAt": "2026-03-01T09:00:00.000Z"
+  }
+}
 ```
 
 | Field | Type | Rules |
 |---|---|---|
-| `role` | enum | `sales_rep` \| `sales_manager` \| `finance` \| `admin` — **admin only** |
-| `team` | string \| null | free text |
+| `role` | enum | `sales_rep` \| `sales_manager` \| `finance` \| `admin` |
 | `name` | string | 1–120 chars |
-| `active` | boolean | `false` disables login without deleting history |
+| `active` | boolean | `false` blocks login **immediately** — `requireAuth` checks it on every request |
+
+> ### Two self-targeting guards
+>
+> An admin may rename themselves, but **not** change their own `role` or set their own
+> `active: false`:
+>
+> ```
+> PATCH /users/<own id> { "role": "sales_rep" }  → 403 You cannot change your own role
+> PATCH /users/<own id> { "active": false }      → 403 You cannot deactivate your own account
+> ```
+>
+> Neither is a privilege escalation — only admins reach this endpoint. Both are
+> one-way doors: self-demotion is how you end up with zero admins and nobody able to
+> fix it, and self-deactivation locks you out of the account that could undo it.
+> Recovering from either needs a second admin or a database edit.
 
 **Response `200`**
 
@@ -976,11 +1041,8 @@ them and assigns a team** — the two fields `/auth/signup` refuses to accept.
     "id": "usr_8f21c3",
     "name": "Priya Sharma",
     "role": "sales_manager",
-    "previousRole": "sales_rep",
-    "team": "National",
-    "active": true,
-    "changedByName": "Neha Gupta",
-    "auditEntryId": "aud_c118"
+    "verified": true,
+    "active": true
   }
 }
 ```
@@ -992,19 +1054,49 @@ them and assigns a team** — the two fields `/auth/signup` refuses to accept.
 
 ### `GET /roles`
 
+The roles an admin may assign — drives the role picker.
+
+```http
+GET /api/v1/roles
+```
+
 **Response `200`**
 
 ```json
 {
   "success": true,
   "data": [
-    { "key": "sales_rep",     "label": "Sales Rep",     "description": "Creates and manages deals" },
-    { "key": "sales_manager", "label": "Sales Manager",  "description": "Approves risky discounts" },
-    { "key": "finance",       "label": "Finance / Ops",  "description": "Second-level approval, fulfillment, billing" },
-    { "key": "admin",         "label": "Admin",          "description": "Backend configuration and analytics" }
+    {
+      "key": "sales_rep",
+      "label": "Sales Rep",
+      "description": "Creates quotations, applies discounts, responds to customer requests",
+      "assignable": true,
+      "activeUsers": 7
+    },
+    {
+      "key": "sales_manager",
+      "label": "Sales Manager",
+      "description": "Approves discounts above threshold, configures tiers, monitors deal health",
+      "assignable": true,
+      "activeUsers": 2
+    },
+    {
+      "key": "finance",
+      "label": "Finance / Operations",
+      "description": "Second-level approval, warehouse splits, billing and credit notes",
+      "assignable": true,
+      "activeUsers": 1
+    }
   ]
 }
 ```
+
+> **`admin` is deliberately absent.** This list is exactly the enum
+> `PATCH /users/:id` accepts, so a client that builds its dropdown from this response
+> can never offer a role the API would reject. Admin is granted only by
+> `npm run seed:admin`, from the backend.
+
+**Errors** — `403 FORBIDDEN` for any role other than admin · `403 WRONG_KIND` for a customer token
 
 ---
 
@@ -1156,10 +1248,7 @@ PATCH /api/v1/customers/cus_9f2c1a44
   "data": {
     "id": "cus_9f2c1a44",
     "customerCode": "CUST-0001",
-    "tier": "gold",
-    "previousTier": "bronze",
-    "changedByName": "Anita Desai",
-    "auditEntryId": "aud_b204"
+    "tier": "gold"
   }
 }
 ```
@@ -4122,8 +4211,7 @@ Every reporting endpoint accepts the same filters:
 |---|---|---|---|
 | `period` | enum | `today` \| `week` \| `month` \| `custom` | View quotations/orders within a date range |
 | `from` / `to` | date | `2026-01-01` / `2026-03-31` | Custom range |
-| `repIds` | csv | `usr_8f21c3,usr_rahul` | Analyze individual or team performance |
-| `teams` | csv | `West,National` | |
+| `repIds` | csv | `usr_8f21c3,usr_rahul` | Analyze individual rep performance |
 | `approvalStatus` | csv | `draft,pending_approval,approved,lost` | Filter by pending / approved / rejected |
 | `productIds` | csv | `prd_lap14` | Track best-selling items |
 | `categories` | csv | `hardware,service` | Track most-discounted items |
@@ -4166,10 +4254,10 @@ GET /api/v1/reports/summary?period=month&repIds=usr_8f21c3&approvalStatus=approv
 {
   "success": true,
   "data": [
-    { "repId": "usr_8f21c3", "repName": "Priya Sharma", "team": "West",
+    { "repId": "usr_8f21c3", "repName": "Priya Sharma",
       "quotationCount": 42, "totalValue": 28400000, "wonValue": 11200000,
       "winRatePct": 39.4, "avgDiscountPct": 8.4 },
-    { "repId": "usr_rahul", "repName": "Rahul Mehta", "team": "East",
+    { "repId": "usr_rahul", "repName": "Rahul Mehta",
       "quotationCount": 38, "totalValue": 22100000, "wonValue": 7600000,
       "winRatePct": 34.4, "avgDiscountPct": 12.1 }
   ]
@@ -4497,13 +4585,14 @@ Types — `approval_request` · `approval_result` · `negotiation_reply` · `ano
 | `QUOTATION_EXPIRED` | `410` | Quotation past its `validUntil` |
 | `QUOTATION_LOCKED` | `409` | Customer edit attempted while awaiting a rep response |
 | `PLAN_REQUIRED` | `400` | Subscription product added without `planId` |
+| `LAST_ADMIN` | `409` | Demoting or deactivating the only active admin |
 | `EMAIL_NOT_VERIFIED` | `403` | Login attempted before the signup OTP was verified |
 | `OTP_INVALID` | `400` | Wrong 6-digit code |
 | `OTP_EXPIRED` | `410` | Code older than 10 minutes |
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts — the code is destroyed |
 | `OTP_RESEND_TOO_SOON` | `429` | A new code was requested within 60 seconds |
 | `PASSWORD_REUSED` | `400` | New password matches the current one |
-| `FIELD_NOT_ALLOWED` | `400` | `role`, `team`, `tier` or `currency` sent to `/auth/signup` — all are server-assigned |
+| `FIELD_NOT_ALLOWED` | `400` | `role`, `tier` or `currency` sent to `/auth/signup` — all are server-assigned |
 | `WRONG_KIND` | `403` | Staff token on a portal route, or customer token on an internal route |
 
 ---
@@ -4525,15 +4614,12 @@ AUTH & SESSION                              A1
   POST   /auth/refresh
   POST   /auth/logout
   GET    /auth/me
-  POST   /auth/switch-role
 
 USERS & ROLES
-  GET    /users
-  POST   /users
+  GET    /users                           ?role= &active= &q= 
   GET    /users/:id
-  PATCH  /users/:id
-  DELETE /users/:id
-  GET    /roles
+  PATCH  /users/:id                       promote / demote / deactivate
+  GET    /roles                           assignable roles (admin excluded)
 
 CUSTOMERS & TIERS
   GET    /customers                       ?q=CUST-0001 lookup by code
@@ -4703,7 +4789,7 @@ AUDIT & NOTIFICATIONS
 
 </details>
 
-**Total: 146 endpoints across 20 groups.**
+**Total: 143 endpoints across 20 groups.**
 
 ---
 
@@ -4730,7 +4816,7 @@ AUDIT & NOTIFICATIONS
    POST /quotations/Q-1042/suggestions/prd_dock/accept
    → totals.marginPct AND risk.score both change in the SAME response
 
-5  POST /auth/switch-role                  { role: "sales_manager" }
+5  (sign in as the manager account — switch-role was removed)
    GET  /quotations/Q-1042/approval
    POST /quotations/Q-1042/approval/approve
    GET  /quotations/Q-1042/fulfillment

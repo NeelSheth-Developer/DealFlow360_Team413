@@ -16,7 +16,7 @@ export type ErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'RATE_LIMITED'
-  | 'FEATURE_DISABLED'
+  | 'LAST_ADMIN'
   | 'INTERNAL_ERROR';
 
 export class ApiError extends Error {

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { env } from '../../config/env.js';
-import { signAccessToken } from '../../lib/jwt.js';
 import { clampHeader } from '../../lib/sanitize.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { authRateLimit } from '../../middleware/rate-limit.js';
@@ -15,7 +14,6 @@ import {
   resendOtpSchema,
   resetPasswordSchema,
   signupSchema,
-  switchRoleSchema,
   verifyOtpSchema,
 } from './auth.schemas.js';
 import {
@@ -223,36 +221,5 @@ authRouter.get(
     if (!req.auth) throw ApiError.unauthorized();
     const profile = await me(req.auth.kind, req.auth.id);
     res.json({ success: true, data: profile });
-  }),
-);
-
-/**
- * Demo convenience so one laptop can walk a Rep → Manager → Finance approval chain.
- * Gated behind an environment flag and off by default — with it enabled, anyone who
- * can sign in can grant themselves any role.
- */
-authRouter.post(
-  '/switch-role',
-  requireAuth,
-  asyncHandler((req, res) => {
-    if (!env.ENABLE_ROLE_SWITCH) {
-      throw ApiError.forbidden('FEATURE_DISABLED', 'Role switching is disabled');
-    }
-    if (!req.auth || req.auth.kind !== 'staff') {
-      throw ApiError.forbidden('WRONG_KIND', 'Only internal users can switch role');
-    }
-
-    const body = switchRoleSchema.parse(req.body);
-    const accessToken = signAccessToken({
-      sub: req.auth.id,
-      kind: 'staff',
-      role: body.role,
-    });
-
-    res.json({
-      success: true,
-      data: { accessToken, expiresIn: env.ACCESS_TOKEN_TTL_SECONDS, role: body.role },
-    });
-    return Promise.resolve();
   }),
 );

@@ -186,8 +186,8 @@ export async function signup(
   const passwordHash = await hashPassword(input.password);
 
   if (type === 'internal') {
-    // role defaults to 'sales_rep' and team to null at the database level — neither
-    // is accepted from the request body.
+    // role defaults to 'sales_rep' at the database level and is never accepted
+    // from the request body.
     await db.insert(users).values({ name: input.name, email: input.email, passwordHash });
   } else {
     // tier defaults to 'bronze' and currency to 'INR' at the database level.

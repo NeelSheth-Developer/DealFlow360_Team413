@@ -415,7 +415,7 @@ The PDF splits the system into a **backend configuration area (A)** and a
 
 | Entity | Key fields |
 |---|---|
-| **User** | id, name, email, role (`sales_rep`\|`sales_manager`\|`finance`\|`admin`), team |
+| **User** | id, name, email, role (`sales_rep`\|`sales_manager`\|`finance`\|`admin`), active |
 | **Customer** | id, name, tier (`bronze`\|`silver`\|`gold`), contactName, email, currency |
 | **Product** | id, name, sku, category, basePrice, **costPrice**, unit, taxPct, description, variants[], active |
 | **PriceListEntry** | productId, tier, currency, price |

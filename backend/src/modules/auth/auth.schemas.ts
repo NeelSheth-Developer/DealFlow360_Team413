@@ -3,7 +3,7 @@ import { cleanText, digitsOnly, normalizeEmail } from '../../lib/sanitize.js';
 
 /**
  * Every schema is `.strict()`. Unknown keys are rejected rather than stripped, which
- * is what enforces the rule that `role`, `team`, `tier` and `currency` can never be
+ * is what enforces the rule that `role`, `tier` and `currency` can never be
  * set by the client: they are server-assigned. Silently dropping them would work
  * today and quietly become privilege escalation the day someone spreads the body
  * into an insert.
@@ -95,10 +95,6 @@ export const changePasswordSchema = z
 export const refreshSchema = z.object({ refreshToken: z.string().min(1).max(200) }).strict();
 
 export const logoutSchema = refreshSchema;
-
-export const switchRoleSchema = z
-  .object({ role: z.enum(['sales_rep', 'sales_manager', 'finance', 'admin']) })
-  .strict();
 
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
