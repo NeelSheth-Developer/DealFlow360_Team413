@@ -117,7 +117,6 @@ true.
 | `npm run lint`           | ESLint over the whole project            |
 | `npm run format`         | Format `src/` with Prettier              |
 | `npm run seed:admin`     | Create or promote the first admin        |
-| `npm run e2e`            | End-to-end walkthrough, 92 assertions    |
 | `npm run verify:risk`    | The 6 blended-risk reference cases       |
 | `npm run verify:engines` | Warehouse split, proration, cancellation |
 | `npm run db:generate`    | Generate SQL migrations from the schema  |
@@ -155,7 +154,7 @@ src/
                 audit, notify, mailer, PDF, Cloudinary, Redis, JWT, password
   middleware/   auth guards, error handling, Upstash rate limiting
   modules/      one folder per feature — routes, schemas, service
-  scripts/      seed-admin, e2e, verify-risk, verify-engines
+  scripts/      seed, seed-admin, verify-risk, verify-engines
   utils/        ApiError, asyncHandler
   app.ts        Express app assembly
   server.ts     bootstrap + graceful shutdown
@@ -188,7 +187,6 @@ Three ways to exercise it:
 
 ```bash
 npm run dev          # then open http://localhost:5050 for the API tester
-npm run e2e          # 92 assertions walking the full quote-to-cash flow
 ```
 
 …or import `postman/DealFlow360.postman_collection.json`.
@@ -201,11 +199,13 @@ statement, so a change that breaks one fails loudly rather than quietly:
 ```bash
 npm run verify:risk      # 6 blended-risk reference cases
 npm run verify:engines   # warehouse split, proration, cancellation
-npm run e2e              # the brief's 8-step Quick Test Flow, end to end
 ```
 
-`npm run e2e` needs a running server, `EXPOSE_DEV_OTP=true`, and a seeded admin. It
-makes ~150 requests, so leave a minute between runs or the rate limiter will trip.
+Both are pure computation — no server, no database, no network, and no email. They run
+in under a second.
+
+For a full walkthrough of the quote-to-cash flow, seed the database and drive it from
+the browser tester at <http://localhost:5050> or the Postman collection.
 
 ## Branches
 

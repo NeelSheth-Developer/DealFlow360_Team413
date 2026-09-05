@@ -11,7 +11,6 @@ relative to it.
 | **Data model** | [§24](#24-data-model) — 31 tables, ER diagrams and the full DBML |
 | **Postman** | [`../postman/`](../postman) — importable collection covering every endpoint |
 | **Browser tester** | `npm run dev`, then <http://localhost:5050> |
-| **End-to-end test** | `npm run e2e` — 92 assertions over the brief's 8-step flow |
 
 ---
 
@@ -2799,8 +2798,8 @@ notification is read on a phone far more often than not.
 
 ## 21. Quick Test Flow → API calls
 
-The eight steps of the brief's section 9, mapped to endpoints. `npm run e2e` walks
-exactly this path and asserts 92 checks against it.
+The eight steps of the brief's section 9, mapped to endpoints. Walk this path in the
+browser tester or the Postman collection to exercise the whole platform.
 
 | Step | Calls |
 |---|---|
