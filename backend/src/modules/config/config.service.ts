@@ -16,6 +16,7 @@ import type {
   CategoryCeilingsInput,
   DashboardConfigInput,
   PatchCategoryCeilingsInput,
+  PatchDashboardConfigInput,
   PatchTierCeilingsInput,
   TierCeilingsInput,
 } from './config.schemas.js';
@@ -302,6 +303,29 @@ export async function setDashboardConfig(actor: AuditActor, input: DashboardConf
   await audit({
     entityType: 'config',
     action: 'Dashboard thresholds updated',
+    actor,
+    meta: { from: before, to: input },
+  });
+
+  return getDashboardConfig();
+}
+
+export async function patchDashboardConfig(actor: AuditActor, input: PatchDashboardConfigInput) {
+  const before = await getDashboardConfig();
+
+  await db
+    .update(dashboardConfig)
+    .set({
+      ...(input.stallThresholdDays !== undefined && { stallThresholdDays: input.stallThresholdDays }),
+      ...(input.anomalySensitivity !== undefined && { anomalySensitivity: input.anomalySensitivity.toFixed(2) }),
+      ...(input.approvalSlaHours !== undefined && { approvalSlaHours: input.approvalSlaHours }),
+      updatedAt: new Date(),
+    })
+    .where(eq(dashboardConfig.id, 1));
+
+  await audit({
+    entityType: 'config',
+    action: 'Dashboard thresholds patched',
     actor,
     meta: { from: before, to: input },
   });

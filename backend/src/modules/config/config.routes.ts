@@ -8,6 +8,7 @@ import {
   categoryCeilingsSchema,
   dashboardConfigSchema,
   patchCategoryCeilingsSchema,
+  patchDashboardConfigSchema,
   patchTierCeilingsSchema,
   reorderChainSchema,
   tierCeilingsSchema,
@@ -19,6 +20,7 @@ import {
   getDiscountConfig,
   listChain,
   patchCategoryCeilings,
+  patchDashboardConfig,
   patchTierCeilings,
   reorderChain,
   setCategoryCeilings,
@@ -152,5 +154,14 @@ configRouter.put(
   asyncHandler(async (req, res) => {
     const input = dashboardConfigSchema.parse(req.body);
     res.json({ success: true, data: await setDashboardConfig(actorFrom(req), input) });
+  }),
+);
+
+configRouter.patch(
+  '/dashboard',
+  canWrite,
+  asyncHandler(async (req, res) => {
+    const input = patchDashboardConfigSchema.parse(req.body);
+    res.json({ success: true, data: await patchDashboardConfig(actorFrom(req), input) });
   }),
 );
