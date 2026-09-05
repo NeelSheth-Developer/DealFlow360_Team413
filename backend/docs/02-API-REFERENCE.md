@@ -169,8 +169,13 @@ Responses carry `X-RateLimit-Limit` and `X-RateLimit-Remaining`; exceeding retur
 > which identity store to authenticate against.
 
 ```
-SIGNUP (internal only)          POST /auth/signup     → OTP emailed, no token
-                                POST /auth/verify-otp → email proved, TOKEN issued
+SIGNUP (both kinds)             POST /auth/signup      → OTP emailed, no token
+                                POST /auth/verify-otp  → email proved, TOKEN issued
+
+                                Customers self-register too. They get a
+                                CUSTOMER CODE (CUST-0001) which they give
+                                to their sales rep, who then quotes them.
+                                Self-signup is ALWAYS tier: bronze.
 
 FORGOT PASSWORD (both kinds)    POST /auth/forgot-password → OTP emailed
                                 POST /auth/reset-password  → OTP + new password
@@ -191,7 +196,7 @@ POST /auth/login  { email, password, type }
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/auth/signup` | public | Create an internal account · sends OTP |
+| `POST` | `/auth/signup` | public | Create an account (both kinds) · sends OTP |
 | `POST` | `/auth/verify-otp` | public | Prove the email · **issues the token** |
 | `POST` | `/auth/resend-otp` | public | New code if the first expired |
 | `POST` | `/auth/forgot-password` | public | Step 1 of a reset · sends OTP |
@@ -228,8 +233,10 @@ POST /auth/login  { email, password, type }
 
 ### `POST /auth/signup`
 
-Create an **internal** user account. Customers do not self-register — a rep creates
-them (see [§3](#3-customers--tiers)).
+Creates an account. **Both kinds self-register** — `type` selects which table the row
+is written to. Customers are never created by a rep.
+
+#### Internal user
 
 **Request**
 
@@ -239,7 +246,8 @@ them (see [§3](#3-customers--tiers)).
   "email": "priya@teamvector.space",
   "password": "S3cure!pass",
   "role": "sales_rep",
-  "team": "West"
+  "team": "West",
+  "type": "internal"
 }
 ```
 
@@ -250,8 +258,46 @@ them (see [§3](#3-customers--tiers)).
 | `password` | string | ✅ | min 8 chars |
 | `role` | enum | ✅ | `sales_rep` \| `sales_manager` \| `finance` \| `admin` |
 | `team` | string | ➖ | free text |
+| `type` | enum | ✅ | `internal` |
+
+#### Customer
+
+**Request**
+
+```json
+{
+  "companyName": "Acme Corp",
+  "contactName": "R. Iyer",
+  "email": "buyer@acmecorp.com",
+  "password": "Acme@2026",
+  "currency": "INR",
+  "type": "customer"
+}
+```
+
+| Field | Type | Required | Rules |
+|---|---|:---:|---|
+| `companyName` | string | ✅ | 1–200 chars |
+| `contactName` | string | ➖ | person at that company |
+| `email` | string | ✅ | valid email, unique |
+| `password` | string | ✅ | min 8 chars |
+| `currency` | string | ➖ | ISO-4217, default `INR` |
+| `type` | enum | ✅ | `customer` |
+
+> ### ⚠ `tier` is NOT a field on this request
+>
+> Self-signup **always** creates the customer at `tier: "bronze"` — the strictest
+> terms: base price, 5% discount ceiling. Tier decides pricing and discount headroom,
+> so it can never come from a form the customer controls. Only a rep or admin raises
+> it afterwards with `PATCH /customers/:id { "tier": "gold" }`, which writes an audit
+> entry.
+>
+> Do not accept `tier` and silently ignore it — reject the request. A field that is
+> accepted today gets honoured by accident in a later refactor.
 
 **Response `201`** — the account exists but is **not usable yet**
+
+Internal:
 
 ```json
 {
@@ -266,6 +312,7 @@ them (see [§3](#3-customers--tiers)).
       "emailVerified": false,
       "createdAt": "2026-03-01T09:00:00.000Z"
     },
+    "kind": "staff",
     "otpSent": true,
     "otpExpiresInSeconds": 600,
     "message": "We sent a 6-digit code to priya@teamvector.space.",
@@ -273,6 +320,36 @@ them (see [§3](#3-customers--tiers)).
   }
 }
 ```
+
+Customer:
+
+```json
+{
+  "success": true,
+  "data": {
+    "customer": {
+      "id": "cus_9f2c1a44",
+      "customerCode": "CUST-0001",
+      "companyName": "Acme Corp",
+      "contactName": "R. Iyer",
+      "email": "buyer@acmecorp.com",
+      "tier": "bronze",
+      "currency": "INR",
+      "emailVerified": false,
+      "createdAt": "2026-03-01T09:00:00.000Z"
+    },
+    "kind": "customer",
+    "otpSent": true,
+    "otpExpiresInSeconds": 600,
+    "message": "We sent a 6-digit code to buyer@acmecorp.com.",
+    "redirectTo": "/portal/verify-otp"
+  }
+}
+```
+
+> `customerCode` (`CUST-0001`) is the handle the customer gives their sales contact.
+> It is sequential, zero-padded, and safe to read aloud over a phone call. `id` stays
+> the internal primary key; `customerCode` is the human-facing one.
 
 > **No `accessToken` is issued here.** The address has not been proved yet. The user
 > must call [`POST /auth/verify-otp`](#post-authverify-otp) with the emailed code —
@@ -283,12 +360,11 @@ them (see [§3](#3-customers--tiers)).
 
 ---
 
----
-
 ### `POST /auth/verify-otp`
 
 Signup does **not** create a usable account on its own. The address must be proved
-first: signup emails a 6-digit code, and this endpoint checks it.
+first: signup emails a 6-digit code, and this endpoint checks it. For a customer,
+this is also where the `customerCode` becomes active.
 
 ```
 POST /auth/signup          account created, emailVerified = false
@@ -549,6 +625,7 @@ Token payload: `{ "sub": "usr_2b77de", "kind": "staff", "role": "sales_manager" 
   "data": {
     "customer": {
       "id": "cus_acme01",
+      "customerCode": "CUST-0001",
       "name": "Acme Corp",
       "contactName": "R. Iyer",
       "email": "buyer@acmecorp.com",
@@ -656,6 +733,7 @@ Who am I, and what may I do. Call this on page load to restore a session.
   "data": {
     "kind": "customer",
     "id": "cus_acme01",
+    "customerCode": "CUST-0001",
     "name": "Acme Corp",
     "tier": "gold",
     "openQuotationCount": 2
@@ -815,7 +893,105 @@ GET /api/v1/customers?tier=gold&q=acme
 | `email` | string | ✅ | valid email — used for portal access |
 | `currency` | string | ➖ | ISO-4217, default `INR` |
 
-**Response `201`** — the created customer.
+**Response `201`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "cus_nova01",
+    "customerCode": "CUST-0009",
+    "name": "Nova Tech",
+    "tier": "silver",
+    "contactName": "S. Menon",
+    "email": "procurement@novatech.io",
+    "currency": "INR",
+    "emailVerified": false,
+    "passwordSet": false,
+    "portalAccess": false
+  }
+}
+```
+
+> ### This is NOT the normal way a customer appears
+>
+> Customers **self-register** at [`POST /auth/signup`](#post-authsignup) with
+> `type: "customer"`, and give their `customerCode` to the rep. This endpoint exists
+> only so a rep can record a company that has not signed up yet — for example, quoting
+> a prospect who asked by phone.
+>
+> A row created here has `passwordSet: false` and `portalAccess: false`. **It cannot
+> log in.** No invite is emailed and no password is set. If that company later
+> self-registers with the same email, the signup **links to this existing row** rather
+> than creating a duplicate, and keeps the tier the rep assigned.
+
+**Errors** — `409` a customer with that email already exists
+
+---
+
+### Finding a customer by their code
+
+When a customer says *"my customer ID is CUST-0001"*, the rep looks them up:
+
+```http
+GET /api/v1/customers?q=CUST-0001
+```
+
+`q` matches `customerCode`, company name, or email.
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "cus_9f2c1a44",
+      "customerCode": "CUST-0001",
+      "name": "Acme Corp",
+      "tier": "bronze",
+      "contactName": "R. Iyer",
+      "email": "buyer@acmecorp.com",
+      "currency": "INR",
+      "emailVerified": true,
+      "portalAccess": true,
+      "selfRegistered": true,
+      "openQuotations": 0
+    }
+  ],
+  "meta": { "total": 1 }
+}
+```
+
+The rep then raises the tier if the commercial relationship warrants it:
+
+```http
+PATCH /api/v1/customers/cus_9f2c1a44
+```
+
+```json
+{ "tier": "gold" }
+```
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "cus_9f2c1a44",
+    "customerCode": "CUST-0001",
+    "tier": "gold",
+    "previousTier": "bronze",
+    "changedByName": "Anita Desai",
+    "auditEntryId": "aud_b204"
+  }
+}
+```
+
+> Raising a tier changes what that customer pays and how much discount they may
+> receive, so it is **restricted to admin and sales_manager** and always writes an
+> audit entry. A rep cannot upgrade their own customer.
 
 ---
 
@@ -4152,6 +4328,7 @@ Types — `approval_request` · `approval_result` · `negotiation_reply` · `ano
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts — the code is destroyed |
 | `OTP_RESEND_TOO_SOON` | `429` | A new code was requested within 60 seconds |
 | `PASSWORD_REUSED` | `400` | New password matches the current one |
+| `TIER_NOT_ALLOWED` | `400` | `tier` sent on customer self-signup — it is always `bronze` |
 | `WRONG_KIND` | `403` | Staff token on a portal route, or customer token on an internal route |
 
 ---
@@ -4184,7 +4361,7 @@ USERS & ROLES
   GET    /roles
 
 CUSTOMERS & TIERS
-  GET    /customers
+  GET    /customers                       ?q=CUST-0001 lookup by code
   POST   /customers
   GET    /customers/:id
   PATCH  /customers/:id
@@ -4389,7 +4566,10 @@ AUDIT & NOTIFICATIONS
    GET  /quotations/Q-1042/billing
    → oneTime {...} and recurring {...} as separate objects
 
-7  POST /auth/login                        { type: "customer" }
+7  POST /auth/signup                       { type: "customer" }  → CUST-0001
+   POST /auth/verify-otp                   → token issued
+   (customer gives CUST-0001 to the rep, who quotes them)
+   POST /auth/login                        { type: "customer" }
    GET  /portal/quotations/Q-1042                        ← no cost/margin/risk present
    POST /portal/quotations/Q-1042/request  { counterDiscountPct: 25 }
    POST /portal/quotations/Q-1042/confirm
