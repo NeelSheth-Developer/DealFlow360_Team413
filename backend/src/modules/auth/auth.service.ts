@@ -255,15 +255,22 @@ async function sendCode(
 
   const code = await issueOtp(purpose, kind, email);
 
-  try {
-    await sendOtpEmail({ to: email, name, code, purpose });
-  } catch (error) {
-    // The account row exists and the code is live in Redis, so the signup itself
-    // succeeded. Failing the request here would report failure for work that was
-    // actually done, and the caller could not tell the difference from a real
-    // rejection. Log loudly instead; the user can request a new code.
+  /**
+   * Deliberately NOT awaited.
+   *
+   * The code is already live in Redis by this point, and a delivery failure was
+   * always non-fatal — the catch below only logs. So waiting for the mail provider
+   * buys nothing except latency, and on a host that blocks outbound SMTP it buys a
+   * hung request: the socket never answers, the response never comes, and the caller
+   * sees a spinner rather than the account they just created.
+   *
+   * Firing it off decouples the response from a third party that the response does
+   * not depend on. This is safe because the process is long-lived; on a serverless
+   * runtime that freezes after the response, it would need awaiting again.
+   */
+  void sendOtpEmail({ to: email, name, code, purpose }).catch((error: unknown) => {
     logger.error({ err: error, purpose }, 'OTP email delivery failed — code still issued');
-  }
+  });
 
   return code;
 }
