@@ -48,6 +48,7 @@ export const customers = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     seq: integer('seq').generatedByDefaultAsIdentity().notNull(),
+    customerId: varchar('customer_id', { length: 12 }).notNull(),
     name: varchar('name', { length: 200 }).notNull(),
     contactName: varchar('contact_name', { length: 120 }),
     email: varchar('email', { length: 255 }).notNull(),
@@ -62,6 +63,7 @@ export const customers = pgTable(
   (table) => [
     uniqueIndex('customers_email_key').on(table.email),
     uniqueIndex('customers_seq_key').on(table.seq),
+    uniqueIndex('customers_customer_id_key').on(table.customerId),
   ],
 );
 

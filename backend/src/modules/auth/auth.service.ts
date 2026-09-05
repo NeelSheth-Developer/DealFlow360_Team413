@@ -3,7 +3,7 @@ import { env, isProduction } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { db } from '../../db/index.js';
 import { customers, refreshTokens, users, type SubjectKind } from '../../db/schema.js';
-import { toCustomerCode } from '../../lib/customer-code.js';
+import { generateCustomerId, toCustomerCode } from '../../lib/customer-code.js';
 import { sendOtpEmail } from '../../lib/email.js';
 import { generateRefreshToken, hashRefreshToken, signAccessToken } from '../../lib/jwt.js';
 import { clearOtp, isOnCooldown, issueOtp, verifyOtp, type OtpPurpose } from '../../lib/otp.js';
@@ -35,6 +35,7 @@ type Account = {
   active: boolean;
   role?: 'sales_rep' | 'sales_manager' | 'finance' | 'admin';
   seq?: number;
+  customerId?: string;
   contactName?: string | null;
   tier?: 'bronze' | 'silver' | 'gold';
   currency?: string;
@@ -65,6 +66,7 @@ async function findAccount(type: AccountType, email: string): Promise<Account | 
     verified: row.emailVerifiedAt !== null,
     active: row.active,
     seq: row.seq,
+    customerId: row.customerId,
     contactName: row.contactName,
     tier: row.tier,
     currency: row.currency,
@@ -88,6 +90,7 @@ export function publicAccount(type: AccountType, account: Account) {
     customer: {
       id: account.id,
       customerCode: toCustomerCode(account.seq ?? 0),
+      customerId: account.customerId,
       name: account.name,
       contactName: account.contactName ?? null,
       email: account.email,
@@ -190,7 +193,19 @@ export async function signup(
     await db.insert(users).values({ name: input.name, email: input.email, passwordHash });
   } else {
     // tier defaults to 'bronze' and currency to 'INR' at the database level.
-    await db.insert(customers).values({ name: input.name, email: input.email, passwordHash });
+    // Generate a unique customerId, retrying with a different salt on collision.
+    let customerId = '';
+    for (let salt = 0; salt < 10; salt++) {
+      const candidate = generateCustomerId(input.name, input.email, salt);
+      const [existing] = await db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.customerId, candidate))
+        .limit(1);
+      if (!existing) { customerId = candidate; break; }
+    }
+    if (!customerId) throw new ApiError(500, 'INTERNAL_ERROR', 'Could not generate a unique customer ID');
+    await db.insert(customers).values({ name: input.name, email: input.email, passwordHash, customerId });
   }
 
   const code = await sendCode('signup', type, input.email, input.name);
@@ -405,6 +420,7 @@ async function findAccountById(type: AccountType, id: string): Promise<Account |
     verified: row.emailVerifiedAt !== null,
     active: row.active,
     seq: row.seq,
+    customerId: row.customerId,
     contactName: row.contactName,
     tier: row.tier,
     currency: row.currency,
@@ -554,6 +570,7 @@ export async function me(kind: SubjectKind, id: string) {
     kind,
     id: account.id,
     customerCode: toCustomerCode(account.seq ?? 0),
+    customerId: account.customerId,
     name: account.name,
     email: account.email,
     tier: account.tier,
