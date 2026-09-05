@@ -175,7 +175,10 @@ SIGNUP (both kinds)             POST /auth/signup      → OTP emailed, no token
                                 Customers self-register too. They get a
                                 CUSTOMER CODE (CUST-0001) which they give
                                 to their sales rep, who then quotes them.
-                                Self-signup is ALWAYS tier: bronze.
+
+                                Signup takes ONLY email + password (+ name
+                                for staff). role=sales_rep and tier=bronze
+                                are forced by the server, never sent.
 
 FORGOT PASSWORD (both kinds)    POST /auth/forgot-password → OTP emailed
                                 POST /auth/reset-password  → OTP + new password
@@ -245,8 +248,6 @@ is written to. Customers are never created by a rep.
   "name": "Priya Sharma",
   "email": "priya@teamvector.space",
   "password": "S3cure!pass",
-  "role": "sales_rep",
-  "team": "West",
   "type": "internal"
 }
 ```
@@ -256,8 +257,6 @@ is written to. Customers are never created by a rep.
 | `name` | string | ✅ | 1–120 chars |
 | `email` | string | ✅ | valid email, unique |
 | `password` | string | ✅ | min 8 chars |
-| `role` | enum | ✅ | `sales_rep` \| `sales_manager` \| `finance` \| `admin` |
-| `team` | string | ➖ | free text |
 | `type` | enum | ✅ | `internal` |
 
 #### Customer
@@ -266,34 +265,41 @@ is written to. Customers are never created by a rep.
 
 ```json
 {
-  "companyName": "Acme Corp",
-  "contactName": "R. Iyer",
+  "name": "Acme Corp",
   "email": "buyer@acmecorp.com",
   "password": "Acme@2026",
-  "currency": "INR",
   "type": "customer"
 }
 ```
 
 | Field | Type | Required | Rules |
 |---|---|:---:|---|
-| `companyName` | string | ✅ | 1–200 chars |
-| `contactName` | string | ➖ | person at that company |
+| `name` | string | ✅ | 1–200 chars — the company / account name |
 | `email` | string | ✅ | valid email, unique |
 | `password` | string | ✅ | min 8 chars |
-| `currency` | string | ➖ | ISO-4217, default `INR` |
 | `type` | enum | ✅ | `customer` |
 
-> ### ⚠ `tier` is NOT a field on this request
+---
+
+> ### ⚠ Fields the signup body does NOT accept
 >
-> Self-signup **always** creates the customer at `tier: "bronze"` — the strictest
-> terms: base price, 5% discount ceiling. Tier decides pricing and discount headroom,
-> so it can never come from a form the customer controls. Only a rep or admin raises
-> it afterwards with `PATCH /customers/:id { "tier": "gold" }`, which writes an audit
-> entry.
+> | Field | Set to | Changed later by |
+> |---|---|---|
+> | `role` | always `sales_rep` | admin — `PATCH /users/:id { "role": "sales_manager" }` |
+> | `team` | `null` | admin — `PATCH /users/:id { "team": "West" }` |
+> | `tier` | always `bronze` | admin / manager — `PATCH /customers/:id { "tier": "gold" }` |
+> | `currency` | `INR` | rep — `PATCH /customers/:id { "currency": "USD" }` |
+> >
+> Sending any of these returns **`400 FIELD_NOT_ALLOWED`**, naming the offending field.
 >
-> Do not accept `tier` and silently ignore it — reject the request. A field that is
-> accepted today gets honoured by accident in a later refactor.
+> **Why reject rather than ignore.** `role` and `tier` are the two fields that decide
+> what a person can do and what they pay. If the body silently accepts and drops them,
+> a later refactor that starts trusting the body turns a signup form into privilege
+> escalation. A field that is never accepted cannot be honoured by accident.
+>
+> **Seeding the first admin.** Since every signup produces a `sales_rep`, the first
+> `admin` must come from seed data — nobody can self-register as one. That is the
+> point.
 
 **Response `201`** — the account exists but is **not usable yet**
 
@@ -308,7 +314,7 @@ Internal:
       "name": "Priya Sharma",
       "email": "priya@teamvector.space",
       "role": "sales_rep",
-      "team": "West",
+      "team": null,
       "emailVerified": false,
       "createdAt": "2026-03-01T09:00:00.000Z"
     },
@@ -330,8 +336,8 @@ Customer:
     "customer": {
       "id": "cus_9f2c1a44",
       "customerCode": "CUST-0001",
-      "companyName": "Acme Corp",
-      "contactName": "R. Iyer",
+      "name": "Acme Corp",
+      "contactName": null,
       "email": "buyer@acmecorp.com",
       "tier": "bronze",
       "currency": "INR",
@@ -347,6 +353,9 @@ Customer:
 }
 ```
 
+> `name` is what the customer typed at signup; a rep can correct it later with
+> `PATCH /customers/:id`. `contactName` starts `null` and the rep fills it in.
+>
 > `customerCode` (`CUST-0001`) is the handle the customer gives their sales contact.
 > It is sequential, zero-padded, and safe to read aloud over a phone call. `id` stays
 > the internal primary key; `customerCode` is the human-facing one.
@@ -402,6 +411,7 @@ POST /auth/verify-otp      code checked
       "name": "Priya Sharma",
       "email": "priya@teamvector.space",
       "role": "sales_rep",
+      "team": null,
       "emailVerified": true
     },
     "kind": "staff",
@@ -809,9 +819,42 @@ GET /api/v1/users?role=sales_rep&team=West&page=1&limit=25
 
 ### `PATCH /users/:id`
 
-**Request** `{ "role": "sales_manager", "active": false }` — any subset of writable fields.
+Every signup produces a `sales_rep` with no team. **This is where an admin promotes
+them and assigns a team** — the two fields `/auth/signup` refuses to accept.
 
-**Response `200`** — the updated user.
+**Request** — any subset of writable fields
+
+```json
+{ "role": "sales_manager", "team": "National", "active": true }
+```
+
+| Field | Type | Rules |
+|---|---|---|
+| `role` | enum | `sales_rep` \| `sales_manager` \| `finance` \| `admin` — **admin only** |
+| `team` | string \| null | free text |
+| `name` | string | 1–120 chars |
+| `active` | boolean | `false` disables login without deleting history |
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "usr_8f21c3",
+    "name": "Priya Sharma",
+    "role": "sales_manager",
+    "previousRole": "sales_rep",
+    "team": "National",
+    "active": true,
+    "changedByName": "Neha Gupta",
+    "auditEntryId": "aud_c118"
+  }
+}
+```
+
+> A role change alters what that person can approve, so it is **admin only** and always
+> writes an audit entry. A user cannot change their own role — that returns `403`.
 
 ---
 
@@ -4283,9 +4326,9 @@ Types — `approval_request` · `approval_result` · `negotiation_reply` · `ano
 | `400` | Bad Request | Validation failed, overpayment, invalid override |
 | `401` | Unauthorized | Missing / expired token |
 | `403` | Forbidden | Role does not permit the action, or wrong approval step |
-| `404` | Not Found | Unknown id or portal token |
+| `404` | Not Found | Unknown id, or a quotation not belonging to this customer |
 | `409` | Conflict | Illegal stage transition, duplicate, wrong state |
-| `410` | Gone | Portal token expired |
+| `410` | Gone | Quotation past `validUntil`, or an expired OTP |
 | `422` | Unprocessable | Semantically invalid business request |
 | `429` | Too Many Requests | Rate limit exceeded |
 | `500` | Server Error | Unhandled — logged with a trace id |
@@ -4328,7 +4371,7 @@ Types — `approval_request` · `approval_result` · `negotiation_reply` · `ano
 | `OTP_TOO_MANY_ATTEMPTS` | `429` | 5 wrong attempts — the code is destroyed |
 | `OTP_RESEND_TOO_SOON` | `429` | A new code was requested within 60 seconds |
 | `PASSWORD_REUSED` | `400` | New password matches the current one |
-| `TIER_NOT_ALLOWED` | `400` | `tier` sent on customer self-signup — it is always `bronze` |
+| `FIELD_NOT_ALLOWED` | `400` | `role`, `team`, `tier` or `currency` sent to `/auth/signup` — all are server-assigned |
 | `WRONG_KIND` | `403` | Staff token on a portal route, or customer token on an internal route |
 
 ---
