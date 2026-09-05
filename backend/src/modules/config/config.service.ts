@@ -146,10 +146,32 @@ export async function listChain() {
   return { approvalChain: chain, warnings: chainWarnings(chain) };
 }
 
+async function assertNoOverlap(input: ApprovalRuleInput, excludeId?: string) {
+  const rows = await db.select().from(approvalRules);
+  const existing = rows.filter((r) => r.id !== excludeId).map(presentRule);
+
+  const newMin = input.minScore;
+  const newMax = input.maxScore ?? Infinity;
+
+  for (const rule of existing) {
+    const existingMin = rule.minScore;
+    const existingMax = rule.maxScore ?? Infinity;
+
+    if (newMin <= existingMax && existingMin <= newMax) {
+      throw ApiError.conflict(
+        'INVALID_RANGE',
+        `Score range ${input.minScore}–${input.maxScore ?? '∞'} overlaps existing rule ${rule.minScore}–${rule.maxScore ?? '∞'}.`,
+      );
+    }
+  }
+}
+
 export async function addRule(actor: AuditActor, input: ApprovalRuleInput) {
   const [top] = await db
     .select({ max: sql<number>`COALESCE(MAX(${approvalRules.sortOrder}), -1)` })
     .from(approvalRules);
+
+  await assertNoOverlap(input);
 
   await db.insert(approvalRules).values({
     minScore: pct(input.minScore),
@@ -167,6 +189,8 @@ export async function addRule(actor: AuditActor, input: ApprovalRuleInput) {
 export async function updateRule(actor: AuditActor, id: string, input: ApprovalRuleInput) {
   const [existing] = await db.select().from(approvalRules).where(eq(approvalRules.id, id));
   if (!existing) throw ApiError.notFound('Approval rule not found');
+
+  await assertNoOverlap(input, id);
 
   await db
     .update(approvalRules)
