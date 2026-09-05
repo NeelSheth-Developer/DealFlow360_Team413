@@ -53,20 +53,28 @@ npm run seed
 ## Demo accounts
 
 `npm run seed` wipes the transactional tables and rebuilds a full dataset. Every
-account below uses the same password so a demo never stalls on a typo.
+account below can sign in immediately.
 
-**Password for every account: `Passw0rd!2026`**
+The seed sets `Passw0rd!2026` on every account; the deployed admin password was
+changed afterwards. Re-running `npm run seed` resets them all to the seeded one.
+
+### Deployed
+
+|              | Custom domain                                     | Platform URL                                        |
+| ------------ | ------------------------------------------------- | --------------------------------------------------- |
+| **Frontend** | <https://dealflow360.teamvector.space>            | <https://deal-flow360-team413.vercel.app>           |
+| **Backend**  | <https://api.dealflow360.teamvector.space/api/v1> | <https://dealflow360-team413-2.onrender.com/api/v1> |
 
 ### Staff — sign in with `"type": "internal"`
 
-| Role            | Name         | Email                  | Team             | What they can do that others cannot                                               |
-| --------------- | ------------ | ---------------------- | ---------------- | --------------------------------------------------------------------------------- |
-| `admin`         | Neha Gupta   | `admin@teamvector.co`  | Enterprise West  | Everything: the catalogue, roles, and unblocking any approval step                |
-| `sales_manager` | Anita Desai  | `anita@teamvector.co`  | Enterprise West  | Approve the manager step, move discount ceilings, change a customer's tier        |
-| `finance`       | Vikram Rao   | `vikram@teamvector.co` | —                | Approve the finance step, issue invoices, **record payments**, issue credit notes |
-| `sales_rep`     | Priya Sharma | `priya@teamvector.co`  | Enterprise West  | Build and submit quotations she owns                                              |
-| `sales_rep`     | Rahul Menon  | `rahul@teamvector.co`  | Enterprise North | Same, on his own book                                                             |
-| `sales_rep`     | Kiran Nair   | `kiran@teamvector.co`  | Enterprise South | Same, on his own book                                                             |
+| Role            | Name         | Email                  | Password        | Team             | What they can do that others cannot                                               |
+| --------------- | ------------ | ---------------------- | --------------- | ---------------- | --------------------------------------------------------------------------------- |
+| `admin`         | Neha Gupta   | `admin@teamvector.co`  | `Cloud123@`     | Enterprise West  | Everything: the catalogue, roles, and unblocking any approval step                |
+| `sales_manager` | Anita Desai  | `anita@teamvector.co`  | `Passw0rd!2026` | Enterprise West  | Approve the manager step, move discount ceilings, change a customer's tier        |
+| `finance`       | Vikram Rao   | `vikram@teamvector.co` | `Passw0rd!2026` | —                | Approve the finance step, issue invoices, **record payments**, issue credit notes |
+| `sales_rep`     | Priya Sharma | `priya@teamvector.co`  | `Passw0rd!2026` | Enterprise West  | Build and submit quotations she owns                                              |
+| `sales_rep`     | Rahul Menon  | `rahul@teamvector.co`  | `Passw0rd!2026` | Enterprise North | Same, on his own book                                                             |
+| `sales_rep`     | Kiran Nair   | `kiran@teamvector.co`  | `Passw0rd!2026` | Enterprise South | Same, on his own book                                                             |
 
 There is **exactly one admin**, and the seed refuses to finish if that is ever not
 true. No role — admin included — can create an account for anyone else; the first
