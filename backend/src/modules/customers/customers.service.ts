@@ -51,6 +51,12 @@ export async function findCustomers(query: FindCustomersQuery) {
  * quotations are NOT re-scored — risk is recomputed on the next mutation, so a ceiling
  * change cannot silently invalidate an approval someone already gave.
  */
+export async function getTierCeiling(tier: Tier) {
+  const [row] = await db.select().from(tierConfig).where(eq(tierConfig.tier, tier));
+  if (!row) throw ApiError.notFound(`No configuration for tier "${tier}"`);
+  return { tier: row.tier, maxDiscountPct: Number(row.maxDiscountPct), updatedAt: row.updatedAt };
+}
+
 export async function updateTierCeiling(tier: Tier, maxDiscountPct: number) {
   const [updated] = await db
     .update(tierConfig)

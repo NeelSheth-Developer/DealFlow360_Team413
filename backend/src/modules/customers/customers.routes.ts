@@ -6,7 +6,7 @@ import {
   tierParamSchema,
   updateTierCeilingSchema,
 } from './customers.schemas.js';
-import { findCustomers, updateTierCeiling } from './customers.service.js';
+import { findCustomers, getTierCeiling, updateTierCeiling } from './customers.service.js';
 
 export const customersRouter = Router();
 export const customerTiersRouter = Router();
@@ -37,6 +37,17 @@ customersRouter.get(
  * discount in the system, and moving it changes what the blended risk score will
  * flag on every future quotation.
  */
+customerTiersRouter.get(
+  '/:tier',
+  requireAuth,
+  requireKind('staff'),
+  requireRole('admin', 'sales_manager'),
+  asyncHandler(async (req, res) => {
+    const tier = tierParamSchema.parse(req.params.tier);
+    res.json({ success: true, data: await getTierCeiling(tier) });
+  }),
+);
+
 customerTiersRouter.patch(
   '/:tier',
   requireAuth,
