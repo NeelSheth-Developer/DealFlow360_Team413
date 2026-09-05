@@ -23,7 +23,8 @@
     "seed:admin": "tsx src/scripts/seed-admin.ts",
     "verify:risk": "tsx src/scripts/verify-risk.ts",
     "verify:engines": "tsx src/scripts/verify-engines.ts",
-    "e2e": "tsx src/scripts/e2e.ts"
+    "e2e": "tsx src/scripts/e2e.ts",
+    "seed": "tsx src/scripts/seed.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

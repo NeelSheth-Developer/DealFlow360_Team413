@@ -19,6 +19,7 @@ relative to it.
 
 | § | Area | Endpoints |
 |---|---|---|
+| [—](#demo-accounts) | **Demo accounts** — logins for every role | 10 accounts |
 | [0](#0-conventions) | Conventions | — |
 | [1](#1-health) | Health | 2 |
 | [2](#2-authentication) | Authentication | 10 |
@@ -46,6 +47,63 @@ relative to it.
 | [24](#24-data-model) | Data model — ER diagrams + DBML | 31 tables |
 
 
+---
+
+## Demo accounts
+
+`npm run seed` wipes the transactional tables and rebuilds a full dataset. Every
+account below uses the same password so a demo never stalls on a typo.
+
+**Password for every account: `Passw0rd!2026`**
+
+### Staff — sign in with `"type": "internal"`
+
+| Role | Name | Email | Team | What they can do that others cannot |
+| --- | --- | --- | --- | --- |
+| `admin` | Neha Gupta | `admin@teamvector.co` | Enterprise West | Everything: the catalogue, roles, and unblocking any approval step |
+| `sales_manager` | Anita Desai | `anita@teamvector.co` | Enterprise West | Approve the manager step, move discount ceilings, change a customer's tier |
+| `finance` | Vikram Rao | `vikram@teamvector.co` | — | Approve the finance step, issue invoices, **record payments**, issue credit notes |
+| `sales_rep` | Priya Sharma | `priya@teamvector.co` | Enterprise West | Build and submit quotations she owns |
+| `sales_rep` | Rahul Menon | `rahul@teamvector.co` | Enterprise North | Same, on his own book |
+| `sales_rep` | Kiran Nair | `kiran@teamvector.co` | Enterprise South | Same, on his own book |
+
+There is **exactly one admin**, and the seed refuses to finish if that is ever not
+true. No role — admin included — can create an account for anyone else; the first
+admin is planted by `npm run seed:admin`, which is what keeps `admin` unreachable
+through the API.
+
+### Customers — sign in with `"type": "customer"`
+
+| Company | Contact | Email | Tier | Industry |
+| --- | --- | --- | --- | --- |
+| Acme Corp | Sundar Iyer | `buyer@acme.teamvector.co` | gold | Manufacturing |
+| Beta Industries | Meera Krishnan | `buyer@beta.teamvector.co` | silver | Logistics |
+| Cygnus Retail | Arjun Bose | `buyer@cygnus.teamvector.co` | bronze | Retail |
+| Forge Analytics | Ritu Malhotra | `buyer@forge.teamvector.co` | gold | Software |
+
+Tier is never self-selected at signup — it decides pricing, so only an admin or a
+sales manager moves it.
+
+### What the seed creates
+
+| | Count | |
+| --- | ---: | --- |
+| Staff | 6 | 1 admin, 1 manager, 1 finance, 3 reps across 3 teams |
+| Customers | 4 | one per tier, plus a second gold |
+| Products | 200 | 80 hardware, 50 service, 30 subscription, 40 accessories |
+| Price-list rows | 600 | three tiers for every product |
+| Warehouses | 3 | stocked so an 8-unit order has to split, and some lines backorder |
+| Subscription plans | 3 | one per proration rule, one per cancellation rule |
+| Upsell rules | 20 | a mix of promoted and margin-floored |
+| **Quotations** | **100** | spread across all nine stages |
+| Quotation lines | ~346 | some deliberately over their ceiling, so risk scoring fires |
+| Pending approval steps | 15 | a real queue for the manager and finance screens |
+| Invoices | 27 | draft, sent, partially paid and paid |
+| Payments | 22 | recorded by finance, as the rules require |
+
+The data is **deterministic** — the same command twice produces the same database,
+so a demo can be reset between run-throughs and the figures quoted on stage stay
+true.
 ---
 
 ## 0. Conventions
@@ -238,8 +296,8 @@ either is down, so a load balancer pulls the instance rather than routing into i
 // request
 {
   "name": "Priya Sharma",              // 1–120 chars
-  "email": "priya@teamvector.space",   // normalised NFKC, lower-cased
-  "password": "S3cure!pass",           // min 8
+  "email": "priya@teamvector.co",   // normalised NFKC, lower-cased
+  "password": "Passw0rd!2026",           // min 8
   "type": "internal"                   // "internal" | "customer"
 }
 ```
@@ -267,7 +325,7 @@ it is never self-selected.
 ### 2.2 `POST /auth/verify-otp`
 
 ```jsonc
-{ "email": "priya@teamvector.space", "otp": "147470", "type": "internal" }
+{ "email": "priya@teamvector.co", "otp": "147470", "type": "internal" }
 ```
 
 ```jsonc
@@ -425,7 +483,7 @@ Query: `?role=&active=&teamId=&q=&page=&pageSize=`
     {
       "id": "uuid",
       "name": "Priya Sharma",
-      "email": "priya@teamvector.space",
+      "email": "priya@teamvector.co",
       "role": "sales_rep",
       "teamId": "uuid",
       "team": "Enterprise West",
