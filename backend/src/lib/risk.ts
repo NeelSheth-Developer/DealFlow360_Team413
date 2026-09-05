@@ -246,8 +246,6 @@ function resolveRule(
   chain: ChainRule[],
 ): { id: string | null; approvers: Role[] } {
   if (chain.length === 0) {
-    // Auto-approving because config is missing would be the worst possible failure:
-    // every over-ceiling quotation would sail through unreviewed. Fail closed.
     throw ApiError.conflict(
       'CHAIN_NOT_CONFIGURED',
       'No approval rules are configured, so this quotation cannot be routed. An admin must define the approval chain first.',
@@ -261,8 +259,6 @@ function resolveRule(
     return inScoreBand || trips;
   });
 
-  // A gap in the chain (an admin deleted a band) leaves a score matching nothing.
-  // Escalating is the safe direction; silently auto-approving is not.
   const pool = matches.length > 0 ? matches : chain;
 
   let winner = pool[0] as ChainRule;
@@ -296,4 +292,89 @@ export async function scoreWithStoredConfig(input: RiskInput): Promise<RiskResul
 /** The binding ceiling for one line — exported for the audit entry on a discount change. */
 export function bindingCeiling(category: Category, tier: Tier, ceilings: Ceilings): number {
   return Math.min(ceilings.category[category] ?? 0, ceilings.tier[tier] ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// Blended score — lightweight weighted-average formula
+// ---------------------------------------------------------------------------
+
+export type BlendedScoreLine = {
+  lineId: string;
+  category: Category;
+  discountPct: number;
+  lineTotal: number;
+};
+
+export type BlendedScoreInput = {
+  customerTier: Tier;
+  lines: BlendedScoreLine[];
+};
+
+export type BlendedScoreResult = {
+  blended_score: number;
+  flagged_lines: { line_id: string; effective_ceiling: number; overage: number }[];
+  requires_approval: boolean;
+  /** Approvers resolved purely from score-band matching against the DB approval chain. */
+  approval_level: Role[];
+};
+
+/**
+ * effective_ceiling = min(tier_ceiling, category_ceiling)
+ * overage           = max(0, discount_pct - effective_ceiling)
+ * blended_score     = SUM(overage * line_total) / SUM(line_total)
+ *
+ * approval_level is resolved by matching blended_score against the chain's
+ * minScore/maxScore bands ONLY — singleLineTrip is intentionally ignored here.
+ * If no band covers the score, approval_level is empty.
+ */
+export function computeBlendedScore(
+  input: BlendedScoreInput,
+  ceilings: Ceilings,
+  chain: ChainRule[],
+): BlendedScoreResult {
+  const subtotal = input.lines.reduce((s, l) => s + l.lineTotal, 0) || 1;
+  const tierCeiling = ceilings.tier[input.customerTier] ?? 0;
+
+  let weightedOverage = 0;
+  const flaggedLines: BlendedScoreResult['flagged_lines'] = [];
+
+  for (const line of input.lines) {
+    const categoryCeiling = ceilings.category[line.category] ?? 0;
+    const effectiveCeiling = Math.min(tierCeiling, categoryCeiling);
+    const overage = Math.max(0, line.discountPct - effectiveCeiling);
+
+    if (overage > 0) {
+      weightedOverage += overage * (line.lineTotal / subtotal);
+      flaggedLines.push({
+        line_id: line.lineId,
+        effective_ceiling: effectiveCeiling,
+        overage: round2(overage),
+      });
+    }
+  }
+
+  const blendedScore = round2(weightedOverage);
+
+  if (blendedScore === 0) {
+    return {
+      blended_score: 0,
+      flagged_lines: [],
+      requires_approval: false,
+      approval_level: [],
+    };
+  }
+
+  // Match blended_score against score bands only — no singleLineTrip.
+  const matched = chain.find(
+    (rule) =>
+      blendedScore > rule.minScore &&
+      blendedScore <= (rule.maxScore ?? Number.POSITIVE_INFINITY),
+  );
+
+  return {
+    blended_score: blendedScore,
+    flagged_lines: flaggedLines,
+    requires_approval: true,
+    approval_level: matched ? matched.approvers : [],
+  };
 }
