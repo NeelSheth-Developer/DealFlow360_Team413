@@ -30,7 +30,6 @@ const envSchema = z.object({
   // Resend
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(1),
-  EMAIL_REPLY_TO: z.email().optional(),
 
   // Cloudinary
   CLOUDINARY_CLOUD_NAME: z.string().min(1),

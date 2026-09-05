@@ -11,14 +11,26 @@ type SendEmailOptions = {
   text?: string;
 };
 
+const FOOTER_HTML = `
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0" />
+  <p style="color:#6b7280;font-size:12px">
+    This message was sent from an unmonitored address — please do not reply.
+  </p>
+`;
+
+const FOOTER_TEXT = '\n\n---\nThis message was sent from an unmonitored address — please do not reply.';
+
+/**
+ * Sends through Resend from the no-reply sender. No Reply-To is set: replies
+ * bounce rather than landing in a mailbox nobody reads.
+ */
 export async function sendEmail({ to, subject, html, text }: SendEmailOptions) {
   const { data, error } = await resend.emails.send({
     from: env.EMAIL_FROM,
     to: Array.isArray(to) ? to : [to],
     subject,
-    html,
-    ...(text ? { text } : {}),
-    ...(env.EMAIL_REPLY_TO ? { replyTo: env.EMAIL_REPLY_TO } : {}),
+    html: html + FOOTER_HTML,
+    ...(text ? { text: text + FOOTER_TEXT } : {}),
   });
 
   if (error) {
@@ -33,13 +45,13 @@ export async function sendEmail({ to, subject, html, text }: SendEmailOptions) {
 export function sendWelcomeEmail(to: string, name: string) {
   return sendEmail({
     to,
-    subject: 'Welcome to Team 413',
+    subject: 'Welcome to DealFlow360',
     html: `
       <h1>Welcome, ${name}!</h1>
-      <p>Your account is ready.</p>
+      <p>Your DealFlow360 account is ready.</p>
       <p><a href="${env.CLIENT_URL}">Open the app</a></p>
     `,
-    text: `Welcome, ${name}! Your account is ready: ${env.CLIENT_URL}`,
+    text: `Welcome, ${name}! Your DealFlow360 account is ready: ${env.CLIENT_URL}`,
   });
 }
 
@@ -48,7 +60,7 @@ export function sendVerificationEmail(to: string, token: string) {
   return sendEmail({
     to,
     subject: 'Verify your email address',
-    html: `<p>Confirm your email by clicking <a href="${link}">this link</a>.</p>`,
-    text: `Confirm your email: ${link}`,
+    html: `<p>Confirm your DealFlow360 email by clicking <a href="${link}">this link</a>.</p>`,
+    text: `Confirm your DealFlow360 email: ${link}`,
   });
 }
