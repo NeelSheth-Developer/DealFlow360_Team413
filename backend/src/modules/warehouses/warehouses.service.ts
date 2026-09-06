@@ -6,6 +6,7 @@ import { money, num, round2 } from '../../lib/money.js';
 import { ApiError } from '../../utils/api-error.js';
 import type {
   CreateWarehouseInput,
+  SplitOrderInput,
   UpdateStockInput,
   UpdateWarehouseInput,
 } from './warehouses.schemas.js';
@@ -33,18 +34,26 @@ export async function getWarehouse(id: string) {
 }
 
 export async function createWarehouse(actor: AuditActor, input: CreateWarehouseInput) {
-  const [created] = await db
-    .insert(warehouses)
-    .values({
-      name: input.name,
-      location: input.location,
-      shippingCostWeight: input.shippingCostWeight.toFixed(2),
-      baseShipCost: money(input.baseShipCost),
-      replenishThreshold: input.replenishThreshold,
-      replenishQty: input.replenishQty,
-      replenishLeadDays: input.replenishLeadDays,
-    })
-    .returning();
+  let created: (typeof warehouses.$inferSelect) | undefined;
+  try {
+    [created] = await db
+      .insert(warehouses)
+      .values({
+        name: input.name,
+        location: input.location,
+        shippingCostWeight: input.shippingCostWeight.toFixed(2),
+        baseShipCost: money(input.baseShipCost),
+        replenishThreshold: input.replenishThreshold,
+        replenishQty: input.replenishQty,
+        replenishLeadDays: input.replenishLeadDays,
+      })
+      .returning();
+  } catch (err: unknown) {
+    if (isDuplicateWarehouseName(err)) {
+      throw ApiError.conflict('WAREHOUSE_NAME_TAKEN', `A warehouse named "${input.name}" already exists`);
+    }
+    throw err;
+  }
 
   if (!created) throw ApiError.notFound('Warehouse not found');
 
@@ -62,25 +71,32 @@ export async function updateWarehouse(actor: AuditActor, id: string, input: Upda
   const [existing] = await db.select().from(warehouses).where(eq(warehouses.id, id)).limit(1);
   if (!existing) throw ApiError.notFound('Warehouse not found');
 
-  await db
-    .update(warehouses)
-    .set({
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.location !== undefined ? { location: input.location } : {}),
-      ...(input.shippingCostWeight !== undefined
-        ? { shippingCostWeight: input.shippingCostWeight.toFixed(2) }
-        : {}),
-      ...(input.baseShipCost !== undefined ? { baseShipCost: money(input.baseShipCost) } : {}),
-      ...(input.replenishThreshold !== undefined
-        ? { replenishThreshold: input.replenishThreshold }
-        : {}),
-      ...(input.replenishQty !== undefined ? { replenishQty: input.replenishQty } : {}),
-      ...(input.replenishLeadDays !== undefined
-        ? { replenishLeadDays: input.replenishLeadDays }
-        : {}),
-      ...(input.active !== undefined ? { active: input.active } : {}),
-    })
-    .where(eq(warehouses.id, id));
+  try {
+    await db
+      .update(warehouses)
+      .set({
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.location !== undefined ? { location: input.location } : {}),
+        ...(input.shippingCostWeight !== undefined
+          ? { shippingCostWeight: input.shippingCostWeight.toFixed(2) }
+          : {}),
+        ...(input.baseShipCost !== undefined ? { baseShipCost: money(input.baseShipCost) } : {}),
+        ...(input.replenishThreshold !== undefined
+          ? { replenishThreshold: input.replenishThreshold }
+          : {}),
+        ...(input.replenishQty !== undefined ? { replenishQty: input.replenishQty } : {}),
+        ...(input.replenishLeadDays !== undefined
+          ? { replenishLeadDays: input.replenishLeadDays }
+          : {}),
+        ...(input.active !== undefined ? { active: input.active } : {}),
+      })
+      .where(eq(warehouses.id, id));
+  } catch (err: unknown) {
+    if (isDuplicateWarehouseName(err)) {
+      throw ApiError.conflict('WAREHOUSE_NAME_TAKEN', `A warehouse named "${input.name}" already exists`);
+    }
+    throw err;
+  }
 
   await audit({
     entityType: 'warehouse',
@@ -202,6 +218,95 @@ export async function restock(actor: AuditActor, id: string) {
  * Quotations with an unresolved backorder on any of these products — the ones whose
  * consolidation prompt should now light up.
  */
+/**
+ * Greedy warehouse split for a confirmed order.
+ *
+ * 1. If one warehouse can cover every line → single shipment.
+ * 2. Otherwise fill greedily, cheapest `shippingCostWeight` first.
+ * 3. Anything left after all warehouses exhausted → backorder.
+ */
+export async function splitOrder(input: SplitOrderInput) {
+  const allWarehouses = await db
+    .select()
+    .from(warehouses)
+    .where(eq(warehouses.active, true))
+    .orderBy(asc(warehouses.shippingCostWeight));
+
+  const stockMap = await stockFor(allWarehouses.map((w) => w.id));
+
+  const whs = allWarehouses.map((w) => ({
+    id: w.id,
+    name: w.name,
+    shippingCostWeight: num(w.shippingCostWeight),
+    stock: stockMap.get(w.id) ?? {},
+  }));
+
+  const lines = input.order_lines;
+
+  // 1. Single-warehouse fast path
+  for (const wh of whs) {
+    if (lines.every((l) => (wh.stock[l.product_id] ?? 0) >= l.qty)) {
+      return {
+        allocation: lines.map((l) => ({ warehouse_id: wh.id, product_id: l.product_id, qty: l.qty })),
+        backorder: [],
+        shipment_count: 1,
+        estimated_cost: round2(wh.shippingCostWeight),
+      };
+    }
+  }
+
+  // 2. Greedy fill
+  const remaining: Record<string, number> = {};
+  for (const l of lines) remaining[l.product_id] = l.qty;
+
+  const allocation: { warehouse_id: string; product_id: string; qty: number }[] = [];
+  const usedWarehouses = new Set<string>();
+
+  for (const wh of whs) {
+    const shelf = { ...wh.stock };
+    for (const productId of Object.keys(remaining)) {
+      const needed = remaining[productId] ?? 0;
+      if (needed <= 0) continue;
+      const take = Math.min(shelf[productId] ?? 0, needed);
+      if (take > 0) {
+        allocation.push({ warehouse_id: wh.id, product_id: productId, qty: take });
+        remaining[productId] = needed - take;
+        usedWarehouses.add(wh.id);
+      }
+    }
+  }
+
+  // 3. Backorder
+  const backorder = Object.entries(remaining)
+    .filter(([, qty]) => qty > 0)
+    .map(([product_id, qty]) => ({ product_id, qty }));
+
+  const estimated_cost = round2(
+    [...usedWarehouses].reduce((sum, id) => {
+      const wh = whs.find((w) => w.id === id);
+      return sum + (wh?.shippingCostWeight ?? 0);
+    }, 0),
+  );
+
+  return { allocation, backorder, shipment_count: usedWarehouses.size, estimated_cost };
+}
+
+function isDuplicateWarehouseName(err: unknown): boolean {
+  const containsKey = (e: unknown): boolean =>
+    typeof e === 'object' &&
+    e !== null &&
+    'message' in e &&
+    typeof (e as { message: unknown }).message === 'string' &&
+    (e as { message: string }).message.includes('warehouses_name_key');
+
+  if (containsKey(err)) return true;
+  // DrizzleQueryError wraps the original NeonDbError in `cause`
+  if (typeof err === 'object' && err !== null && 'cause' in err) {
+    return containsKey((err as { cause: unknown }).cause);
+  }
+  return false;
+}
+
 async function quotationsAwaiting(productIds: string[]): Promise<string[]> {
   if (productIds.length === 0) return [];
 

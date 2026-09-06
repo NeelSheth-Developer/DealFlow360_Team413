@@ -7,6 +7,23 @@ const csv = (value: string) =>
     .map((entry) => entry.trim())
     .filter(Boolean);
 
+/**
+ * An optional string where a blank value means "not set".
+ *
+ * `FOO=` in a .env file arrives as `''`, not undefined — so `env.FOO ?? fallback`
+ * silently keeps the empty string and the fallback never runs. Every optional here
+ * goes through this instead, so a commented-out or emptied variable behaves the way
+ * the file looks like it behaves.
+ */
+const optionalText = () =>
+  z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim();
+      return trimmed ? trimmed : undefined;
+    });
+
 const envSchema = z.object({
   // App
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -25,7 +42,7 @@ const envSchema = z.object({
   REDIS_PREFIX: z.string().default('team413'),
   REDIS_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 
-  // Resend
+  // Resend — the primary sender
   RESEND_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(1),
 

@@ -40,6 +40,79 @@ To create the first admin — the API deliberately cannot, since signup always p
 a `sales_rep`:
 
 ```bash
+npm run seed:admin -- admin@teamvector.co "Neha Gupta" "Passw0rd!2026"
+```
+
+Or load the full demo dataset in one step — 200 products, 4 customers, 100
+quotations, and the six accounts in the table below:
+
+```bash
+npm run seed
+```
+
+## Demo accounts
+
+`npm run seed` wipes the transactional tables and rebuilds a full dataset. Every
+account below can sign in immediately.
+
+The seed sets `Passw0rd!2026` on every account; the deployed admin password was
+changed afterwards. Re-running `npm run seed` resets them all to the seeded one.
+
+### Deployed
+
+|              | Custom domain                                     | Platform URL                                        |
+| ------------ | ------------------------------------------------- | --------------------------------------------------- |
+| **Frontend** | <https://dealflow360.teamvector.space>            | <https://deal-flow360-team413.vercel.app>           |
+| **Backend**  | <https://api.dealflow360.teamvector.space/api/v1> | <https://dealflow360-team413-2.onrender.com/api/v1> |
+
+### Staff — sign in with `"type": "internal"`
+
+| Role            | Name         | Email                  | Password        | Team             | What they can do that others cannot                                               |
+| --------------- | ------------ | ---------------------- | --------------- | ---------------- | --------------------------------------------------------------------------------- |
+| `admin`         | Neha Gupta   | `admin@teamvector.co`  | `Cloud123@`     | Enterprise West  | Everything: the catalogue, roles, and unblocking any approval step                |
+| `sales_manager` | Anita Desai  | `anita@teamvector.co`  | `Passw0rd!2026` | Enterprise West  | Approve the manager step, move discount ceilings, change a customer's tier        |
+| `finance`       | Vikram Rao   | `vikram@teamvector.co` | `Passw0rd!2026` | —                | Approve the finance step, issue invoices, **record payments**, issue credit notes |
+| `sales_rep`     | Priya Sharma | `priya@teamvector.co`  | `Passw0rd!2026` | Enterprise West  | Build and submit quotations she owns                                              |
+| `sales_rep`     | Rahul Menon  | `rahul@teamvector.co`  | `Passw0rd!2026` | Enterprise North | Same, on his own book                                                             |
+| `sales_rep`     | Kiran Nair   | `kiran@teamvector.co`  | `Passw0rd!2026` | Enterprise South | Same, on his own book                                                             |
+
+There is **exactly one admin**, and the seed refuses to finish if that is ever not
+true. No role — admin included — can create an account for anyone else; the first
+admin is planted by `npm run seed:admin`, which is what keeps `admin` unreachable
+through the API.
+
+### Customers — sign in with `"type": "customer"`
+
+| Company         | Contact        | Email                        | Tier   | Industry      |
+| --------------- | -------------- | ---------------------------- | ------ | ------------- |
+| Acme Corp       | Sundar Iyer    | `buyer@acme.teamvector.co`   | gold   | Manufacturing |
+| Beta Industries | Meera Krishnan | `buyer@beta.teamvector.co`   | silver | Logistics     |
+| Cygnus Retail   | Arjun Bose     | `buyer@cygnus.teamvector.co` | bronze | Retail        |
+| Forge Analytics | Ritu Malhotra  | `buyer@forge.teamvector.co`  | gold   | Software      |
+
+Tier is never self-selected at signup — it decides pricing, so only an admin or a
+sales manager moves it.
+
+### What the seed creates
+
+|                        |   Count |                                                                   |
+| ---------------------- | ------: | ----------------------------------------------------------------- |
+| Staff                  |       6 | 1 admin, 1 manager, 1 finance, 3 reps across 3 teams              |
+| Customers              |       4 | one per tier, plus a second gold                                  |
+| Products               |     200 | 80 hardware, 50 service, 30 subscription, 40 accessories          |
+| Price-list rows        |     600 | three tiers for every product                                     |
+| Warehouses             |       3 | stocked so an 8-unit order has to split, and some lines backorder |
+| Subscription plans     |       3 | one per proration rule, one per cancellation rule                 |
+| Upsell rules           |      20 | a mix of promoted and margin-floored                              |
+| **Quotations**         | **100** | spread across all nine stages                                     |
+| Quotation lines        |    ~346 | some deliberately over their ceiling, so risk scoring fires       |
+| Pending approval steps |      15 | a real queue for the manager and finance screens                  |
+| Invoices               |      27 | draft, sent, partially paid and paid                              |
+| Payments               |      22 | recorded by finance, as the rules require                         |
+
+The data is **deterministic** — the same command twice produces the same database,
+so a demo can be reset between run-throughs and the figures quoted on stage stay
+true.
 npm run seed:admin -- admin@teamvector.space "Neha Gupta" "S3cure!pass"
 ```
 
@@ -92,6 +165,7 @@ src/
                 audit, notify, mailer, PDF, Cloudinary, Redis, JWT, password
   middleware/   auth guards, error handling, Upstash rate limiting
   modules/      one folder per feature — routes, schemas, service
+  scripts/      seed, seed-admin, verify-risk, verify-engines
   scripts/      seed-admin, e2e, verify-risk, verify-engines
   utils/        ApiError, asyncHandler
   app.ts        Express app assembly
@@ -125,6 +199,25 @@ Three ways to exercise it:
 
 ```bash
 npm run dev          # then open http://localhost:5050 for the API tester
+```
+
+…or import `postman/DealFlow360.postman_collection.json`.
+
+## Verifying the business logic
+
+The four calculation engines are asserted against the worked examples in the problem
+statement, so a change that breaks one fails loudly rather than quietly:
+
+```bash
+npm run verify:risk      # 6 blended-risk reference cases
+npm run verify:engines   # warehouse split, proration, cancellation
+```
+
+Both are pure computation — no server, no database, no network, and no email. They run
+in under a second.
+
+For a full walkthrough of the quote-to-cash flow, seed the database and drive it from
+the browser tester at <http://localhost:5050> or the Postman collection.
 npm run e2e          # 92 assertions walking the full quote-to-cash flow
 ```
 

@@ -15,6 +15,9 @@ import type {
   ApprovalRuleInput,
   CategoryCeilingsInput,
   DashboardConfigInput,
+  PatchCategoryCeilingsInput,
+  PatchDashboardConfigInput,
+  PatchTierCeilingsInput,
   TierCeilingsInput,
 } from './config.schemas.js';
 
@@ -69,6 +72,30 @@ export async function setTierCeilings(actor: AuditActor, input: TierCeilingsInpu
   return getDiscountConfig();
 }
 
+export async function patchTierCeilings(actor: AuditActor, input: PatchTierCeilingsInput) {
+  const before = await db.select().from(tierConfig);
+  const previous = Object.fromEntries(before.map((row) => [row.tier, num(row.maxDiscountPct)]));
+
+  for (const [tier, value] of Object.entries(input)) {
+    await db
+      .update(tierConfig)
+      .set({ maxDiscountPct: pct(value as number), updatedAt: new Date() })
+      .where(eq(tierConfig.tier, tier as Tier));
+  }
+
+  await audit({
+    entityType: 'config',
+    action: 'Tier discount ceilings patched',
+    actor,
+    meta: { from: previous, to: input },
+  });
+
+  const updated = await db.select().from(tierConfig);
+  const tierCeilings = {} as Record<Tier, number>;
+  for (const row of updated) tierCeilings[row.tier] = num(row.maxDiscountPct);
+  return { tierCeilings };
+}
+
 export async function setCategoryCeilings(actor: AuditActor, input: CategoryCeilingsInput) {
   const before = await db.select().from(categoryConfig);
   const previous = Object.fromEntries(before.map((row) => [row.category, num(row.maxDiscountPct)]));
@@ -90,16 +117,62 @@ export async function setCategoryCeilings(actor: AuditActor, input: CategoryCeil
   return getDiscountConfig();
 }
 
+export async function patchCategoryCeilings(actor: AuditActor, input: PatchCategoryCeilingsInput) {
+  const before = await db.select().from(categoryConfig);
+  const previous = Object.fromEntries(before.map((row) => [row.category, num(row.maxDiscountPct)]));
+
+  for (const [category, value] of Object.entries(input)) {
+    await db
+      .update(categoryConfig)
+      .set({ maxDiscountPct: pct(value as number), updatedAt: new Date() })
+      .where(eq(categoryConfig.category, category as Category));
+  }
+
+  await audit({
+    entityType: 'config',
+    action: 'Category discount ceilings patched',
+    actor,
+    meta: { from: previous, to: input },
+  });
+
+  const updated = await db.select().from(categoryConfig);
+  const categoryCeilings = {} as Record<Category, number>;
+  for (const row of updated) categoryCeilings[row.category] = num(row.maxDiscountPct);
+  return { categoryCeilings };
+}
+
 export async function listChain() {
   const rows = await db.select().from(approvalRules).orderBy(asc(approvalRules.sortOrder));
   const chain = rows.map(presentRule);
   return { approvalChain: chain, warnings: chainWarnings(chain) };
 }
 
+async function assertNoOverlap(input: ApprovalRuleInput, excludeId?: string) {
+  const rows = await db.select().from(approvalRules);
+  const existing = rows.filter((r) => r.id !== excludeId).map(presentRule);
+
+  const newMin = input.minScore;
+  const newMax = input.maxScore ?? Infinity;
+
+  for (const rule of existing) {
+    const existingMin = rule.minScore;
+    const existingMax = rule.maxScore ?? Infinity;
+
+    if (newMin <= existingMax && existingMin <= newMax) {
+      throw ApiError.conflict(
+        'INVALID_RANGE',
+        `Score range ${input.minScore}–${input.maxScore ?? '∞'} overlaps existing rule ${rule.minScore}–${rule.maxScore ?? '∞'}.`,
+      );
+    }
+  }
+}
+
 export async function addRule(actor: AuditActor, input: ApprovalRuleInput) {
   const [top] = await db
     .select({ max: sql<number>`COALESCE(MAX(${approvalRules.sortOrder}), -1)` })
     .from(approvalRules);
+
+  await assertNoOverlap(input);
 
   await db.insert(approvalRules).values({
     minScore: pct(input.minScore),
@@ -117,6 +190,8 @@ export async function addRule(actor: AuditActor, input: ApprovalRuleInput) {
 export async function updateRule(actor: AuditActor, id: string, input: ApprovalRuleInput) {
   const [existing] = await db.select().from(approvalRules).where(eq(approvalRules.id, id));
   if (!existing) throw ApiError.notFound('Approval rule not found');
+
+  await assertNoOverlap(input, id);
 
   await db
     .update(approvalRules)
@@ -228,6 +303,29 @@ export async function setDashboardConfig(actor: AuditActor, input: DashboardConf
   await audit({
     entityType: 'config',
     action: 'Dashboard thresholds updated',
+    actor,
+    meta: { from: before, to: input },
+  });
+
+  return getDashboardConfig();
+}
+
+export async function patchDashboardConfig(actor: AuditActor, input: PatchDashboardConfigInput) {
+  const before = await getDashboardConfig();
+
+  await db
+    .update(dashboardConfig)
+    .set({
+      ...(input.stallThresholdDays !== undefined && { stallThresholdDays: input.stallThresholdDays }),
+      ...(input.anomalySensitivity !== undefined && { anomalySensitivity: input.anomalySensitivity.toFixed(2) }),
+      ...(input.approvalSlaHours !== undefined && { approvalSlaHours: input.approvalSlaHours }),
+      updatedAt: new Date(),
+    })
+    .where(eq(dashboardConfig.id, 1));
+
+  await audit({
+    entityType: 'config',
+    action: 'Dashboard thresholds patched',
     actor,
     meta: { from: before, to: input },
   });

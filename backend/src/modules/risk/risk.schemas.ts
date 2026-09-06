@@ -48,5 +48,22 @@ export const scoreBatchSchema = z
   })
   .strict();
 
+const blendedScoreLineSchema = z
+  .object({
+    lineId: z.string(),
+    category: z.enum(CATEGORIES),
+    discountPct: z.number().min(0).max(100),
+    lineTotal: z.number().min(0),
+  })
+  .strict();
+
+export const blendedScoreSchema = z
+  .object({
+    customerTier: z.enum(TIERS),
+    lines: z.array(blendedScoreLineSchema).min(1).max(200),
+  })
+  .strict();
+
 export type ScoreInput = z.infer<typeof scoreSchema>;
 export type ScoreBatchInput = z.infer<typeof scoreBatchSchema>;
+export type BlendedScoreSchemaInput = z.infer<typeof blendedScoreSchema>;
