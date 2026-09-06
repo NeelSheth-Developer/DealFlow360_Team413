@@ -25,7 +25,8 @@
 | 📘 **Project README** | [`../README.md`](../README.md) |
 | 🖥️ **Backend README** | [`../backend/README.md`](../backend/README.md) |
 | 📖 **API Reference** | [`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md) — 116 endpoints |
-| 🗂️ **DBML / ER Diagram** | [§24.8 Full DBML](../backend/docs/API-REFERENCE.md#248-full-dbml-source) · [§24 ER diagrams](../backend/docs/API-REFERENCE.md#24-data-model) |
+| 🗂️ **DBML Diagram** | **[`../backend/docs/schema.dbml`](../backend/docs/schema.dbml)** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
+| 🧩 **ER Diagrams** | **[§24 Data model](../backend/docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
 
 ---
 

@@ -24,8 +24,8 @@
 | 🌐 **Live App** | **<https://dealflow360.teamvector.space>** |
 | ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** · <https://dealflow360-team413-2.onrender.com/api/v1> |
 | 📖 **API Reference** | **[`docs/API-REFERENCE.md`](docs/API-REFERENCE.md)** — every endpoint, request/response shape, role and error code |
-| 🗂️ **DBML Diagram** | **[§24.8 Full DBML source](docs/API-REFERENCE.md#248-full-dbml-source)** — paste into [dbdiagram.io](https://dbdiagram.io/d) |
-| 🧩 **ER Diagrams** | [§24 Data model](docs/API-REFERENCE.md#24-data-model) — 31 tables, rendered inline on GitHub |
+| 🗂️ **DBML Diagram** | **[`docs/schema.dbml`](docs/schema.dbml)** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
+| 🧩 **ER Diagrams** | **[§24 Data model](docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
 | 📮 **Postman** | [`postman/`](postman) — importable collection covering every endpoint |
 | 📘 **Project README** | [`../README.md`](../README.md) |
 | 💻 **Frontend README** | [`../Frontend/README.md`](../Frontend/README.md) |
