@@ -267,9 +267,18 @@ export default function QuotationBuilder() {
             squeezed enough that product names wrapped to three lines and the totals row
             scrolled sideways.
           */
+          /*
+            EVERY TRACK IS minmax(0, …).
+            A grid item's automatic minimum size is its min-content width, so a track
+            whose content is wider than its declared size does not shrink — it overflows
+            and lands on top of its neighbour. That is what crushed this layout: the side
+            columns were pinned narrower than the cards inside them could go.
+            `minmax(0, Npx)` lets each one give way, and `min-w-0` on the panels
+            themselves (below) lets their contents do the same.
+          */
           showUpsell
-            ? 'xl:grid-cols-[216px_minmax(0,1fr)_244px_276px]'
-            : 'xl:grid-cols-[232px_minmax(0,1fr)_288px]',
+            ? 'xl:grid-cols-[minmax(0,264px)_minmax(0,1fr)_minmax(0,292px)_minmax(0,308px)]'
+            : 'xl:grid-cols-[minmax(0,276px)_minmax(0,1fr)_minmax(0,320px)]',
         )}
       >
         {/* --------------------------------------------------- catalog */}
@@ -290,7 +299,7 @@ export default function QuotationBuilder() {
             `xl:` throughout because that is where the grid actually becomes columns;
             below it the layout stacks and a short scrolling box would be worse.
           */
-          className="xl:sticky xl:top-24 xl:flex xl:max-h-[calc(100vh-7rem)] xl:flex-col xl:self-start"
+          className="min-w-0 xl:sticky xl:top-24 xl:flex xl:max-h-[calc(100vh-7rem)] xl:flex-col xl:self-start"
           bodyClassName="flex min-h-0 flex-col xl:flex-1 xl:overflow-hidden"
         >
           <CatalogPanel
@@ -315,7 +324,7 @@ export default function QuotationBuilder() {
             title="Order lines"
             description={`${quote.lines.length} line(s) · ${totals.oneTimeCount} one-time, ${totals.recurringCount} recurring`}
             icon={ShoppingCart}
-            className="border-l-4 border-l-brand-500 shadow-glass-strong"
+            className="min-w-0 border-l-4 border-l-brand-500 shadow-glass-strong"
             bodyClassName="px-0 py-0 sm:px-0"
           >
             <OrderLinesTable
@@ -473,7 +482,7 @@ export default function QuotationBuilder() {
             description="Ranked by co-purchase strength, promotion and margin."
             icon={Sparkles}
             accent="pink"
-            className="xl:sticky xl:top-24 xl:flex xl:max-h-[calc(100vh-7rem)] xl:flex-col xl:self-start"
+            className="min-w-0 xl:sticky xl:top-24 xl:flex xl:max-h-[calc(100vh-7rem)] xl:flex-col xl:self-start"
             bodyClassName="flex min-h-0 flex-col xl:flex-1 xl:overflow-hidden"
           >
             <UpsellPanel
@@ -508,7 +517,7 @@ export default function QuotationBuilder() {
         )}
 
         {/* --------------------------------------------------- summary */}
-        <div className="xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
+        <div className="min-w-0 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
           <QuoteSummaryRail
             quote={quote}
             totals={totals}

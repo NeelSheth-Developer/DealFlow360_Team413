@@ -95,11 +95,17 @@ export function UpsellPanel({
                 <ProgressBar value={s.coPurchaseScore} max={100} />
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <span className="num text-sm font-extrabold text-ink">
+              {/*
+                Wraps rather than clips. Price + "Dismiss" + "Add to Quote" all set to
+                nowrap came to more than the rail is wide, so the last button was cut off
+                by the card edge. Allowing the row to wrap costs one line in the worst
+                case and never loses a control.
+              */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
+                <span className="num min-w-0 text-sm font-extrabold text-ink">
                   {money(s.price, currency)}
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="ml-auto flex items-center gap-1.5">
                   <Button
                     size="xs"
                     variant="ghost"
@@ -116,7 +122,7 @@ export function UpsellPanel({
                     disabled={disabled}
                     onClick={() => onAccept(s.productId)}
                   >
-                    Add to Quote
+                    Add
                   </Button>
                 </div>
               </div>
