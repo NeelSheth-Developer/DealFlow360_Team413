@@ -268,8 +268,8 @@ export default function QuotationBuilder() {
             scrolled sideways.
           */
           showUpsell
-            ? 'xl:grid-cols-[248px_minmax(0,1.6fr)_268px_300px]'
-            : 'xl:grid-cols-[268px_minmax(0,1fr)_312px]',
+            ? 'xl:grid-cols-[216px_minmax(0,1fr)_244px_276px]'
+            : 'xl:grid-cols-[232px_minmax(0,1fr)_288px]',
         )}
       >
         {/* --------------------------------------------------- catalog */}
@@ -303,10 +303,19 @@ export default function QuotationBuilder() {
 
         {/* ----------------------------------------------- order lines */}
         <div className="min-w-0 space-y-4">
+          {/*
+            THE SUBJECT OF THE SCREEN, and now weighted like it.
+
+            The three side columns are pinned as narrow as their content allows so this
+            one keeps every remaining pixel, and `strong` + the accent edge lift it out of
+            the row of equal-looking glass panels it used to sit in.
+          */}
           <GlassPanel
+            strong
             title="Order lines"
             description={`${quote.lines.length} line(s) · ${totals.oneTimeCount} one-time, ${totals.recurringCount} recurring`}
             icon={ShoppingCart}
+            className="border-l-4 border-l-brand-500 shadow-glass-strong"
             bodyClassName="px-0 py-0 sm:px-0"
           >
             <OrderLinesTable
