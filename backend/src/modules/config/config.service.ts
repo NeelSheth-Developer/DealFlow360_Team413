@@ -154,11 +154,30 @@ async function assertNoOverlap(input: ApprovalRuleInput, excludeId?: string) {
   const newMin = input.minScore;
   const newMax = input.maxScore ?? Infinity;
 
+  /*
+   * STRICT `<`, NOT `<=` — BANDS ARE HALF-OPEN AND ARE MEANT TO TOUCH.
+   *
+   * A score is matched to a rule in lib/risk.ts by `score > minScore && score <= maxScore`,
+   * i.e. the interval (min, max]. So 5–30 and 30–∞ are contiguous, not overlapping: a
+   * score of exactly 30 belongs to the first and 30.01 to the second, and no score can
+   * ever match both. `chainWarnings` agrees — it flags `maxScore < next.minScore` as a
+   * gap and `maxScore > next.minScore` as an overlap, treating equality as the healthy
+   * case.
+   *
+   * This check used `<=` on both sides, a CLOSED-interval test, which called any two
+   * bands sharing a boundary an overlap. The effect was that no adjacent band could ever
+   * be created: with a single 5–30 rule in place, "Add rule" was rejected whether it
+   * proposed 0–5 or 30–∞, and deleting was refused too because a chain of one rule cannot
+   * be emptied. The chain became unmodifiable, and the backend was simultaneously warning
+   * "Nothing covers a score above 30" while refusing the rule that would cover it.
+   *
+   * A real overlap still fails: 10–20 against 5–30 gives 10 < 30 and 5 < 20.
+   */
   for (const rule of existing) {
     const existingMin = rule.minScore;
     const existingMax = rule.maxScore ?? Infinity;
 
-    if (newMin <= existingMax && existingMin <= newMax) {
+    if (newMin < existingMax && existingMin < newMax) {
       throw ApiError.conflict(
         'INVALID_RANGE',
         `Score range ${input.minScore}–${input.maxScore ?? '∞'} overlaps existing rule ${rule.minScore}–${rule.maxScore ?? '∞'}.`,
