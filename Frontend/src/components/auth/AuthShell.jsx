@@ -44,9 +44,19 @@ export function AuthShell({ backTo = '/', backLabel = 'Back to home', aside, chi
   );
 }
 
+/**
+ * Two gradients, both inside the brand palette.
+ *
+ * The customer surface used to run teal -> blue (#14b8a6 -> #3b82f6), which shares no hue
+ * with the violet/indigo/pink the rest of the product is built from — it read as a
+ * different app rather than a different audience. Keeping the two spaces visually
+ * distinct is right; doing it by leaving the palette is not. `customer` now leans on the
+ * warm end of the same ramp, so the two are unmistakably related and still tell apart at
+ * a glance.
+ */
 const TONES = {
-  brand: 'from-brand-600 via-brand-500 to-accent-indigo',
-  teal: 'from-accent-teal via-state-info to-brand-500',
+  brand: 'from-brand-700 via-brand-500 to-accent-indigo',
+  customer: 'from-accent-indigo via-brand-500 to-accent-pink',
 };
 
 /**

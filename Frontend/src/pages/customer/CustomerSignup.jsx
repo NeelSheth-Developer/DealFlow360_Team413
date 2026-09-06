@@ -128,7 +128,7 @@ export default function CustomerSignup() {
       backLabel="Back to sign in"
       aside={
         <AuthAside
-          tone="teal"
+          tone="customer"
           title="Review and negotiate online"
           description="Registering turns every quotation you receive into a live document."
           items={STEPS}
@@ -206,7 +206,7 @@ export default function CustomerSignup() {
 
           <p className="mt-4 text-xs text-ink-muted">
             Already registered?{' '}
-            <Link to="/customer/login" className="font-semibold text-accent-teal hover:underline">
+            <Link to="/customer/login" className="font-semibold text-accent-pink hover:underline">
               Sign in
             </Link>
           </p>

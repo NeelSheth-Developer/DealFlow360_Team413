@@ -92,7 +92,7 @@ export function OtpVerification({
 
   return (
     <div>
-      <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-teal to-state-info text-white shadow-glass">
+      <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-indigo to-accent-pink text-white shadow-glass">
         <MailCheck className="h-5 w-5" aria-hidden="true" />
       </span>
 

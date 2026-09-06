@@ -73,11 +73,11 @@ export default function CustomerQuotations() {
                 <li key={key}>
                   <Link
                     to={`/customer/quotations/${key}`}
-                    className="border-brand-500/12 group flex flex-wrap items-center gap-3 rounded-xl border bg-white/60 p-4 transition-all hover:-translate-y-0.5 hover:border-accent-teal/40 hover:shadow-glass"
+                    className="border-brand-500/12 group flex flex-wrap items-center gap-3 rounded-xl border bg-white/60 p-4 transition-all hover:-translate-y-0.5 hover:border-accent-pink/40 hover:shadow-glass"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="num text-xs font-bold text-accent-teal">
+                        <span className="num text-xs font-bold text-accent-pink">
                           {quote.reference}
                         </span>
                         <RawBadge className={cn(status.bg, status.tone)} dot dotClass="bg-current">
@@ -128,7 +128,7 @@ export default function CustomerQuotations() {
                     </div>
 
                     <ArrowRight
-                      className="h-4 w-4 shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-accent-teal"
+                      className="h-4 w-4 shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-accent-pink"
                       aria-hidden="true"
                     />
                   </Link>

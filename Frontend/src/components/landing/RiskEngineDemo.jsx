@@ -1,45 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ServerCog } from 'lucide-react';
-import { computeBlendedRisk, resolveApprovalPath } from '@/lib/riskEngine';
 import { scoreBlended } from '@/services/riskService';
 import { hasSession } from '@/services/apiClient';
 import { money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '@/components/glass/Glass';
 import { RiskGauge } from '@/components/shared/RiskGauge';
+import { formatScore } from '@/lib/riskEngine';
 import { Slider } from '@/components/ui/Misc';
 import { Badge } from '@/components/ui/Badge';
 
 /**
  * The interactive version of the worked example from the problem statement.
  *
- * SCORED BY THE SERVER WHENEVER THAT IS POSSIBLE. `POST /risk/blended-score` is the
- * authority, and this widget calls it on every change (debounced) so what a visitor
- * plays with is the real engine rather than a second implementation of it.
+ * SCORED ENTIRELY BY THE SERVER. `POST /risk/blended-score` is the only thing that
+ * produces a number here — the ceilings, the overage per line and the approval routing
+ * all come off that response.
  *
- * WHY A LOCAL FALLBACK STILL EXISTS HERE, and nowhere else in the app:
+ * There used to be a local `computeBlendedRisk` pass behind this widget, running against
+ * hardcoded ceilings and a hardcoded approval chain. That was a second implementation of
+ * a rule the server owns, and the two could only ever agree by accident; both it and the
+ * constants it needed are gone.
  *
- *   · THE ROUTE REQUIRES A BEARER TOKEN. `riskRouter.use(requireAuth, requireKind('staff'))`
- *     — a signed-out visitor on the public landing page gets 401. This is the only risk
- *     surface in the product that renders without a session.
- *   · THE ROUTE IS NEWER THAN SOME DEPLOYMENTS and answers 404 on at least one host the
- *     app is pointed at.
- *
- * In both cases the widget degrades to `computeBlendedRisk` and SAYS SO on screen, so the
- * number is never passed off as the server's when it is not. Everywhere a real quotation
- * is scored — the builder, the approval screen, the list, the admin sandbox — there is no
- * fallback at all: those call the API and show an error if it fails, because a score that
- * decides an approval must never be invented locally.
+ * WHEN THE SERVICE CANNOT BE REACHED, NOTHING IS SHOWN. The route requires a staff token
+ * (`requireAuth` + `requireKind('staff')`), so a signed-out visitor cannot call it, and it
+ * is newer than some deployments. In either case the panel says which of those it is
+ * rather than falling back to a number it made up.
  */
 
 const CATEGORY_CEILINGS = { hardware: 15, service: 10 };
 const TIER_CEILING = 15; // Gold
 
-const APPROVAL_CHAIN = [
-  { id: 'auto', minScore: -1, maxScore: 0, approvers: [], singleLineTrip: null },
-  { id: 'mgr', minScore: 0, maxScore: 5, approvers: ['sales_manager'], singleLineTrip: 5 },
-  { id: 'fin', minScore: 5, maxScore: null, approvers: ['sales_manager', 'finance'], singleLineTrip: 12 },
-];
 
 export function RiskEngineDemo() {
   const [hardwareDiscount, setHardwareDiscount] = useState(12);
@@ -67,22 +58,22 @@ export function RiskEngineDemo() {
     [hardwareDiscount, serviceDiscount],
   );
 
-  /** The illustration, used only while the server cannot be asked. */
-  const localRisk = useMemo(
-    () => computeBlendedRisk(lines, CATEGORY_CEILINGS, TIER_CEILING, 0),
-    [lines],
-  );
-  const localPath = useMemo(() => resolveApprovalPath(localRisk, APPROVAL_CHAIN), [localRisk]);
-
   const [served, setServed] = useState(null);
-  // Latched: once the route has answered 401/404 there is no point asking again on every
+  const [scoring, setScoring] = useState(false);
+  // Latched: once the route has answered 401/404 there is no point re-asking on every
   // slider move for the rest of the visit.
   const unavailable = useRef(false);
+  const [reason, setReason] = useState(null);
 
   useEffect(() => {
-    if (unavailable.current || !hasSession()) return undefined;
+    if (unavailable.current) return undefined;
+    if (!hasSession()) {
+      setReason('signed-out');
+      return undefined;
+    }
 
     let cancelled = false;
+    setScoring(true);
     const timer = setTimeout(async () => {
       try {
         const result = await scoreBlended({
@@ -94,10 +85,18 @@ export function RiskEngineDemo() {
             lineTotal: l.qty * l.unitPrice * (1 - l.discountPct / 100),
           })),
         });
-        if (!cancelled) setServed(result);
-      } catch {
+        if (!cancelled) {
+          setServed(result);
+          setReason(null);
+        }
+      } catch (error) {
         unavailable.current = true;
-        if (!cancelled) setServed(null);
+        if (!cancelled) {
+          setServed(null);
+          setReason(error?.status === 404 ? 'not-deployed' : 'unavailable');
+        }
+      } finally {
+        if (!cancelled) setScoring(false);
       }
     }, 250);
 
@@ -108,15 +107,24 @@ export function RiskEngineDemo() {
   }, [lines]);
 
   /*
-   * The server owns the score and the routing when it answered; the local pass still
-   * supplies the per-line breakdown the table below renders, which `/risk/blended-score`
-   * does not return (it sends only the lines it flagged).
+   * NOTHING IS SCORED HERE.
+   *
+   * This widget used to run `computeBlendedRisk` in the browser against hardcoded
+   * ceilings and a hardcoded chain. That is a second implementation of the rule the
+   * server owns, and the two could only agree by accident — so it is gone, along with
+   * the local engine itself.
+   *
+   * `flagged` is keyed by line id so each row can show the ceiling and overage the
+   * SERVER decided for it. A line the server did not flag is inside its ceiling; there
+   * is nothing to compute to know that.
    */
-  const isServed = Boolean(served);
-  const risk = isServed ? { ...localRisk, score: served.score } : localRisk;
-  const path = isServed
-    ? { approvers: served.approvers, ruleId: null, label: served.label }
-    : localPath;
+  const approvers = served?.approvers ?? [];
+
+  const flaggedById = useMemo(() => {
+    const map = new Map();
+    for (const f of served?.flagged ?? []) map.set(f.lineId, f);
+    return map;
+  }, [served]);
 
   return (
     <GlassCard strong className="overflow-hidden">
@@ -182,7 +190,17 @@ export function RiskEngineDemo() {
                 </tr>
               </thead>
               <tbody>
-                {risk.lineBreakdown.map((row) => (
+                {lines.map((line) => {
+                  const flag = flaggedById.get(line.id);
+                  const row = {
+                    lineId: line.id,
+                    productName: line.productName,
+                    givenPct: line.discountPct,
+                    ceilingPct: flag?.ceilingPct ?? null,
+                    overBy: flag?.overBy ?? 0,
+                    isViolation: Boolean(flag),
+                  };
+                  return (
                   <tr
                     key={row.lineId}
                     className={cn(
@@ -210,7 +228,7 @@ export function RiskEngineDemo() {
                       {percent(row.givenPct, 0)}
                     </td>
                     <td className="num px-2 py-2 text-right text-ink-muted">
-                      {percent(row.ceilingPct, 0)}
+                      {row.ceilingPct === null ? '—' : percent(row.ceilingPct, 0)}
                     </td>
                     <td
                       className={cn(
@@ -221,7 +239,8 @@ export function RiskEngineDemo() {
                       {row.overBy > 0 ? `+${row.overBy.toFixed(1)}` : '—'}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               <tfoot className="border-t-2 border-brand-500/20 bg-brand-50/70">
                 <tr>
@@ -229,7 +248,7 @@ export function RiskEngineDemo() {
                     Value-weighted blended score
                   </td>
                   <td className="num px-3 py-2 text-right font-extrabold text-brand-700">
-                    {risk.score.toFixed(2)}
+                    {served ? formatScore(served.score) : '—'}
                   </td>
                 </tr>
               </tfoot>
@@ -237,32 +256,42 @@ export function RiskEngineDemo() {
           </div>
 
           <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
-            Weighted overage {money(risk.weightedOverage, 'INR')} ÷ order value{' '}
-            {money(risk.totalValue, 'INR')} = {risk.score.toFixed(2)} points. Worst single line is{' '}
-            {risk.worstSingleOverage.toFixed(1)} points over, which is what triggers escalation even
-            when the blend looks mild.
+            Each line is measured against the stricter of its category ceiling and the
+            customer&apos;s tier ceiling. Overages are weighted by line value, so a small
+            violation on a large line matters more than a large one on a trivial line —
+            and a single badly-over line escalates the order on its own.
           </p>
         </div>
 
         {/* ------------------------------------------------------ verdict */}
         <div className="flex w-full flex-col items-center justify-center gap-4 bg-white/40 p-6 lg:w-72">
-          <RiskGauge score={risk.score} size="md" />
+          <RiskGauge score={served?.score ?? 0} size="md" />
 
           {/*
-            Says which engine produced the number. A locally computed score that looks
-            like the server's is the one thing this widget must not do — the whole point
-            of the panel is that the governance engine decides, not the browser.
+            Reports the state honestly. The browser no longer scores anything, so when
+            the service cannot be reached there is no number to show — and saying so is
+            better than showing one this widget made up.
           */}
           <span
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold',
-              isServed
+              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-center text-[10px] font-semibold',
+              served
                 ? 'bg-state-success/12 text-state-success'
-                : 'bg-brand-500/10 text-brand-700',
+                : scoring
+                  ? 'bg-brand-500/10 text-brand-700'
+                  : 'bg-accent-amber/14 text-accent-amber',
             )}
           >
-            <ServerCog className="h-3 w-3" aria-hidden="true" />
-            {isServed ? 'Scored by the governance service' : 'Illustration — sign in for a live score'}
+            <ServerCog className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {served
+              ? 'Scored by the governance service'
+              : scoring
+                ? 'Scoring…'
+                : reason === 'signed-out'
+                  ? 'Sign in to run the live engine'
+                  : reason === 'not-deployed'
+                    ? 'Scoring service not available on this deployment'
+                    : 'Scoring service unreachable'}
           </span>
 
           <div className="w-full space-y-2">
@@ -272,9 +301,9 @@ export function RiskEngineDemo() {
             <div
               className={cn(
                 'rounded-xl border px-3 py-2.5 text-center',
-                path.approvers.length === 0
+                approvers.length === 0
                   ? 'border-state-success/30 bg-state-success/10'
-                  : path.approvers.length === 1
+                  : approvers.length === 1
                     ? 'border-accent-amber/35 bg-accent-amber/12'
                     : 'border-state-danger/30 bg-state-danger/10',
               )}
@@ -282,19 +311,19 @@ export function RiskEngineDemo() {
               <p
                 className={cn(
                   'text-sm font-extrabold',
-                  path.approvers.length === 0
+                  approvers.length === 0
                     ? 'text-state-success'
-                    : path.approvers.length === 1
+                    : approvers.length === 1
                       ? 'text-accent-amber'
                       : 'text-state-danger',
                 )}
               >
-                {path.label}
+                {served ? served.label : 'Not scored'}
               </p>
               <p className="mt-0.5 text-[11px] text-ink-soft">
-                {path.approvers.length === 0
+                {approvers.length === 0
                   ? 'No review needed'
-                  : `${path.approvers.length} approver${path.approvers.length > 1 ? 's' : ''} required`}
+                  : `${approvers.length} approver${approvers.length > 1 ? 's' : ''} required`}
               </p>
             </div>
           </div>

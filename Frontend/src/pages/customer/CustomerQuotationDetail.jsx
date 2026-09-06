@@ -261,7 +261,7 @@ export default function CustomerQuotationDetail() {
                 className={cn(
                   'rounded-xl border bg-white/55 p-3.5 transition-colors',
                   line.isRecurring ? 'border-l-4 border-l-accent-indigo' : 'border-brand-500/12',
-                  threadOpen && 'border-accent-teal/45 bg-white/70',
+                  threadOpen && 'border-accent-pink/45 bg-white/70',
                 )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">

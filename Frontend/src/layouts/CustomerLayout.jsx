@@ -47,7 +47,7 @@ export default function CustomerLayout() {
               className={({ isActive }) =>
                 cn(
                   'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
-                  isActive ? 'bg-accent-teal/14 text-accent-teal' : 'text-ink-soft hover:text-brand-700',
+                  isActive ? 'bg-accent-teal/14 text-accent-pink' : 'text-ink-soft hover:text-brand-700',
                 )
               }
             >
@@ -65,7 +65,7 @@ export default function CustomerLayout() {
                 >
                   <Avatar
                     name={customer.contactName || customer.name}
-                    gradient="from-accent-teal to-state-info"
+                    gradient="from-accent-indigo to-accent-pink"
                     size="sm"
                   />
                   <span className="hidden text-left leading-tight sm:block">
@@ -87,7 +87,7 @@ export default function CustomerLayout() {
                   <div className="px-2.5 py-2">
                     <p className="text-xs font-bold text-ink">{customer.contactName}</p>
                     <p className="text-[11px] text-ink-muted">{customer.email}</p>
-                    <p className="mt-1 text-[11px] font-semibold text-accent-teal">
+                    <p className="mt-1 text-[11px] font-semibold text-accent-pink">
                       {customer.name} · {tierLabel(customer.tier)}
                     </p>
                   </div>

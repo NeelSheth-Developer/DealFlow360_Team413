@@ -111,7 +111,7 @@ export default function CustomerLogin() {
       backLabel="Back to home"
       aside={
         <AuthAside
-          tone="teal"
+          tone="customer"
           title="Your quotations, in one place"
           description="Everything your account manager sends you becomes a live document you can question and negotiate."
           items={PORTAL_NOTES}
@@ -160,7 +160,7 @@ export default function CustomerLogin() {
         <div className="flex justify-end">
           <Link
             to="/forgot-password?type=customer"
-            className="text-xs font-semibold text-accent-teal hover:underline"
+            className="text-xs font-semibold text-accent-pink hover:underline"
           >
             Forgot your password?
           </Link>
@@ -173,7 +173,7 @@ export default function CustomerLogin() {
 
       <p className="mt-4 text-xs text-ink-muted">
         New here?{' '}
-        <Link to="/customer/signup" className="font-semibold text-accent-teal hover:underline">
+        <Link to="/customer/signup" className="font-semibold text-accent-pink hover:underline">
           Create a customer account
         </Link>
       </p>

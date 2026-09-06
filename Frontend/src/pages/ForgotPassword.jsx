@@ -69,7 +69,7 @@ export default function ForgotPassword() {
   const [busy, setBusy] = useState(false);
 
   const loginPath = isCustomer ? '/customer/login' : '/login';
-  const tone = isCustomer ? 'teal' : 'brand';
+  const tone = isCustomer ? 'customer' : 'brand';
 
   const handleRequest = async (e) => {
     e.preventDefault();
