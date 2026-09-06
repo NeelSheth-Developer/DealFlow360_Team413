@@ -3619,7 +3619,8 @@ not a queue that has to be kept in sync.
 
 ### 24.8 Full DBML source
 
-Paste into [dbdiagram.io](https://dbdiagram.io/d) for an interactive, laid-out diagram.
+Also available as a standalone file: **[`schema.dbml`](schema.dbml)** — copy it and paste
+into [dbdiagram.io](https://dbdiagram.io/d) for an interactive, laid-out diagram.
 
 <details>
 <summary><strong>Show the complete DBML (31 tables, 20 enums)</strong></summary>

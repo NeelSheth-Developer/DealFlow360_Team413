@@ -1,8 +1,23 @@
 // =============================================================================
-//  DealFlow360 — Data Model
-//  Team_413 · Odoo Hackathon 2026
+//  DealFlow360 — Data Model (DBML)
+//  Team 413 · Team Vector · Odoo Hackathon 2026
 //
-//  Render at https://dbdiagram.io/d  (paste this file)
+//  31 tables · 20 enums · 38 relations
+//
+//  HOW TO VIEW THIS AS A DIAGRAM
+//  -----------------------------
+//    1. Copy this whole file       pbcopy < docs/schema.dbml      (macOS)
+//                                  xclip -sel clip < docs/schema.dbml  (Linux)
+//    2. Open https://dbdiagram.io/d
+//    3. Paste. Export as PNG or PDF from the top-right menu.
+//
+//  The same schema is also drawn per area, as diagrams that render inline on
+//  GitHub, in docs/API-REFERENCE.md §24 — Data model.
+//
+//  SOURCE OF TRUTH
+//  ---------------
+//  src/db/schema.ts holds the Drizzle definitions the API actually runs
+//  against. This file and the §24 diagrams both describe it.
 //
 //  Conventions
 //  -----------

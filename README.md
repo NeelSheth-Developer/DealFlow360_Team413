@@ -19,7 +19,7 @@ Quote → Risk Scoring → Approval Routing → Fulfillment → Billing → Invo
 | 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
 | 🌐 **Live App** | **<https://dealflow360.teamvector.space>** · <https://deal-flow360-team413.vercel.app> |
 | ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** · <https://dealflow360-team413-2.onrender.com/api/v1> |
-| 📖 **API Reference** | [`backend/docs/API-REFERENCE.md`](backend/docs/API-REFERENCE.md) — 116 endpoints |
+| 📖 **API Reference** | [`backend/docs/API-REFERENCE.md`](backend/docs/API-REFERENCE.md) — every endpoint, in one file |
 | 🗂️ **DBML Diagram** | **[`backend/docs/schema.dbml`](backend/docs/schema.dbml)** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
 | 🧩 **ER Diagrams** | **[§24 Data model](backend/docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
 | 💻 **Frontend README** | [`Frontend/README.md`](Frontend/README.md) |
@@ -79,13 +79,13 @@ Sign in immediately with any of these. Staff use `"type": "internal"`, customers
 | [7.2](#72-the-two-triggers) | The two triggers | Blended score and single-line trip |
 | [7.3](#73-approval-routing) | Approval routing | Score → approver chain |
 | **[8](#8-roles--permissions)** | **Roles & Permissions** | Who can do what, and why |
-| **[9](#9-api-reference)** | **API Reference** | 116 endpoints across 17 modules |
+| **[9](#9-api-reference)** | **API Reference** | Every endpoint, across 17 modules |
 | [9.1](#91-module-breakdown) | Module breakdown | Endpoint counts per area |
 | [9.2](#92-conventions) | Conventions | Envelope, auth, errors, rate limits |
 | [9.3](#93-ways-to-exercise-the-api) | Ways to exercise the API | Tester, Postman, e2e |
 | **[10](#10-data-model)** | **Data Model** | 31 tables, 19 enums, DBML |
 | [10.1](#101-table-groups) | Table groups | What each cluster of tables holds |
-| [10.2](#102-er-diagrams--dbml) | ER diagrams & DBML | Links to render the schema |
+| [10.2](#102-er-diagrams--dbml) | ER diagrams & DBML | The `.dbml` file vs the inline ER diagrams |
 | **[11](#11-demo-script)** | **Demo Script** | The eight-step walkthrough |
 | **[12](#12-testing--verification)** | **Testing & Verification** | Engine assertions and the e2e flow |
 | **[13](#13-scripts-reference)** | **Scripts Reference** | Every npm script, both sides |
@@ -101,9 +101,9 @@ Sign in immediately with any of these. Staff use `"type": "internal"`, customers
 
 | # | Document | What it contains |
 |:--|:--|:--|
-| 1 | **[`backend/docs/API-REFERENCE.md`](backend/docs/API-REFERENCE.md)** | **The complete API reference** — all 116 endpoints across 17 modules, with request/response shapes, required roles and error codes |
-| 2 | **[§24 — Data model](backend/docs/API-REFERENCE.md#24-data-model)** | **ER diagrams** for all 31 tables, rendered inline on GitHub |
-| 3 | **[§24.8 — Full DBML source](backend/docs/API-REFERENCE.md#248-full-dbml-source)** | **The DBML diagram** — copy it into [dbdiagram.io](https://dbdiagram.io/d) for an interactive, laid-out ER view |
+| 1 | **[`backend/docs/API-REFERENCE.md`](backend/docs/API-REFERENCE.md)** | **The complete API reference** — every endpoint across 17 modules, with request/response shapes, required roles and error codes |
+| 2 | **[`backend/docs/schema.dbml`](backend/docs/schema.dbml)** | **The DBML diagram** — the complete schema as a standalone file. Paste it into [dbdiagram.io](https://dbdiagram.io/d) for an interactive, laid-out ER view |
+| 3 | **[§24 — Data model](backend/docs/API-REFERENCE.md#24-data-model)** | **ER diagrams** — the same 31 tables drawn per area, rendered inline on GitHub |
 | 4 | **[`Frontend/README.md`](Frontend/README.md)** | **Frontend README** — setup, architecture, service layer, state, screens |
 | 5 | **[`backend/README.md`](backend/README.md)** | **Backend README** — setup, environment, module map, scripts |
 | 6 | [§18 — Enumerations](backend/docs/API-REFERENCE.md#18-enumerations) | Every enum value the API accepts and returns |
@@ -441,7 +441,8 @@ backend/
 ├── .env.example                     every variable, documented
 │
 ├── docs/
-│   └── API-REFERENCE.md             ★ 116 endpoints + 31-table data model + full DBML
+│   ├── API-REFERENCE.md             ★ every endpoint + 31-table data model + ER diagrams
+│   └── schema.dbml                  ★ the DBML diagram — paste into dbdiagram.io
 │
 ├── postman/
 │   ├── DealFlow360.postman_collection.json        every endpoint
@@ -811,23 +812,23 @@ edit changes what is drawn, not what is permitted. The per-endpoint matrix is
 
 ## 9. API Reference
 
-**116 endpoints across 17 modules.** Base URL `/api/v1`.
+**Every endpoint, across 17 modules.** Base URL `/api/v1`.
 📖 **[Read the full reference →](backend/docs/API-REFERENCE.md)**
 
 ### 9.1 Module Breakdown
 
-| § | Area | Endpoints | § | Area | Endpoints |
-|:--|:--|--:|:--|:--|--:|
-| [1](backend/docs/API-REFERENCE.md#1-health) | Health | 2 | [11](backend/docs/API-REFERENCE.md#11-quotations) | Quotations | 15 |
-| [2](backend/docs/API-REFERENCE.md#2-authentication) | Authentication | 10 | [12](backend/docs/API-REFERENCE.md#12-approvals) | Approvals | 5 |
-| [3](backend/docs/API-REFERENCE.md#3-users-roles-and-teams) | Users, roles, teams | 5 | [13](backend/docs/API-REFERENCE.md#13-fulfillment) | Fulfillment | 5 |
-| [4](backend/docs/API-REFERENCE.md#4-customers) | Customers | 5 | [14](backend/docs/API-REFERENCE.md#14-billing-and-subscriptions) | Billing & subscriptions | 8 |
-| [5](backend/docs/API-REFERENCE.md#5-governance-configuration) | Governance config | 13 | [15](backend/docs/API-REFERENCE.md#15-invoices-and-payments) | Invoices & payments | 5 |
-| [6](backend/docs/API-REFERENCE.md#6-catalog-and-pricing) | Catalog & pricing | 8 | [16](backend/docs/API-REFERENCE.md#16-customer-portal) | Customer portal | 7 |
-| [7](backend/docs/API-REFERENCE.md#7-warehouses) | Warehouses | 6 | [17](backend/docs/API-REFERENCE.md#17-dashboard-reports-audit-notifications) | Dashboard, reports, audit, notifications | 10 |
-| [8](backend/docs/API-REFERENCE.md#8-subscription-plans) | Subscription plans | 4 | | | |
-| [9](backend/docs/API-REFERENCE.md#9-upsell-rules) | Upsell rules | 5 | | | |
-| [10](backend/docs/API-REFERENCE.md#10-risk-scoring) | Risk scoring | 3 | | | |
+| § | Area | § | Area |
+|:--|:--|:--|:--|
+| [1](backend/docs/API-REFERENCE.md#1-health) | Health | [11](backend/docs/API-REFERENCE.md#11-quotations) | Quotations |
+| [2](backend/docs/API-REFERENCE.md#2-authentication) | Authentication | [12](backend/docs/API-REFERENCE.md#12-approvals) | Approvals |
+| [3](backend/docs/API-REFERENCE.md#3-users-roles-and-teams) | Users, roles, teams | [13](backend/docs/API-REFERENCE.md#13-fulfillment) | Fulfillment |
+| [4](backend/docs/API-REFERENCE.md#4-customers) | Customers | [14](backend/docs/API-REFERENCE.md#14-billing-and-subscriptions) | Billing & subscriptions |
+| [5](backend/docs/API-REFERENCE.md#5-governance-configuration) | Governance config | [15](backend/docs/API-REFERENCE.md#15-invoices-and-payments) | Invoices & payments |
+| [6](backend/docs/API-REFERENCE.md#6-catalog-and-pricing) | Catalog & pricing | [16](backend/docs/API-REFERENCE.md#16-customer-portal) | Customer portal |
+| [7](backend/docs/API-REFERENCE.md#7-warehouses) | Warehouses | [17](backend/docs/API-REFERENCE.md#17-dashboard-reports-audit-notifications) | Dashboard, reports, audit, notifications |
+| [8](backend/docs/API-REFERENCE.md#8-subscription-plans) | Subscription plans | | |
+| [9](backend/docs/API-REFERENCE.md#9-upsell-rules) | Upsell rules | | |
+| [10](backend/docs/API-REFERENCE.md#10-risk-scoring) | Risk scoring | | |
 
 ### 9.2 Conventions
 
@@ -858,7 +859,7 @@ edit changes what is drawn, not what is permitted. The per-endpoint matrix is
 
 ## 10. Data Model
 
-**31 tables · 19 enums.** Built with Drizzle ORM on Neon serverless Postgres.
+**31 tables · 20 enums · 38 relations.** Built with Drizzle ORM on Neon serverless Postgres.
 
 ### 10.1 Table Groups
 
@@ -877,14 +878,30 @@ edit changes what is drawn, not what is permitted. The per-endpoint matrix is
 
 ### 10.2 ER Diagrams & DBML
 
-| # | Resource | Link |
+**The two are different artefacts describing the same schema — use whichever suits the moment.**
+
+| # | Artefact | Where | What it is |
+|:--|:--|:--|:--|
+| 1 | 🗂️ **DBML diagram** | **[`backend/docs/schema.dbml`](backend/docs/schema.dbml)** | The complete schema as one standalone `.dbml` file — 31 tables, 20 enums, 38 relations. **Paste it into [dbdiagram.io](https://dbdiagram.io/d)** to get a laid-out, zoomable, clickable ER diagram you can export as PNG or PDF |
+| 2 | 🧩 **ER diagrams** | **[§24 — Data model](backend/docs/API-REFERENCE.md#24-data-model)** | The same schema drawn **per area** as diagrams that render inline on GitHub — no external tool, and each one sits next to the prose explaining it |
+
+**Per-area ER diagrams:**
+
+| # | Area | Link |
 |:--|:--|:--|
-| 1 | **ER diagrams** (render inline on GitHub) | **[§24 — Data model](backend/docs/API-REFERENCE.md#24-data-model)** |
-| 2 | **Full DBML source** | **[§24.8 — Full DBML source](backend/docs/API-REFERENCE.md#248-full-dbml-source)** |
-| 3 | **Interactive diagram** | Copy the DBML from §24.8 → paste into **[dbdiagram.io](https://dbdiagram.io/d)** |
-| 4 | Section diagrams | [24.1 Identity](backend/docs/API-REFERENCE.md#241-identity-and-access) · [24.2 Catalog](backend/docs/API-REFERENCE.md#242-catalog-pricing-and-inventory) · [24.3 Governance](backend/docs/API-REFERENCE.md#243-governance-configuration) · [24.4 Quotations](backend/docs/API-REFERENCE.md#244-the-quotation-lifecycle) · [24.5 Fulfillment](backend/docs/API-REFERENCE.md#245-fulfillment) · [24.6 Billing](backend/docs/API-REFERENCE.md#246-billing-invoices-and-payments) · [24.7 Observability](backend/docs/API-REFERENCE.md#247-observability) |
-| 5 | Live schema source | [`backend/src/db/schema.ts`](backend/src/db/schema.ts) |
-| 6 | Migrations | [`backend/drizzle/`](backend/drizzle) — seven SQL migrations plus snapshots |
+| 1 | Identity and access | [§24.1](backend/docs/API-REFERENCE.md#241-identity-and-access) |
+| 2 | Catalog, pricing and inventory | [§24.2](backend/docs/API-REFERENCE.md#242-catalog-pricing-and-inventory) |
+| 3 | Governance configuration | [§24.3](backend/docs/API-REFERENCE.md#243-governance-configuration) |
+| 4 | The quotation lifecycle | [§24.4](backend/docs/API-REFERENCE.md#244-the-quotation-lifecycle) |
+| 5 | Fulfillment | [§24.5](backend/docs/API-REFERENCE.md#245-fulfillment) |
+| 6 | Billing, invoices and payments | [§24.6](backend/docs/API-REFERENCE.md#246-billing-invoices-and-payments) |
+| 7 | Observability | [§24.7](backend/docs/API-REFERENCE.md#247-observability) |
+
+**Source of truth:**
+
+- **Live schema** — [`backend/src/db/schema.ts`](backend/src/db/schema.ts), the Drizzle
+  definitions the API actually runs against. Both diagrams describe it.
+- **Migrations** — [`backend/drizzle/`](backend/drizzle), seven SQL migrations plus snapshots.
 
 ---
 

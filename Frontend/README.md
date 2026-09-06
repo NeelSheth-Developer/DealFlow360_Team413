@@ -24,7 +24,7 @@
 | ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** |
 | 📘 **Project README** | [`../README.md`](../README.md) |
 | 🖥️ **Backend README** | [`../backend/README.md`](../backend/README.md) |
-| 📖 **API Reference** | [`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md) — 116 endpoints |
+| 📖 **API Reference** | [`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md) — every endpoint, in one file |
 | 🗂️ **DBML Diagram** | **[`../backend/docs/schema.dbml`](../backend/docs/schema.dbml)** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
 | 🧩 **ER Diagrams** | **[§24 Data model](../backend/docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
 
@@ -101,9 +101,9 @@ no client-side scoring.
 |:--|:--|:--|
 | 1 | **[`../README.md`](../README.md)** | The whole-project guide — both halves, architecture, demo |
 | 2 | **[`../backend/README.md`](../backend/README.md)** | Backend setup, environment, module map |
-| 3 | **[`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md)** | **API reference** — 116 endpoints, request/response shapes, roles, error codes |
-| 4 | **[§24 — Data model](../backend/docs/API-REFERENCE.md#24-data-model)** | **ER diagrams** for all 31 tables |
-| 5 | **[§24.8 — Full DBML](../backend/docs/API-REFERENCE.md#248-full-dbml-source)** | **DBML diagram** — paste into [dbdiagram.io](https://dbdiagram.io/d) |
+| 3 | **[`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md)** | **API reference** — every endpoint, request/response shapes, roles, error codes |
+| 4 | **[`../backend/docs/schema.dbml`](../backend/docs/schema.dbml)** | **DBML diagram** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
+| 5 | **[§24 — Data model](../backend/docs/API-REFERENCE.md#24-data-model)** | **ER diagrams** — the same 31 tables drawn per area, inline on GitHub |
 | 6 | [§19 — Error catalogue](../backend/docs/API-REFERENCE.md#19-error-catalogue) | Every stable error code the UI branches on |
 | 7 | [§22 — Role matrix](../backend/docs/API-REFERENCE.md#22-role-permission-matrix) | Per-endpoint role requirements |
 
