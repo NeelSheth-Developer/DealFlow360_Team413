@@ -424,7 +424,7 @@ function RiskSection() {
         center
         eyebrow="The differentiator"
         title="Why one line can flag an entire quotation"
-        description="A Gold customer is allowed 15%. But Services only permit 10% — so an 18% service discount breaks its own limit even though the headline tier number looks fine. Try it."
+        description="A Gold customer is allowed 15%. But Services only permit 10% — so an 18% service discount breaks its own limit even though the headline tier number looks fine. Here is how the engine scores it."
       />
 
       <div className="mt-10">

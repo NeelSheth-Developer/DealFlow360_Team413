@@ -55,12 +55,19 @@ export function OrderLinesTable({
             in columns twice as wide as they needed. Giving it a floor and letting the
             numeric columns size to their content keeps every name on one or two lines.
           */}
-          <TH className="min-w-[13rem]">Product</TH>
-          <TH align="center" className="w-16 whitespace-nowrap">Qty</TH>
-          <TH align="right" className="w-28 whitespace-nowrap">Unit price</TH>
-          <TH align="center" className="w-24 whitespace-nowrap">Discount</TH>
-          <TH align="right" className="w-32 whitespace-nowrap">Line total</TH>
-          <TH align="right" className="w-24 whitespace-nowrap">Margin</TH>
+          {/*
+            Proportional, not fixed. `min-w-[13rem]` on the product column plus five
+            hard `w-*` columns gave the table a minimum width wider than its track, so
+            it pushed the whole grid sideways instead of scrolling inside its own
+            panel. Percentages let it compress, and `Table` already wraps itself in
+            `overflow-x-auto` for the point where it genuinely cannot.
+          */}
+          <TH className="w-[34%]">Product</TH>
+          <TH align="center" className="whitespace-nowrap">Qty</TH>
+          <TH align="right" className="whitespace-nowrap">Unit price</TH>
+          <TH align="center" className="whitespace-nowrap">Discount</TH>
+          <TH align="right" className="whitespace-nowrap">Line total</TH>
+          <TH align="right" className="whitespace-nowrap">Margin</TH>
           {editable && <TH align="center" className="w-10" />}
         </TR>
       </THead>
