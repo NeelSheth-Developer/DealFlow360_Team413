@@ -19,7 +19,7 @@
 
 | | Link |
 |:--|:--|
-| 🎥 **Demo Video** | <!-- TODO: paste the demo video URL here --> _add link_ |
+| 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
 | 🌐 **Live App** | **<https://dealflow360.teamvector.space>** · <https://deal-flow360-team413.vercel.app> |
 | ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** |
 | 📘 **Project README** | [`../README.md`](../README.md) |
