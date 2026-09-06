@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/glass/Glass';
+import { LoadingBlock } from '@/components/ui/Loading';
 
 /**
  * Two independent identity spaces, two independent guards.
@@ -21,14 +22,8 @@ import { GlassCard } from '@/components/glass/Glass';
 function SessionLoading() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <GlassCard className="flex items-center gap-3 px-5 py-4">
-        <span
-          className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-600"
-          aria-hidden="true"
-        />
-        <p className="text-xs font-semibold text-ink-soft" role="status">
-          Restoring your session…
-        </p>
+      <GlassCard className="px-5 py-4">
+        <LoadingBlock label="Restoring your session…" className="px-0 py-0" />
       </GlassCard>
     </div>
   );

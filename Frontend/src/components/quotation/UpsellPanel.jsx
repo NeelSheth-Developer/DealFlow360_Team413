@@ -6,6 +6,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/Misc';
 import { ProgressBar } from '@/components/ui/Misc';
+import { LoadingBlock } from '@/components/ui/Loading';
 
 /**
  * Ranked upsell / cross-sell suggestions (spec B5).
@@ -18,6 +19,8 @@ export function UpsellPanel({
   dismissed,
   currency,
   disabled,
+  loading = false,
+  error = null,
   onAccept,
   onDismiss,
   onUndoDismiss,
@@ -26,7 +29,20 @@ export function UpsellPanel({
 
   return (
     <div className="flex h-full flex-col">
-      {suggestions.length === 0 ? (
+      {/*
+        Three different facts, three different panels. Ranking is a request now, so
+        "still asking" and "the request failed" both used to collapse into "there are
+        no pairings for this cart" — which is an answer, and the wrong one.
+      */}
+      {loading && suggestions.length === 0 ? (
+        <LoadingBlock label="Ranking suggestions…" size="sm" className="py-10" />
+      ) : error ? (
+        <EmptyState
+          icon={Sparkles}
+          title="Couldn't load suggestions"
+          description={error}
+        />
+      ) : suggestions.length === 0 ? (
         <EmptyState
           icon={Sparkles}
           title="No suggestions right now"

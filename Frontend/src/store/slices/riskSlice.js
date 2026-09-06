@@ -1,4 +1,9 @@
-import { PENDING_RISK, riskInputKey, scoreQuotation, scoreQuotations } from '@/services/riskService';
+import {
+  PENDING_RISK,
+  riskInputKey,
+  scoreQuotation,
+  scoreQuotations,
+} from '@/services/riskService';
 
 /**
  * Cache of server-returned risk scores, keyed by quotation id.
@@ -11,6 +16,22 @@ export function createRiskSlice(set, get) {
   function currentKey(quotation) {
     return riskInputKey(quotation, get().categoryCeilings, get().tierCeilings);
   }
+
+  /**
+   * One batch in flight at a time.
+   *
+   * `loadQuotations` now writes each page of the walk into the store as it lands, so the
+   * list and board screens see the quotation set change four times during a single load.
+   * `useAllRisks` re-runs on each of those, and without this guard the second call would
+   * start before the first had written its results — re-scoring the same rows, because
+   * nothing marks them as in-flight the way `refreshRisk` does for a single quotation.
+   *
+   * The follow-up call is not dropped, only deferred: it awaits the batch already
+   * running and then re-checks what is stale, so rows from the later pages are still
+   * scored. Kept in a closure rather than in the store because it is a concurrency
+   * detail, not state any component should be able to read.
+   */
+  let batchInFlight = null;
 
   return {
     riskCache: {},
@@ -43,11 +64,7 @@ export function createRiskSlice(set, get) {
       }));
 
       try {
-        const result = await scoreQuotation({
-          quotation,
-          categoryCeilings: get().categoryCeilings,
-          tierCeilings: get().tierCeilings,
-        });
+        const result = await scoreQuotation({ quotation });
 
         const entry = {
           ...result,
@@ -79,51 +96,60 @@ export function createRiskSlice(set, get) {
      * quotations costs one request instead of fifteen.
      */
     async refreshAllRisks({ force = false } = {}) {
-      const state = get();
-      const stale = state.quotations.filter((q) => {
-        const cached = state.riskCache[q.id];
-        if (force || !cached) return true;
-        return cached.inputKey !== currentKey(q) || cached.status !== 'ready';
-      });
+      // Wait for any batch already running, then decide what is still stale against the
+      // state it produced.
+      if (batchInFlight) await batchInFlight.catch(() => {});
 
-      if (stale.length === 0) return {};
-
-      const now = new Date().toISOString();
-      const patch = {};
-
-      try {
-        const results = await scoreQuotations({
-          quotations: stale,
-          categoryCeilings: state.categoryCeilings,
-          tierCeilings: state.tierCeilings,
+      const run = (async () => {
+        const state = get();
+        const stale = state.quotations.filter((q) => {
+          const cached = state.riskCache[q.id];
+          if (force || !cached) return true;
+          return cached.inputKey !== currentKey(q) || cached.status !== 'ready';
         });
 
-        for (const quotation of stale) {
-          const result = results[quotation.id];
-          // A quotation the server omitted stays unscored rather than being filled in
-          // with a guess.
-          if (!result) continue;
-          patch[quotation.id] = {
-            ...result,
-            inputKey: currentKey(quotation),
-            status: 'ready',
-            scoredAt: now,
-          };
-        }
-      } catch (error) {
-        for (const quotation of stale) {
-          patch[quotation.id] = {
-            ...PENDING_RISK,
-            inputKey: currentKey(quotation),
-            status: 'error',
-            error: error.message,
-            approvalPath: { approvers: [], ruleId: null, label: 'Score unavailable' },
-          };
-        }
-      }
+        if (stale.length === 0) return {};
 
-      set((s) => ({ riskCache: { ...s.riskCache, ...patch } }));
-      return patch;
+        const now = new Date().toISOString();
+        const patch = {};
+
+        try {
+          const results = await scoreQuotations({ quotations: stale });
+
+          for (const quotation of stale) {
+            const result = results[quotation.id];
+            // A quotation the server omitted stays unscored rather than being filled in
+            // with a guess.
+            if (!result) continue;
+            patch[quotation.id] = {
+              ...result,
+              inputKey: currentKey(quotation),
+              status: 'ready',
+              scoredAt: now,
+            };
+          }
+        } catch (error) {
+          for (const quotation of stale) {
+            patch[quotation.id] = {
+              ...PENDING_RISK,
+              inputKey: currentKey(quotation),
+              status: 'error',
+              error: error.message,
+              approvalPath: { approvers: [], ruleId: null, label: 'Score unavailable' },
+            };
+          }
+        }
+
+        set((s) => ({ riskCache: { ...s.riskCache, ...patch } }));
+        return patch;
+      })();
+
+      batchInFlight = run;
+      try {
+        return await run;
+      } finally {
+        if (batchInFlight === run) batchInFlight = null;
+      }
     },
 
     /**

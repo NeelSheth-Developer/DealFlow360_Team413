@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   CheckCircle2,
-  Loader2,
   Save,
   Send,
   ServerCog,
@@ -11,6 +10,7 @@ import {
 import { explainRisk } from '@/lib/riskEngine';
 import { money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { Spinner } from '@/components/ui/Loading';
 import { GlassCard } from '@/components/glass/Glass';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/Misc';
@@ -135,7 +135,7 @@ export function QuoteSummaryRail({
             Blended risk
           </span>
           {riskLoading ? (
-            <Loader2 className="h-3 w-3 animate-spin text-brand-500" aria-hidden="true" />
+            <Spinner size="xs" className="text-brand-500" />
           ) : (
             <ServerCog className="h-3 w-3 text-ink-muted" aria-hidden="true" />
           )}

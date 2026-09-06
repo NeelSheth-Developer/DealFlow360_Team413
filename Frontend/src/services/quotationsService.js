@@ -47,6 +47,44 @@ export function listQuotations({
   );
 }
 
+/**
+ * 100 is the API's own cap (`listQuotationsQuerySchema`) and, with 100 seeded
+ * quotations, the whole collection in a single request — which is both the fastest
+ * answer and the only exact one, since a one-page read has no boundary for the unstable
+ * `lastActivityAt` sort to lose a row across.
+ *
+ * The fallback exists because this route loads every line, comment and approval step per
+ * row, and a smaller deployment answers 500 for a page that large while handling 25
+ * comfortably. `api.listAll` drops to the smaller size only after the big page actually
+ * fails, so the good case costs one request and the bad case still returns the data.
+ */
+const QUOTATION_PAGE_SIZE = 100;
+const QUOTATION_FALLBACK_PAGE_SIZE = 25;
+
+/**
+ * EVERY matching quotation, not the first page.
+ *
+ * The board, the list and the pipeline value in the header all filter and total client
+ * side, so a partial collection does not show up as a missing page — it shows up as a
+ * smaller pipeline, which is a wrong number rather than an obviously absent one.
+ *
+ * @returns {Promise<{items: Array, meta: Object|null}>}
+ */
+export function listAllQuotations(
+  { stage, ownerId, customerId, tier, search, from, to } = {},
+  { onPage } = {},
+) {
+  return api.listAll(
+    ({ page, pageSize }) =>
+      `/quotations${buildQuery({ stage, ownerId, customerId, tier, search, from, to, page, pageSize })}`,
+    {
+      pageSize: QUOTATION_PAGE_SIZE,
+      fallbackPageSize: QUOTATION_FALLBACK_PAGE_SIZE,
+      onPage,
+    },
+  );
+}
+
 /** The full §11.0 object, including computed `totals`. */
 export function getQuotation(quotationId) {
   return api.get(`/quotations/${encodeURIComponent(quotationId)}`);

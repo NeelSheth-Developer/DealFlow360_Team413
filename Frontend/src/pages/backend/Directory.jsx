@@ -40,6 +40,8 @@ export default function Directory() {
   const teams = useAppStore((s) => s.teams);
   const roles = useAppStore((s) => s.roles);
   const customers = useAppStore((s) => s.customers);
+  const directoryLoading = useAppStore((s) => s.directoryLoading);
+  const customersLoading = useAppStore((s) => s.customersLoading);
   const currentUser = useAppStore((s) => s.currentUser);
 
   const loadUsers = useAppStore((s) => s.loadUsers);
@@ -122,7 +124,7 @@ export default function Directory() {
 
       {/* --------------------------------------------------------- staff */}
       <GlassPanel
-        title={`Internal staff (${users.length})`}
+        title={directoryLoading && users.length === 0 ? 'Loading staff…' : `Internal staff (${users.length})`}
         description="Roles decide which screens and approval steps a person can act on."
         icon={UsersIcon}
         bodyClassName="px-0 py-0 sm:px-0"
@@ -259,7 +261,7 @@ export default function Directory() {
 
       {/* ----------------------------------------------------- customers */}
       <GlassPanel
-        title={`Customers (${customers.length})`}
+        title={customersLoading && customers.length === 0 ? 'Loading customers…' : `Customers (${customers.length})`}
         description="Registered customer organisations and the price list applied to each."
         icon={Building2}
         accent="teal"

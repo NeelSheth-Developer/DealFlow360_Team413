@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { SegmentedControl } from '@/components/ui/Tabs';
 import { Avatar } from '@/components/ui/Misc';
+import { LoadingBlock } from '@/components/ui/Loading';
 import { RiskBadge } from '@/components/shared/RiskGauge';
 import { StaleBadge, TierBadge } from '@/components/shared/Indicators';
 
@@ -83,7 +84,11 @@ export default function Pipeline() {
     <div>
       <PageHeader
         title="Pipeline"
-        description={`${totalCount} deal(s) · ${money(totalValue)} across all stages. Drag a card to change its stage.`}
+        description={
+          isLoading && totalCount === 0
+            ? 'Loading pipeline…'
+            : `${totalCount} deal(s) · ${money(totalValue)} across all stages. Drag a card to change its stage.`
+        }
         actions={
           <>
             <SegmentedControl
@@ -128,14 +133,8 @@ export default function Pipeline() {
         columns render, so say which one this is before drawing seven empty columns.
       */}
       {isLoading && totalCount === 0 && (
-        <GlassCard className="mb-4 flex items-center justify-center gap-3 px-4 py-14">
-          <span
-            className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-600"
-            aria-hidden="true"
-          />
-          <p className="text-xs font-semibold text-ink-soft" role="status">
-            Loading pipeline…
-          </p>
+        <GlassCard className="mb-4">
+          <LoadingBlock label="Loading pipeline…" />
         </GlassCard>
       )}
 

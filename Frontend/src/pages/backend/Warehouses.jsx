@@ -130,9 +130,14 @@ export default function Warehouses() {
                 size="xs"
                 variant="ghost"
                 icon={Zap}
-                onClick={() => {
-                  const result = simulateRestock(w.id);
-                  if (result.restocked === 0) {
+                onClick={async () => {
+                  // `simulateRestock` posts to the server, so it is async: reading
+                  // `.restocked` off the un-awaited Promise gave undefined, which is
+                  // never `=== 0`, so a no-op restock still claimed success.
+                  const result = await simulateRestock(w.id);
+                  if (!result.ok) {
+                    toast.error('Could not restock', { description: result.error });
+                  } else if (!result.restocked) {
                     toast.info(`Nothing below threshold at ${w.name}.`);
                   } else {
                     toast.success(`Restocked ${result.restocked} product(s) at ${w.name}`, {

@@ -25,6 +25,24 @@ export function listInvoices({ status, customerId, quotationId, page = 1, pageSi
   return api.list(`/invoices${buildQuery({ status, customerId, quotationId, page, pageSize })}`);
 }
 
+/**
+ * EVERY matching invoice.
+ *
+ * Each row is the full detail object — its lines, its payments and the balance derived
+ * from them — so this route pays the same per-row cost as GET /quotations and degrades
+ * the same way on a smaller deployment. One page of 100 where the server can build it,
+ * pages of 25 where it cannot.
+ *
+ * @returns {Promise<{items: Array, meta: Object|null}>}
+ */
+export function listAllInvoices({ status, customerId, quotationId } = {}) {
+  return api.listAll(
+    ({ page, pageSize }) =>
+      `/invoices${buildQuery({ status, customerId, quotationId, page, pageSize })}`,
+    { pageSize: 100, fallbackPageSize: 25 },
+  );
+}
+
 export function getInvoice(invoiceId) {
   return api.get(`/invoices/${encodeURIComponent(invoiceId)}`);
 }

@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Settings,
   Sparkles,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
@@ -26,11 +27,23 @@ import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { GradientBlobBackground } from '@/components/glass/Glass';
 import { ConsolidationWatcher } from '@/components/quotation/ConsolidationWatcher';
 
+/**
+ * `roles: null` means everyone. Approvals is gated to the roles that can act on a step
+ * (§12.5 answers a sales_rep with 403), so linking it for a rep would offer them a
+ * screen the router bounces to /403.
+ */
 const NAV = [
-  { to: '/app/quotations', label: 'Quotations', icon: LayoutDashboard },
-  { to: '/app/pipeline', label: 'Pipeline', icon: Kanban },
-  { to: '/app/dashboard', label: 'Deal Health', icon: PieChart },
-  { to: '/app/reports', label: 'Reports', icon: PieChart },
+  { to: '/app/quotations', label: 'Quotations', icon: LayoutDashboard, roles: null },
+  { to: '/app/pipeline', label: 'Pipeline', icon: Kanban, roles: null },
+  {
+    to: '/app/approvals',
+    label: 'Approvals',
+    icon: UserCheck,
+    roles: ['admin', 'sales_manager', 'finance'],
+    badge: 'approvals',
+  },
+  { to: '/app/dashboard', label: 'Deal Health', icon: PieChart, roles: null },
+  { to: '/app/reports', label: 'Reports', icon: PieChart, roles: null },
 ];
 
 export default function WorkspaceLayout() {
@@ -42,6 +55,19 @@ export default function WorkspaceLayout() {
   const logout = useAppStore((s) => s.logout);
 
   const canAccessBackend = useAppStore((s) => s.canAccessBackend);
+
+  /**
+   * The queue is polled alongside notifications so the count in the nav is close to the
+   * truth. A step arrives here because somebody else submitted a quotation, so nothing
+   * on this side knows when one lands.
+   */
+  const approvalQueue = useAppStore((s) => s.approvalQueue);
+  const loadApprovalQueue = useAppStore((s) => s.loadApprovalQueue);
+  const hasRole = useAppStore((s) => s.hasRole);
+  const canApprove = hasRole('admin', 'sales_manager', 'finance');
+  const badgeCounts = { approvals: approvalQueue?.length ?? 0 };
+
+  const visibleNav = NAV.filter((item) => !item.roles || hasRole(...item.roles));
 
   const notifications = useAppStore(selectMyNotifications);
   const loadNotifications = useAppStore((s) => s.loadNotifications);
@@ -63,6 +89,13 @@ export default function WorkspaceLayout() {
     const timer = setInterval(() => loadNotifications(), 60_000);
     return () => clearInterval(timer);
   }, [currentUser, loadNotifications]);
+
+  useEffect(() => {
+    if (!currentUser || !canApprove) return undefined;
+    loadApprovalQueue();
+    const timer = setInterval(() => loadApprovalQueue(), 60_000);
+    return () => clearInterval(timer);
+  }, [currentUser, canApprove, loadApprovalQueue]);
 
   const handleReload = async () => {
     const result = await reloadData();
@@ -88,7 +121,7 @@ export default function WorkspaceLayout() {
           </Link>
 
           <nav aria-label="Workspace" className="ml-2 hidden items-center gap-1 lg:flex">
-            {NAV.map((item) => (
+            {visibleNav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -102,6 +135,11 @@ export default function WorkspaceLayout() {
                 {({ isActive }) => (
                   <>
                     {item.label}
+                    {item.badge && badgeCounts[item.badge] > 0 && (
+                      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-pink px-1 text-[10px] font-bold text-white">
+                        {badgeCounts[item.badge] > 9 ? '9+' : badgeCounts[item.badge]}
+                      </span>
+                    )}
                     {isActive && (
                       <span className="absolute inset-x-2 -bottom-0.5 h-0.5 rounded-full bg-gradient-to-r from-brand-500 to-accent-pink" />
                     )}
@@ -289,7 +327,7 @@ export default function WorkspaceLayout() {
           aria-label="Workspace mobile"
           className="flex items-center gap-1 overflow-x-auto border-t border-brand-500/10 px-4 py-1.5 lg:hidden"
         >
-          {NAV.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -301,6 +339,7 @@ export default function WorkspaceLayout() {
               }
             >
               {item.label}
+              {item.badge && badgeCounts[item.badge] > 0 && ` (${badgeCounts[item.badge]})`}
             </NavLink>
           ))}
           {canAccessBackend() && (

@@ -58,7 +58,17 @@ export function createQuotationSlice(set, get) {
     async loadQuotations(filters = {}) {
       set({ quotationsLoading: true, quotationsError: null });
       try {
-        const { items, meta } = await quotationsApi.listQuotations({ pageSize: 100, ...filters });
+        // Every page, walked in order. This used to ask for `pageSize: 100` in one
+        // request, which this route answers with a 500 every time — it loads every line,
+        // comment and approval step per row — so the store was left empty and every
+        // board, list and pipeline total rendered as if there were no deals at all.
+        //
+        // Each page is written as it lands. The walk takes a few seconds end to end, and
+        // holding the whole thing back would trade one blank screen for a shorter one;
+        // painting incrementally means the first rows are usable while the rest arrive.
+        const { items, meta } = await quotationsApi.listAllQuotations(filters, {
+          onPage: (soFar) => set({ quotations: soFar }),
+        });
         set({ quotations: items, quotationsMeta: meta });
         return { ok: true, items };
       } catch (error) {
@@ -249,14 +259,28 @@ export function createQuotationSlice(set, get) {
       }
     },
 
-    /** My queue — only quotations whose CURRENT step matches my role. */
+    /**
+     * My queue — only quotations whose CURRENT step matches my role.
+     *
+     * `approvalQueue` starts as an empty array rather than undefined so the screen can
+     * distinguish "loaded, nothing waiting" from "not fetched yet" using
+     * `approvalQueueLoading`, and never renders `undefined.length`.
+     */
+    approvalQueue: [],
+    approvalQueueLoading: false,
+    approvalQueueError: null,
+
     async loadApprovalQueue() {
+      set({ approvalQueueLoading: true, approvalQueueError: null });
       try {
         const queue = await approvalsApi.fetchApprovalQueue();
         set({ approvalQueue: queue });
         return { ok: true, queue };
       } catch (error) {
+        set({ approvalQueueError: error.message });
         return fail(error);
+      } finally {
+        set({ approvalQueueLoading: false });
       }
     },
 

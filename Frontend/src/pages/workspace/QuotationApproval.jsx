@@ -13,8 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import { selectAuditForEntity } from '@/store/selectors';
-import { quoteTotals } from '@/lib/pricing';
+import { resolveTotals, selectAuditForEntity } from '@/store/selectors';
 import { canUserActOnApproval, currentPendingStep } from '@/lib/riskEngine';
 import { dateMedium, money, percent, relativeTime, roleLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -69,7 +68,10 @@ export default function QuotationApproval() {
   if (resolving && !quote) return <QuoteLoading />;
   if (missing || !quote) return <Navigate to="/404" replace />;
 
-  const totals = quoteTotals(quote);
+  // Server-authoritative. An approver has to be looking at the same total, margin and
+  // effective discount the record holds — a locally recomputed figure is exactly the
+  // kind of disagreement an approval must not be given against.
+  const totals = resolveTotals(quote);
   const pending = currentPendingStep(quote);
   const canAct = canUserActOnApproval(quote, currentUser);
 

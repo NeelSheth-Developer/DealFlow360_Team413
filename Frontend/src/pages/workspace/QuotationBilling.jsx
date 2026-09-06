@@ -73,7 +73,7 @@ export default function QuotationBilling() {
 
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const result = await previewSubscriptionChange(id, changeTarget.line.id, changeQty);
+      const result = await previewSubscriptionChange(id, changeTarget.lineId, changeQty);
       if (!cancelled) setProration(result.ok ? result.preview : null);
     }, 250);
 
@@ -91,7 +91,7 @@ export default function QuotationBilling() {
     }
 
     let cancelled = false;
-    previewCancellation(id, cancelTarget.line.id).then((result) => {
+    previewCancellation(id, cancelTarget.lineId).then((result) => {
       if (!cancelled) setCancellation(result.ok ? result.preview : null);
     });
 
@@ -106,12 +106,12 @@ export default function QuotationBilling() {
 
   const openChange = (row) => {
     setChangeTarget(row);
-    setChangeQty(row.line.qty);
+    setChangeQty(row.qty);
   };
 
   const handleApplyChange = async () => {
     setBusy(true);
-    const result = await applySubscriptionChange(id, changeTarget.line.id, changeQty);
+    const result = await applySubscriptionChange(id, changeTarget.lineId, changeQty);
     setBusy(false);
     setChangeTarget(null);
 
@@ -125,7 +125,7 @@ export default function QuotationBilling() {
 
   const handleCancel = async () => {
     setBusy(true);
-    const result = await cancelSubscription(id, cancelTarget.line.id);
+    const result = await cancelSubscription(id, cancelTarget.lineId);
     setBusy(false);
     setCancelTarget(null);
 
@@ -149,7 +149,13 @@ export default function QuotationBilling() {
         badge={<StageBadge stage={quote.stage} />}
       />
 
-      <QuoteNav quote={quote} hasInvoice={Boolean(view.invoice)} />
+      {/*
+        GET /quotations/:id/billing returns `invoiceId` and `invoiceReference` — there is
+        no nested `invoice` object on it. Reading `view.invoice` was always undefined, so
+        the Invoice tab never unlocked from here and the "Go to Invoice" action never
+        appeared even once the invoice existed.
+      */}
+      <QuoteNav quote={quote} hasInvoice={Boolean(view.invoiceId)} />
 
       {/* ------------------------------------------------- split summary */}
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -196,10 +202,10 @@ export default function QuotationBilling() {
         accent="brand"
         className="mb-4 border-l-4 border-l-brand-500"
         actions={
-          view.invoice ? (
+          view.invoiceId ? (
             <Link to={`/app/quotations/${id}/invoice`}>
               <Button size="sm" variant="secondary" icon={Wallet}>
-                Go to Invoice
+                {view.invoiceReference ? `Invoice ${view.invoiceReference}` : 'Go to Invoice'}
               </Button>
             </Link>
           ) : null
@@ -224,20 +230,26 @@ export default function QuotationBilling() {
               </TR>
             </THead>
             <TBody>
-              {view.oneTimeRows.map(({ line, total }) => (
-                <TR key={line.id}>
-                  <TD className="font-semibold">{line.productName}</TD>
+              {/*
+                Each row is FLAT — { lineId, productName, qty, unitPrice, discountPct,
+                total }. Destructuring a `line` object off it gave undefined, and
+                `line.id` threw, which took the whole billing screen down rather than
+                just this table.
+              */}
+              {view.oneTimeRows.map((row) => (
+                <TR key={row.lineId}>
+                  <TD className="font-semibold">{row.productName}</TD>
                   <TD align="center" num>
-                    {line.qty}
+                    {row.qty}
                   </TD>
                   <TD align="right" num>
-                    {money(line.unitPrice, view.currency)}
+                    {money(row.unitPrice, view.currency)}
                   </TD>
                   <TD align="right" num className="text-ink-soft">
-                    {line.discountPct}%
+                    {row.discountPct}%
                   </TD>
                   <TD align="right" num className="font-bold">
-                    {money(total, view.currency)}
+                    {money(row.total, view.currency)}
                   </TD>
                 </TR>
               ))}
@@ -277,7 +289,7 @@ export default function QuotationBilling() {
 
               return (
                 <article
-                  key={row.line.id}
+                  key={row.lineId}
                   className={cn(
                     'rounded-xl border border-brand-500/12 bg-white/55 p-4',
                     row.cancelled && 'opacity-60',
@@ -286,7 +298,7 @@ export default function QuotationBilling() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 text-sm font-bold text-ink">
-                        {row.line.productName}
+                        {row.productName}
                         {row.cancelled && (
                           <Badge tone="danger" size="xs">
                             Cancelled
@@ -294,12 +306,17 @@ export default function QuotationBilling() {
                         )}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
+                        {/*
+                          Plan detail is flattened onto the row (`cadence`, `planName`,
+                          `prorationRule`, `cancellationRule`) — there is no nested
+                          `plan` object, so every one of these read undefined.
+                        */}
                         <Badge tone="teal" size="xs">
-                          {cadenceLabel(row.plan?.cadence)}
+                          {cadenceLabel(row.cadence)}
                         </Badge>
-                        <span>{row.plan?.name}</span>
+                        <span>{row.planName}</span>
                         <span>·</span>
-                        <span>{row.line.qty} × {money(row.line.unitPrice, view.currency)}</span>
+                        <span>{row.qty} × {money(row.unitPrice, view.currency)}</span>
                       </div>
                     </div>
 
@@ -308,7 +325,7 @@ export default function QuotationBilling() {
                         {money(row.perCycle, view.currency)}
                       </p>
                       <p className="text-[11px] text-ink-muted">
-                        per {row.plan?.cadence?.replace('ly', '') ?? 'cycle'} ·{' '}
+                        per {row.cadence?.replace('ly', '') ?? 'cycle'} ·{' '}
                         {money(row.annual, view.currency)}/yr
                       </p>
                     </div>
@@ -316,10 +333,10 @@ export default function QuotationBilling() {
 
                   {/* plan rules */}
                   <dl className="mt-3 grid gap-2 rounded-lg bg-brand-500/6 p-2.5 sm:grid-cols-3">
-                    <RuleItem label="Proration" value={prorationRuleLabel(row.plan?.prorationRule)} />
+                    <RuleItem label="Proration" value={prorationRuleLabel(row.prorationRule)} />
                     <RuleItem
                       label="Cancellation"
-                      value={cancellationRuleLabel(row.plan?.cancellationRule)}
+                      value={cancellationRuleLabel(row.cancellationRule)}
                     />
                     <RuleItem
                       label="Next billing"
@@ -430,7 +447,7 @@ export default function QuotationBilling() {
         open={Boolean(changeTarget)}
         onOpenChange={(open) => !open && setChangeTarget(null)}
         title="Change subscription quantity"
-        description={changeTarget?.line.productName}
+        description={changeTarget?.productName}
         size="sm"
         footer={
           <>
@@ -440,7 +457,7 @@ export default function QuotationBilling() {
             <Button
               onClick={handleApplyChange}
               loading={busy}
-              disabled={changeQty === changeTarget?.line.qty}
+              disabled={changeQty === changeTarget?.qty}
             >
               Apply change
             </Button>
@@ -455,7 +472,7 @@ export default function QuotationBilling() {
                   Quantity
                 </p>
                 <p className="mt-0.5 text-xs text-ink-soft">
-                  Currently {changeTarget.line.qty}
+                  Currently {changeTarget.qty}
                 </p>
               </div>
               <QtyStepper value={changeQty} onChange={setChangeQty} min={0} max={999} />
@@ -474,7 +491,8 @@ export default function QuotationBilling() {
               >
                 <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-soft">
                   <Info className="h-3 w-3" aria-hidden="true" />
-                  {prorationRuleLabel(proration.plan?.prorationRule)}
+                  {/* The preview returns `prorationRule` at the top level. */}
+                  {prorationRuleLabel(proration.prorationRule)}
                 </p>
 
                 <p className="mt-2 text-sm leading-relaxed text-ink-soft">
@@ -510,7 +528,7 @@ export default function QuotationBilling() {
         open={Boolean(cancelTarget)}
         onOpenChange={(open) => !open && setCancelTarget(null)}
         title="Cancel this subscription?"
-        description={cancelTarget?.line.productName}
+        description={cancelTarget?.productName}
         size="sm"
         footer={
           <>
@@ -530,7 +548,7 @@ export default function QuotationBilling() {
                 Cancellation rule
               </p>
               <p className="mt-0.5 text-sm font-bold text-ink">
-                {cancellationRuleLabel(cancellation.plan?.cancellationRule)}
+                {cancellationRuleLabel(cancellation.cancellationRule)}
               </p>
             </div>
 

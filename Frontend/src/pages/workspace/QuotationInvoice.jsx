@@ -160,8 +160,13 @@ export default function QuotationInvoice() {
         description: 'The order is now confirmed and the deal closed.',
       });
     } else {
+      // `recordPayment` resolves to { ok, invoice, payment, status, quotationStage,
+      // replayed } — there is no `balances` on it, so `result.balances.balanceRemaining`
+      // threw on every partial payment, right after the money had actually been
+      // recorded. The updated invoice comes back on the result, and its
+      // `balanceRemaining` is derived server-side from the payment rows.
       toast.success('Payment recorded', {
-        description: `${money(result.balances.balanceRemaining, invoice.currency)} still outstanding.`,
+        description: `${money(result.invoice?.balanceRemaining ?? 0, invoice.currency)} still outstanding.`,
       });
     }
   };
@@ -171,7 +176,7 @@ export default function QuotationInvoice() {
   return (
     <div>
       <PageHeader
-        title={`Invoice ${invoice.id}`}
+        title={`Invoice ${invoice.reference ?? invoice.id}`}
         description={`${quote.customerName} · issued ${dateShort(invoice.issueDate)} · due ${dateShort(invoice.dueDate)}`}
         breadcrumbs={[
           { label: 'Quotations', to: '/app/quotations' },
@@ -417,7 +422,10 @@ export default function QuotationInvoice() {
             <div className="mt-3 rounded-xl bg-white/60 p-2.5">
               <p className="text-[11px] text-ink-muted">
                 Bill to <span className="font-semibold text-ink">{invoice.customerName}</span> ·
-                order <span className="num font-semibold text-brand-700">{invoice.quotationId}</span>
+                order{' '}
+                <span className="num font-semibold text-brand-700">
+                  {invoice.quotationReference ?? quote.reference ?? invoice.quotationId}
+                </span>
               </p>
             </div>
           </GlassCard>
