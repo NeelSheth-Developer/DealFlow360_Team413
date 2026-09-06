@@ -64,7 +64,6 @@ const TIMEOUT_MS = (() => {
   const parsed = Number(raw);
   if (Number.isFinite(parsed) && parsed >= MIN_TIMEOUT_MS) return parsed;
 
-  // eslint-disable-next-line no-console
   console.warn(
     `[api] VITE_API_TIMEOUT_MS="${raw}" is not a number of milliseconds >= ${MIN_TIMEOUT_MS}. ` +
       `Falling back to ${DEFAULT_TIMEOUT_MS}ms.`,
@@ -311,7 +310,43 @@ async function rawRequest(method, path, body, withAuth = true, unwrap = true, ex
   return payload;
 }
 
+/**
+ * Server-assigned fields that must never appear in a request body.
+ *
+ * Every write schema is `.strict()`, so one of these in a payload is a 400
+ * FIELD_NOT_ALLOWED and a save that silently does nothing. The failure mode is always
+ * the same: an editor seeds its form with `{ ...entityFromServer }` and hands the whole
+ * thing back, carrying `id`, `createdAt` and whatever else the response happened to
+ * include.
+ *
+ * The services whitelist their own payloads, which is the actual fix. This is the net
+ * underneath it — it costs nothing in production and turns "the backend ignored my
+ * change" into a named warning in the console the moment it is reintroduced.
+ */
+const SERVER_ASSIGNED_KEYS = ['id', 'createdAt', 'updatedAt', 'reference', 'customerId'];
+
+function warnOnServerAssignedKeys(method, path, body) {
+  if (!import.meta.env.DEV) return;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return;
+  if (method === 'GET' || method === 'DELETE') return;
+
+  // `customerId` is legitimately part of POST /quotations, and `reference` never is.
+  const allowed = path === '/quotations' ? ['customerId'] : [];
+  const offenders = SERVER_ASSIGNED_KEYS.filter(
+    (k) => k in body && !allowed.includes(k),
+  );
+  if (offenders.length === 0) return;
+
+  console.warn(
+    `[api] ${method} ${path} is sending server-assigned field(s): ${offenders.join(', ')}. ` +
+      'Request bodies are strict — this will fail with 400 FIELD_NOT_ALLOWED. ' +
+      'Whitelist the payload in the service rather than forwarding the whole entity.',
+  );
+}
+
 async function request(method, path, body, unwrap = true, extraHeaders) {
+  warnOnServerAssignedKeys(method, path, body);
+
   const send = () => withReadRetry(method, () => rawRequest(method, path, body, true, unwrap, extraHeaders));
 
   try {
@@ -410,30 +445,119 @@ async function rawPdfRequest(path) {
     };
   }
 
+  // The reference is the filename when this gets saved rather than opened. It is only
+  // readable because the API lists these two in its CORS `exposedHeaders`; without that
+  // a cross-origin response hides everything outside the safelist and every download
+  // lands as an unnamed blob.
   const blob = await response.blob();
-  return { url: URL.createObjectURL(blob), reference: null, hosted: false, revoke: true };
+  return {
+    url: URL.createObjectURL(blob),
+    reference: response.headers.get('x-document-reference') ?? null,
+    hosted: false,
+    revoke: true,
+  };
+}
+
+/**
+ * Whether a hosted PDF link is actually openable — checked once, then remembered.
+ *
+ * A hosted URL is a promise the API cannot keep on its own. Cloudinary ships with
+ * "Allow delivery of PDF and ZIP files" disabled, and under that setting the upload
+ * SUCCEEDS and returns a real-looking `secure_url` that answers every GET with
+ * `401 · x-cld-error: deny or ACL failure`. The API has no way to know: from its side
+ * the upload worked. The user sees a new tab that fails to load and no error anywhere.
+ *
+ * That is exactly what happened in production, twice — the second time because a merge
+ * reverted the server-side guard. So the client does not take `hosted: true` on trust.
+ * It probes the link once per session and, if the host refuses it, re-requests the same
+ * route with `?stream=1` and opens the bytes instead. The document always exists; only
+ * the delivery route is in doubt.
+ *
+ * `null` = not probed. Latched to `false` only on a definitive HTTP refusal — a thrown
+ * fetch is left unlatched so one flaky moment does not force streaming all session.
+ */
+let hostedPdfDelivers = null;
+
+/** Add `stream=1` to a PDF route, preserving any query it already carries. */
+function streamVariant(path) {
+  return path.includes('?') ? `${path}&stream=1` : `${path}?stream=1`;
+}
+
+/**
+ * HEAD the hosted URL to see whether the browser will be able to open it.
+ *
+ * Cloudinary answers with `access-control-allow-origin: *`, so the status is readable
+ * cross-origin. `undefined` means the question could not be answered — treated as
+ * "assume it works", because failing closed here would push every deployment onto the
+ * streamed path over a transient network error.
+ */
+async function hostedPdfIsDeliverable(url) {
+  try {
+    const response = await fetch(url, { method: 'HEAD', mode: 'cors', credentials: 'omit' });
+    return response.ok;
+  } catch {
+    return undefined;
+  }
 }
 
 async function pdfRequest(path) {
   // A PDF route is a GET, so it gets the same 5xx retry as any other read. Rendering
   // one is the heaviest thing the API does, which is exactly when a transient failure
   // is most likely.
-  const send = () => withReadRetry('GET', () => rawPdfRequest(path));
+  const send = (target) => withReadRetry('GET', () => rawPdfRequest(target));
 
-  try {
-    return await send();
-  } catch (err) {
-    const retryable = err instanceof ApiError && err.status === 401 && getRefreshToken();
-    if (!retryable) throw err;
-
+  const fetchOnce = async (target) => {
     try {
-      await refreshTokens();
-    } catch {
-      clearAuthTokens();
-      throw new ApiError('Your session has expired. Please sign in again.', 401, 'SESSION_EXPIRED', null);
+      return await send(target);
+    } catch (err) {
+      const retryable = err instanceof ApiError && err.status === 401 && getRefreshToken();
+      if (!retryable) throw err;
+
+      try {
+        await refreshTokens();
+      } catch {
+        clearAuthTokens();
+        throw new ApiError('Your session has expired. Please sign in again.', 401, 'SESSION_EXPIRED', null);
+      }
+      return send(target);
     }
-    return send();
+  };
+
+  // Known-bad host: skip the round trip that would only hand back a dead link.
+  if (hostedPdfDelivers === false) return fetchOnce(streamVariant(path));
+
+  const result = await fetchOnce(path);
+  if (!result.hosted || !result.url) return result;
+
+  if (hostedPdfDelivers === true) return result;
+
+  const deliverable = await hostedPdfIsDeliverable(result.url);
+  if (deliverable === true) {
+    hostedPdfDelivers = true;
+    return result;
   }
+  if (deliverable === undefined) return result;
+
+  console.warn(
+    `[api] The document host refused to serve ${result.url}. Falling back to streaming the file from the API. ` +
+      'Enable "Allow delivery of PDF and ZIP files" in the Cloudinary account to restore hosted links.',
+  );
+  hostedPdfDelivers = false;
+
+  const streamed = await fetchOnce(streamVariant(path));
+
+  // An API too old to know about `?stream=1` ignores it and returns the same dead link.
+  // Opening it would show the customer a browser error page with no explanation, so this
+  // surfaces as a real failure the UI can put in a toast instead.
+  if (streamed.hosted) {
+    throw new ApiError(
+      'The document was generated but the file host refused to serve it.',
+      502,
+      'PDF_NOT_DELIVERABLE',
+      null,
+    );
+  }
+  return streamed;
 }
 
 /**

@@ -1,67 +1,69 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { computeBlendedRisk, resolveApprovalPath } from '@/lib/riskEngine';
+import { AlertTriangle, CheckCircle2, FileCheck2 } from 'lucide-react';
 import { money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '@/components/glass/Glass';
 import { RiskGauge } from '@/components/shared/RiskGauge';
-import { Slider } from '@/components/ui/Misc';
+import { formatScore } from '@/lib/riskEngine';
 import { Badge } from '@/components/ui/Badge';
 
 /**
- * The interactive version of the worked example from the problem statement.
+ * The worked example from the problem statement, on the marketing page.
  *
- * Uses the exact same `computeBlendedRisk` and `resolveApprovalPath` functions
- * the real application uses, so what a visitor plays with here is genuinely the
- * production engine rather than a mock-up.
+ * STATIC ON PURPOSE, AND ONLY HERE. This used to be a live widget: two sliders that
+ * POSTed to `/risk/blended-score` on every move. That route is `requireAuth` +
+ * `requireKind('staff')`, so the one audience this page has — a signed-out visitor —
+ * could never call it. The panel fell back to its empty state and the landing page
+ * advertised the risk engine with `0.00 PTS OVER`, an all-dashes table and "Not scored".
+ *
+ * Scoring it in the browser instead is not an option: that is a second implementation of
+ * a rule the server owns, and the two could only agree by accident. So the numbers below
+ * are neither computed nor fetched — they are the response the deployed engine actually
+ * returned for exactly these inputs, frozen into the page:
+ *
+ *   POST /risk/blended-score  { customerTier: 'gold', lines: [hardware 12%, service 18%] }
+ *   -> { blended_score: 1.26,
+ *        flagged_lines: [{ line_id: 'demo-sv', effective_ceiling: 10, overage: 8 }],
+ *        requires_approval: true }
+ *
+ * If the ceilings or the weighting ever change, this figure goes stale — which is the
+ * honest trade for a page that has no session. It is a printed illustration, so it is
+ * built like one: no fetch, no state, nothing to drag. THE LIVE ENGINE STILL DRIVES
+ * EVERY IN-APP SURFACE; nothing outside this file changed.
  */
 
-const CATEGORY_CEILINGS = { hardware: 15, service: 10 };
 const TIER_CEILING = 15; // Gold
 
-const APPROVAL_CHAIN = [
-  { id: 'auto', minScore: -1, maxScore: 0, approvers: [], singleLineTrip: null },
-  { id: 'mgr', minScore: 0, maxScore: 5, approvers: ['sales_manager'], singleLineTrip: 5 },
-  { id: 'fin', minScore: 5, maxScore: null, approvers: ['sales_manager', 'finance'], singleLineTrip: 12 },
+/** Verified against the deployed engine — see the block comment above. */
+const BLENDED_SCORE = 1.26;
+
+const LINES = [
+  {
+    id: 'demo-hw',
+    name: 'Laptop Pro 14',
+    categoryLabel: 'Hardware',
+    listPrice: 100000,
+    givenPct: 12,
+    ceilingPct: 15,
+    overBy: 0,
+  },
+  {
+    id: 'demo-sv',
+    name: 'Setup Service',
+    categoryLabel: 'Service',
+    listPrice: 20000,
+    givenPct: 18,
+    ceilingPct: 10,
+    overBy: 8,
+  },
 ];
 
+const VIOLATIONS = LINES.filter((l) => l.overBy > 0).length;
+
 export function RiskEngineDemo() {
-  const [hardwareDiscount, setHardwareDiscount] = useState(12);
-  const [serviceDiscount, setServiceDiscount] = useState(18);
-
-  const lines = useMemo(
-    () => [
-      {
-        id: 'demo-hw',
-        productName: 'Laptop Pro 14',
-        category: 'hardware',
-        qty: 1,
-        unitPrice: 100000,
-        discountPct: hardwareDiscount,
-      },
-      {
-        id: 'demo-sv',
-        productName: 'Setup Service',
-        category: 'service',
-        qty: 1,
-        unitPrice: 20000,
-        discountPct: serviceDiscount,
-      },
-    ],
-    [hardwareDiscount, serviceDiscount],
-  );
-
-  const risk = useMemo(
-    () => computeBlendedRisk(lines, CATEGORY_CEILINGS, TIER_CEILING, 0),
-    [lines],
-  );
-
-  const path = useMemo(() => resolveApprovalPath(risk, APPROVAL_CHAIN), [risk]);
-
   return (
     <GlassCard strong className="overflow-hidden">
       <div className="grid gap-0 lg:grid-cols-[1fr_auto]">
-        {/* ----------------------------------------------------- controls */}
+        {/* ----------------------------------------------------- the example */}
         <div className="border-b border-brand-500/12 p-5 lg:border-b-0 lg:border-r">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge tone="warning">Gold customer</Badge>
@@ -84,22 +86,9 @@ export function RiskEngineDemo() {
           </div>
 
           <div className="space-y-5">
-            <LineControl
-              name="Laptop Pro 14"
-              categoryLabel="Hardware"
-              value={hardwareDiscount}
-              onChange={setHardwareDiscount}
-              ceiling={CATEGORY_CEILINGS.hardware}
-              lineValue={100000}
-            />
-            <LineControl
-              name="Setup Service"
-              categoryLabel="Service"
-              value={serviceDiscount}
-              onChange={setServiceDiscount}
-              ceiling={CATEGORY_CEILINGS.service}
-              lineValue={20000}
-            />
+            {LINES.map((line) => (
+              <LineReadout key={line.id} line={line} />
+            ))}
           </div>
 
           {/* ---------------------------------------------- breakdown */}
@@ -122,46 +111,49 @@ export function RiskEngineDemo() {
                 </tr>
               </thead>
               <tbody>
-                {risk.lineBreakdown.map((row) => (
-                  <tr
-                    key={row.lineId}
-                    className={cn(
-                      'border-t border-brand-500/10',
-                      row.isViolation && 'bg-state-danger/6',
-                    )}
-                  >
-                    <td className="px-3 py-2 font-semibold text-ink">
-                      <span className="flex items-center gap-1.5">
-                        {row.isViolation ? (
-                          <AlertTriangle
-                            className="h-3 w-3 shrink-0 text-state-danger"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <CheckCircle2
-                            className="h-3 w-3 shrink-0 text-state-success"
-                            aria-hidden="true"
-                          />
-                        )}
-                        {row.productName}
-                      </span>
-                    </td>
-                    <td className="num px-2 py-2 text-right font-semibold text-ink">
-                      {percent(row.givenPct, 0)}
-                    </td>
-                    <td className="num px-2 py-2 text-right text-ink-muted">
-                      {percent(row.ceilingPct, 0)}
-                    </td>
-                    <td
+                {LINES.map((line) => {
+                  const isViolation = line.overBy > 0;
+                  return (
+                    <tr
+                      key={line.id}
                       className={cn(
-                        'num px-3 py-2 text-right font-bold',
-                        row.isViolation ? 'text-state-danger' : 'text-state-success',
+                        'border-t border-brand-500/10',
+                        isViolation && 'bg-state-danger/6',
                       )}
                     >
-                      {row.overBy > 0 ? `+${row.overBy.toFixed(1)}` : '—'}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-3 py-2 font-semibold text-ink">
+                        <span className="flex items-center gap-1.5">
+                          {isViolation ? (
+                            <AlertTriangle
+                              className="h-3 w-3 shrink-0 text-state-danger"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <CheckCircle2
+                              className="h-3 w-3 shrink-0 text-state-success"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {line.name}
+                        </span>
+                      </td>
+                      <td className="num px-2 py-2 text-right font-semibold text-ink">
+                        {percent(line.givenPct, 0)}
+                      </td>
+                      <td className="num px-2 py-2 text-right text-ink-muted">
+                        {percent(line.ceilingPct, 0)}
+                      </td>
+                      <td
+                        className={cn(
+                          'num px-3 py-2 text-right font-bold',
+                          isViolation ? 'text-state-danger' : 'text-state-success',
+                        )}
+                      >
+                        {isViolation ? `+${line.overBy.toFixed(1)}` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot className="border-t-2 border-brand-500/20 bg-brand-50/70">
                 <tr>
@@ -169,7 +161,7 @@ export function RiskEngineDemo() {
                     Value-weighted blended score
                   </td>
                   <td className="num px-3 py-2 text-right font-extrabold text-brand-700">
-                    {risk.score.toFixed(2)}
+                    {formatScore(BLENDED_SCORE)}
                   </td>
                 </tr>
               </tfoot>
@@ -177,54 +169,44 @@ export function RiskEngineDemo() {
           </div>
 
           <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
-            Weighted overage {money(risk.weightedOverage, 'INR')} ÷ order value{' '}
-            {money(risk.totalValue, 'INR')} = {risk.score.toFixed(2)} points. Worst single line is{' '}
-            {risk.worstSingleOverage.toFixed(1)} points over, which is what triggers escalation even
-            when the blend looks mild.
+            Each line is measured against the stricter of its category ceiling and the
+            customer&apos;s tier ceiling. Overages are weighted by line value, so a small
+            violation on a large line matters more than a large one on a trivial line —
+            and a single badly-over line escalates the order on its own.
           </p>
         </div>
 
         {/* ------------------------------------------------------ verdict */}
         <div className="flex w-full flex-col items-center justify-center gap-4 bg-white/40 p-6 lg:w-72">
-          <RiskGauge score={risk.score} size="md" />
+          <RiskGauge score={BLENDED_SCORE} size="md" />
+
+          {/*
+            Says what this is. The old badge reported a live connection state and, for
+            everyone who can actually see this page, that state was always the failure
+            one — "Sign in to run the live engine" stamped across a marketing panel.
+          */}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-500/10 px-2.5 py-1 text-center text-[10px] font-semibold text-brand-700">
+            <FileCheck2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+            Worked example
+          </span>
 
           <div className="w-full space-y-2">
             <p className="text-center text-[11px] font-bold uppercase tracking-wider text-ink-muted">
               Routes to
             </p>
-            <div
-              className={cn(
-                'rounded-xl border px-3 py-2.5 text-center',
-                path.approvers.length === 0
-                  ? 'border-state-success/30 bg-state-success/10'
-                  : path.approvers.length === 1
-                    ? 'border-accent-amber/35 bg-accent-amber/12'
-                    : 'border-state-danger/30 bg-state-danger/10',
-              )}
-            >
-              <p
-                className={cn(
-                  'text-sm font-extrabold',
-                  path.approvers.length === 0
-                    ? 'text-state-success'
-                    : path.approvers.length === 1
-                      ? 'text-accent-amber'
-                      : 'text-state-danger',
-                )}
-              >
-                {path.label}
-              </p>
+            <div className="rounded-xl border border-accent-amber/35 bg-accent-amber/12 px-3 py-2.5 text-center">
+              <p className="text-sm font-extrabold text-accent-amber">Needs review</p>
               <p className="mt-0.5 text-[11px] text-ink-soft">
-                {path.approvers.length === 0
-                  ? 'No review needed'
-                  : `${path.approvers.length} approver${path.approvers.length > 1 ? 's' : ''} required`}
+                {VIOLATIONS === 1
+                  ? '1 line is over its category ceiling'
+                  : `${VIOLATIONS} lines are over their category ceilings`}
               </p>
             </div>
           </div>
 
           <p className="text-center text-[11px] leading-relaxed text-ink-muted">
-            Drag either slider. This is the same scoring function the live app runs on every
-            keystroke.
+            These are the figures the governance service returns for this order. Inside the
+            app it re-scores on every keystroke, against your own tiers and ceilings.
           </p>
         </div>
       </div>
@@ -232,29 +214,44 @@ export function RiskEngineDemo() {
   );
 }
 
-function LineControl({ name, categoryLabel, value, onChange, ceiling, lineValue }) {
-  const over = value > ceiling;
+/**
+ * One line of the example: the discount it was given, drawn on the same 0–30 track the
+ * in-app slider uses so the picture is unchanged, minus the handle you could drag.
+ */
+function LineReadout({ line }) {
+  const over = line.overBy > 0;
+  const fill = Math.min(100, (line.givenPct / 30) * 100);
+
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-ink">{name}</span>
-          <Badge tone={categoryLabel === 'Hardware' ? 'indigo' : 'pink'} size="xs">
-            {categoryLabel}
+          <span className="text-sm font-bold text-ink">{line.name}</span>
+          <Badge tone={line.categoryLabel === 'Hardware' ? 'indigo' : 'pink'} size="xs">
+            {line.categoryLabel}
           </Badge>
         </div>
-        <span className="num text-xs text-ink-muted">{money(lineValue, 'INR')} list</span>
+        <span className="num text-xs text-ink-muted">{money(line.listPrice, 'INR')} list</span>
       </div>
 
-      <Slider
-        value={value}
-        onValueChange={onChange}
-        min={0}
-        max={30}
-        step={1}
-        label={`${name} discount`}
-        valueLabel={`${value}%`}
-      />
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-ink-soft">{line.name} discount</span>
+          <span className="num text-xs font-bold text-brand-700">{line.givenPct}%</span>
+        </div>
+        <div className="relative flex h-5 w-full items-center">
+          <div className="relative h-1.5 w-full rounded-full bg-brand-500/15">
+            <div
+              className="absolute h-full rounded-full bg-gradient-to-r from-brand-500 to-accent-indigo"
+              style={{ width: `${fill}%` }}
+            />
+          </div>
+          <div
+            className="absolute h-4 w-4 -translate-x-1/2 rounded-full border-2 border-brand-500 bg-white shadow"
+            style={{ left: `${fill}%` }}
+          />
+        </div>
+      </div>
 
       <p
         className={cn(
@@ -263,8 +260,8 @@ function LineControl({ name, categoryLabel, value, onChange, ceiling, lineValue 
         )}
       >
         {over
-          ? `${(value - ceiling).toFixed(0)} pts over the ${ceiling}% ${categoryLabel.toLowerCase()} ceiling`
-          : `Within the ${ceiling}% ${categoryLabel.toLowerCase()} ceiling`}
+          ? `${line.overBy.toFixed(0)} pts over the ${line.ceilingPct}% ${line.categoryLabel.toLowerCase()} ceiling`
+          : `Within the ${line.ceilingPct}% ${line.categoryLabel.toLowerCase()} ceiling`}
       </p>
     </div>
   );

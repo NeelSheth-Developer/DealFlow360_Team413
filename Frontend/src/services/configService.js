@@ -97,7 +97,13 @@ export function createApprovalRule({
 
 /** Replaced wholesale, not patched, so a partial update cannot half-edit a band. */
 export function updateApprovalRule(ruleId, payload) {
-  return api.put(`/config/approval-chain/${encodeURIComponent(ruleId)}`, payload);
+  // `approvalRuleSchema` is strict and the row editor spreads the server's rule object,
+  // which carries `id` and `sortOrder`. Only the five writable fields go out.
+  const body = {};
+  for (const key of ['minScore', 'maxScore', 'approvers', 'singleLineTrip', 'note']) {
+    if (payload[key] !== undefined) body[key] = payload[key];
+  }
+  return api.put(`/config/approval-chain/${encodeURIComponent(ruleId)}`, body);
 }
 
 /**

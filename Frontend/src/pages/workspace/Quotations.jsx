@@ -158,7 +158,7 @@ export default function Quotations() {
                 <TH align="center">Risk</TH>
                 <TH>Stage</TH>
                 <TH>Owner</TH>
-                <TH align="right">Activity</TH>
+                <TH align="center">Activity</TH>
               </TR>
             </THead>
             <TBody>
@@ -198,8 +198,8 @@ export default function Quotations() {
                       <span className="text-xs text-ink-soft">{row.ownerName}</span>
                     </div>
                   </TD>
-                  <TD align="right">
-                    <div className="flex items-center justify-end gap-1.5">
+                  <TD align="center">
+                    <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
                       <StaleBadge days={row.idleDays} threshold={stallThreshold} />
                       <RelativeTime value={row.lastActivityAt} className="text-ink-muted" />
                     </div>

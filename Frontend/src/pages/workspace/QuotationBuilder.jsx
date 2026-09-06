@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { toast } from 'sonner';
+import { notify, toast } from '@/lib/notify';
 import {
   Building2,
+  Download,
   MessageSquare,
   Package,
   ShoppingCart,
@@ -21,9 +22,11 @@ import { approvalPathLabel } from '@/lib/riskEngine';
 import { isEditable } from '@/lib/stageMachine';
 import { cn } from '@/lib/utils';
 import { dateShort } from '@/lib/format';
+import { openPdfResult } from '@/lib/openPdf';
 import { useRisk } from '@/hooks/useRisk';
 import { useQuotation } from '@/hooks/useQuotation';
 import { useUpsellSuggestions } from '@/hooks/useUpsell';
+import { useBlendedPreview } from '@/hooks/useBlendedPreview';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/Button';
@@ -58,7 +61,6 @@ export default function QuotationBuilder() {
   const addLine = useAppStore((s) => s.addLine);
   const updateLine = useAppStore((s) => s.updateLine);
   const removeLine = useAppStore((s) => s.removeLine);
-  const setOrderDiscount = useAppStore((s) => s.setOrderDiscount);
   const setQuoteMeta = useAppStore((s) => s.setQuoteMeta);
   const submitForApproval = useAppStore((s) => s.submitForApproval);
   const sendToCustomer = useAppStore((s) => s.sendToCustomer);
@@ -66,9 +68,11 @@ export default function QuotationBuilder() {
   const dismissSuggestion = useAppStore((s) => s.dismissSuggestion);
   const undoDismiss = useAppStore((s) => s.undoDismiss);
   const assignOwner = useAppStore((s) => s.assignOwner);
+  const quotationPdf = useAppStore((s) => s.quotationPdf);
   const canAssign = useAppStore((s) => s.canAssignQuotations());
   const reps = useAppStore((s) => s.users.filter((u) => ['sales_rep', 'sales_manager'].includes(u.role)));
 
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [showUpsell, setShowUpsell] = useState(true);
   const [requestsOpen, setRequestsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -83,6 +87,10 @@ export default function QuotationBuilder() {
     loading: suggestionsLoading,
     error: suggestionsError,
   } = useUpsellSuggestions(id);
+
+  // Stateless live score (POST /risk/blended-score) so the rail reacts to a typed
+  // discount immediately, while the authoritative re-score is still in flight.
+  const { preview } = useBlendedPreview(quote);
 
   // "Still loading" and "does not exist" are different answers — only the second
   // redirects. A deep link or hard refresh renders before any list has arrived.
@@ -152,6 +160,14 @@ export default function QuotationBuilder() {
     }
   };
 
+  const handleDownloadPdf = async () => {
+    setPdfBusy(true);
+    const result = await quotationPdf(id);
+    setPdfBusy(false);
+    if (result.ok) openPdfResult(result);
+    else toast.error('Could not open the PDF', { description: result.error });
+  };
+
   const handleSend = async () => {
     // `sendToCustomer` is async. Without the await this read `.ok` off a Promise, which
     // is undefined — so a successful share always reported `toast.error(undefined)`.
@@ -205,6 +221,18 @@ export default function QuotationBuilder() {
               </Button>
             ) : null}
 
+            {/* §11.15. Rendered server-side with no costs, margins or risk data on it,
+                so it is the document a rep can send as-is. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Download}
+              loading={pdfBusy}
+              onClick={handleDownloadPdf}
+            >
+              PDF
+            </Button>
+
             <Button
               variant={showUpsell ? 'subtle' : 'secondary'}
               size="sm"
@@ -232,17 +260,47 @@ export default function QuotationBuilder() {
       <div
         className={cn(
           'grid gap-4',
+          /*
+            Order lines is the screen's subject, so it gets the elastic column and the
+            other three are pinned narrow. Previously the catalogue, the suggestion rail
+            and the summary took a fixed 900px between them, leaving the table itself
+            squeezed enough that product names wrapped to three lines and the totals row
+            scrolled sideways.
+          */
+          /*
+            EVERY TRACK IS minmax(0, …).
+            A grid item's automatic minimum size is its min-content width, so a track
+            whose content is wider than its declared size does not shrink — it overflows
+            and lands on top of its neighbour. That is what crushed this layout: the side
+            columns were pinned narrower than the cards inside them could go.
+            `minmax(0, Npx)` lets each one give way, and `min-w-0` on the panels
+            themselves (below) lets their contents do the same.
+          */
           showUpsell
-            ? 'xl:grid-cols-[280px_minmax(0,1fr)_300px_320px]'
-            : 'xl:grid-cols-[300px_minmax(0,1fr)_340px]',
+            ? 'xl:grid-cols-[minmax(0,264px)_minmax(0,1fr)_minmax(0,292px)_minmax(0,308px)]'
+            : 'xl:grid-cols-[minmax(0,276px)_minmax(0,1fr)_minmax(0,320px)]',
         )}
       >
         {/* --------------------------------------------------- catalog */}
         <GlassPanel
           title="Catalog"
           icon={Package}
-          className="xl:sticky xl:top-24 xl:max-h-[calc(100vh-8rem)]"
-          bodyClassName="flex flex-col xl:max-h-[calc(100vh-12rem)]"
+          /*
+            THE SCROLL CHAIN, and why the previous version could not work:
+             · `self-start` — a grid item defaults to `stretch`, so this column grew to
+               the height of the tallest one. A sticky element that already fills its
+               container has nothing to stick against.
+             · `flex flex-col` + `max-h` — gives the section a real height budget and
+               lets the body claim what the header does not use.
+             · the body is `flex-1 min-h-0`, so the list inside it inherits a DEFINITE
+               height. Before, the body had only `max-height`, and `h-full` on the child
+               resolved against an indefinite parent — which computes to `auto`, so
+               `overflow-y-auto` had nothing to overflow.
+            `xl:` throughout because that is where the grid actually becomes columns;
+            below it the layout stacks and a short scrolling box would be worse.
+          */
+          className="min-w-0 xl:sticky xl:top-24 xl:flex xl:max-h-[calc(100vh-7rem)] xl:flex-col xl:self-start"
+          bodyClassName="flex min-h-0 flex-col xl:flex-1 xl:overflow-hidden"
         >
           <CatalogPanel
             items={catalog}
@@ -254,10 +312,19 @@ export default function QuotationBuilder() {
 
         {/* ----------------------------------------------- order lines */}
         <div className="min-w-0 space-y-4">
+          {/*
+            THE SUBJECT OF THE SCREEN, and now weighted like it.
+
+            The three side columns are pinned as narrow as their content allows so this
+            one keeps every remaining pixel, and `strong` + the accent edge lift it out of
+            the row of equal-looking glass panels it used to sit in.
+          */}
           <GlassPanel
+            strong
             title="Order lines"
             description={`${quote.lines.length} line(s) · ${totals.oneTimeCount} one-time, ${totals.recurringCount} recurring`}
             icon={ShoppingCart}
+            className="min-w-0 border-l-4 border-l-brand-500 shadow-glass-strong"
             bodyClassName="px-0 py-0 sm:px-0"
           >
             <OrderLinesTable
@@ -265,52 +332,90 @@ export default function QuotationBuilder() {
               plans={plans}
               ceilingFor={ceilingFor}
               editable={editable}
-              onQtyChange={(lineId, qty) => updateLine(id, lineId, { qty })}
-              onDiscountChange={(lineId, discountPct) =>
-                updateLine(id, lineId, { discountPct: Math.max(0, Math.min(100, discountPct)) })
-              }
-              onPriceChange={(lineId, unitPrice) => updateLine(id, lineId, { unitPrice })}
-              onRemove={(lineId) => removeLine(id, lineId)}
+              /* A rejected line edit — 409 STAGE_LOCKED being the common one — used to
+                 revert silently, so the field simply snapped back with no explanation. */
+              onQtyChange={async (lineId, qty) => {
+                const r = await updateLine(id, lineId, { qty });
+                if (!r.ok) notify.report(r, null, 'Could not update the quantity');
+              }}
+              onDiscountChange={async (lineId, discountPct) => {
+                const r = await updateLine(id, lineId, {
+                  discountPct: Math.max(0, Math.min(100, discountPct)),
+                });
+                if (!r.ok) notify.report(r, null, 'Could not update the discount');
+              }}
+              onPriceChange={async (lineId, unitPrice) => {
+                const r = await updateLine(id, lineId, { unitPrice });
+                if (!r.ok) notify.report(r, null, 'Could not update the price');
+              }}
+              onRemove={async (lineId) => {
+                const r = await removeLine(id, lineId);
+                notify.report(r, { title: 'Line removed' }, 'Could not remove the line');
+              }}
             />
           </GlassPanel>
 
           {/* ------------------------------------ order-level controls */}
           <GlassPanel title="Order-level terms" icon={StickyNote} accent="indigo">
+            {/*
+              EVERY FIELD HERE COMMITS ON BLUR, not on change.
+
+              These were wired straight to the store, so each one PATCHed the quotation on
+              every keystroke: typing a paragraph of internal notes fired a request per
+              character, and the value that stuck was whichever response landed last —
+              routinely a truncated prefix of what was typed. That is the "I saved it and
+              the backend didn't update" case on this screen.
+
+              The order discount additionally re-scores risk and rewrites every line's
+              effective discount server-side, so per-keystroke was expensive as well as
+              wrong.
+            */}
+            {/*
+              ORDER DISCOUNT IS NOT EDITED HERE.
+
+              Removed at the product owner's direction. It stays on the record — the
+              summary rail still shows the amount it takes off, and it is still part of
+              the blended risk score — but this card no longer offers it as a field.
+              `PATCH /quotations/:id` still accepts `orderDiscountPct`, so nothing about
+              the API changed; the control is simply gone from this surface.
+            */}
             <div className="grid gap-3.5 sm:grid-cols-2">
-              <Input
-                label="Order discount"
-                type="number"
-                min={0}
-                max={100}
-                suffix="%"
-                disabled={!editable}
-                value={quote.orderDiscountPct}
-                onChange={(e) => setOrderDiscount(id, Number(e.target.value))}
-                hint="Applied on top of line discounts. Included in the risk score."
-              />
               <Input
                 label="Promised delivery date"
                 type="date"
                 disabled={!editable}
-                value={quote.promisedDeliveryDate ?? ''}
-                onChange={(e) => setQuoteMeta(id, { promisedDeliveryDate: e.target.value })}
+                defaultValue={quote.promisedDeliveryDate ?? ''}
+                onBlur={async (e) => {
+                  const next = e.target.value || null;
+                  if (next === (quote.promisedDeliveryDate ?? null)) return;
+                  const r = await setQuoteMeta(id, { promisedDeliveryDate: next });
+                  if (!r.ok) notify.report(r, null, 'Could not save the delivery date');
+                }}
                 hint="Delivery slippage alerts compare against this."
               />
               <Textarea
                 label="Internal notes"
                 rows={3}
                 disabled={!editable}
-                value={quote.internalNotes}
+                defaultValue={quote.internalNotes ?? ''}
                 placeholder="Context for approvers — never shown to the customer."
-                onChange={(e) => setQuoteMeta(id, { internalNotes: e.target.value })}
+                onBlur={async (e) => {
+                  if (e.target.value === (quote.internalNotes ?? '')) return;
+                  const r = await setQuoteMeta(id, { internalNotes: e.target.value });
+                  if (!r.ok) notify.report(r, null, 'Could not save the notes');
+                }}
               />
               <Textarea
                 label="Customer-visible terms"
                 rows={3}
                 disabled={!editable}
-                value={quote.customerTerms}
+                defaultValue={quote.customerTerms ?? ''}
                 placeholder="Shown on the portal and the invoice PDF."
-                onChange={(e) => setQuoteMeta(id, { customerTerms: e.target.value })}
+                onBlur={async (e) => {
+                  if (e.target.value === (quote.customerTerms ?? '')) return;
+                  const r = await setQuoteMeta(id, { customerTerms: e.target.value });
+                  if (!r.ok) notify.report(r, null, 'Could not save the terms');
+                }}
               />
             </div>
 
@@ -377,8 +482,8 @@ export default function QuotationBuilder() {
             description="Ranked by co-purchase strength, promotion and margin."
             icon={Sparkles}
             accent="pink"
-            className="xl:sticky xl:top-24 xl:max-h-[calc(100vh-8rem)]"
-            bodyClassName="flex flex-col xl:max-h-[calc(100vh-13rem)]"
+            className="min-w-0 xl:sticky xl:top-24 xl:flex xl:max-h-[calc(100vh-7rem)] xl:flex-col xl:self-start"
+            bodyClassName="flex min-h-0 flex-col xl:flex-1 xl:overflow-hidden"
           >
             <UpsellPanel
               suggestions={suggestions}
@@ -402,14 +507,17 @@ export default function QuotationBuilder() {
                   toast.error('Could not add that suggestion', { description: result.error });
                 }
               }}
-              onDismiss={(productId) => dismissSuggestion(id, productId)}
+              onDismiss={async (productId) => {
+                const r = await dismissSuggestion(id, productId);
+                if (!r.ok) notify.report(r, null, 'Could not dismiss that suggestion');
+              }}
               onUndoDismiss={(productId) => undoDismiss(id, productId)}
             />
           </GlassPanel>
         )}
 
         {/* --------------------------------------------------- summary */}
-        <div className="xl:sticky xl:top-24 xl:self-start">
+        <div className="min-w-0 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
           <QuoteSummaryRail
             quote={quote}
             totals={totals}
@@ -419,12 +527,8 @@ export default function QuotationBuilder() {
             busy={busy}
             riskLoading={riskLoading}
             riskIsFallback={isFallback}
+            preview={preview}
             onSubmit={handleSubmit}
-            onSaveDraft={() =>
-              toast.success('Draft saved', {
-                description: 'Everything you change is saved as you go in this build.',
-              })
-            }
             onSendToCustomer={handleSend}
           />
         </div>

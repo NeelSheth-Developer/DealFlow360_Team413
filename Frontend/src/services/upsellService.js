@@ -48,9 +48,13 @@ export function createUpsellRule({
  * rule rather than create a new pairing.
  */
 export function updateUpsellRule(ruleId, patch = {}) {
-  const body = { ...patch };
-  delete body.triggerProductId;
-  delete body.suggestedProductId;
+  // Whitelisted against `updateUpsellRuleSchema`. The row editor seeds from the server's
+  // rule object, so `id`, `triggerProductName` and `suggestedProductName` came back with
+  // it and a `.strict()` body rejected the lot with 400 FIELD_NOT_ALLOWED.
+  const body = {};
+  for (const key of ['coPurchaseScore', 'promoted', 'minMarginPct', 'active']) {
+    if (patch[key] !== undefined) body[key] = patch[key];
+  }
   return api.put(`/upsell-rules/${encodeURIComponent(ruleId)}`, body);
 }
 

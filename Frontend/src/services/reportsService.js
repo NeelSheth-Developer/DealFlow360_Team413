@@ -114,6 +114,19 @@ export function notificationRoute(notification) {
   const id = notification?.entityId;
   if (!id) return '/app/dashboard';
 
+  /*
+   * `view` alone is not enough — `entityType` decides what kind of id this is.
+   *
+   * A `{ entityType: 'invoice', view: 'billing' }` notification carries an INVOICE uuid,
+   * and the old mapper dropped it into `/app/quotations/:id/billing`. The quotation fetch
+   * for an invoice id 404s, and the screen redirects to the custom Not Found page — which
+   * is exactly the "page not found when I click a notification" report.
+   *
+   * Anything that is not a quotation is resolved by the caller in `notificationSlice`,
+   * which can look the id up. This function only handles the quotation views.
+   */
+  if (notification.entityType && notification.entityType !== 'quotation') return null;
+
   switch (notification.view) {
     case 'approval':
       return `/app/quotations/${id}/approval`;
@@ -123,9 +136,14 @@ export function notificationRoute(notification) {
       return `/app/quotations/${id}/billing`;
     case 'invoice':
       return `/app/quotations/${id}/invoice`;
+    // `builder` and `negotiation` are what the server actually sends for a quotation
+    // nudge, an escalation and an approval result; neither was handled, so all three
+    // fell through to the dashboard instead of opening the deal they are about.
+    case 'builder':
+    case 'negotiation':
     case 'quotation':
       return `/app/quotations/${id}`;
     default:
-      return '/app/dashboard';
+      return `/app/quotations/${id}`;
   }
 }

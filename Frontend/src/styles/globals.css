@@ -150,11 +150,27 @@
   .table-glass {
     @apply w-full border-collapse text-sm;
   }
+  /*
+   * Cell gutters match the panel gutter (px-4 / sm:px-5).
+   *
+   * Tables sit inside panels whose body padding is zeroed so the rows can run edge to
+   * edge, and at px-3 the first column started ~8px left of the panel's own heading —
+   * every table read as slightly misaligned against the card it lived in.
+   */
   .table-glass thead th {
-    @apply border-b border-brand-500/15 px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted;
+    @apply border-b border-brand-500/15 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted sm:px-5;
   }
   .table-glass tbody td {
-    @apply border-b border-brand-500/10 px-3 py-2.5 align-middle text-ink;
+    @apply border-b border-brand-500/10 px-4 py-2.5 align-middle text-ink sm:px-5;
+  }
+  /*
+   * tfoot had NO rule at all, so a total row inherited no padding: the label sat flush
+   * against the panel edge and the figure on the right was clipped by the rounded
+   * corner. Every table with a totals row was affected — billing, the invoice, the
+   * price list.
+   */
+  .table-glass tfoot td {
+    @apply px-4 py-2.5 align-middle sm:px-5;
   }
   .table-glass tbody tr:last-child td {
     @apply border-b-0;
@@ -198,4 +214,70 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---------------------------------------------------------------- toasts */
+/*
+ * Sonner renders its icon and close button as nested elements, which a `classNames`
+ * prop cannot reach. Two things were wrong and both needed real CSS:
+ *
+ *  1. THE ICON WAS A BLACK DISC. Sonner ships filled SVGs that inherit the toast's own
+ *     colour, and the toast text is near-black ink — so a success tick read as a black
+ *     blob rather than a green one. Each variant now colours its own icon.
+ *  2. THE CLOSE BUTTON WAS INVISIBLE. It defaults to the top-LEFT corner, sized ~20px,
+ *     and it was styled white on an almost-white toast. It is moved to the right, given
+ *     a real border and a hover state, and enlarged to a comfortable hit target.
+ *
+ * Targeted by sonner's own data attributes rather than class names, which are hashed.
+ */
+[data-sonner-toast] {
+  --toast-close-button-start: auto;
+  --toast-close-button-end: -6px;
+  --toast-close-button-transform: translateY(-50%);
+}
+
+[data-sonner-toast] [data-icon] {
+  margin-right: 0.125rem;
+}
+[data-sonner-toast] [data-icon] > svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+[data-sonner-toast][data-type='success'] [data-icon] {
+  color: theme('colors.state.success');
+}
+[data-sonner-toast][data-type='error'] [data-icon] {
+  color: theme('colors.state.danger');
+}
+[data-sonner-toast][data-type='warning'] [data-icon] {
+  color: theme('colors.accent.amber');
+}
+[data-sonner-toast][data-type='info'] [data-icon] {
+  color: theme('colors.state.info');
+}
+
+[data-sonner-toast] [data-close-button] {
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  color: #5b5170;
+  box-shadow: 0 1px 3px rgba(30, 16, 51, 0.12);
+  opacity: 1;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+[data-sonner-toast] [data-close-button]:hover {
+  background: theme('colors.state.danger');
+  border-color: theme('colors.state.danger');
+  color: #fff;
+}
+[data-sonner-toast] [data-close-button] > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  stroke-width: 2.5;
 }

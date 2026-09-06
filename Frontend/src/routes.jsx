@@ -46,9 +46,11 @@ import CustomerConfirmed from '@/pages/customer/CustomerConfirmed';
 const BACKEND_ROLES = ['admin', 'sales_manager', 'finance'];
 
 /**
- * GET /approvals/queue is restricted to the roles that can actually act on a step
- * (§12.5). A sales_rep reaching it would get a 403 and an empty screen, so the route is
- * gated rather than left to fail.
+ * The three roles the server lets past its governance and reporting routes.
+ *
+ * `GET /approvals/queue` (§12.5), `GET /reports/summary` and `GET /reports/products`
+ * (§17.5, §17.6) all answer a sales_rep with 403, so both screens are gated here rather
+ * than left to render a wall of failed requests.
  */
 const APPROVER_ROLES = ['admin', 'sales_manager', 'finance'];
 
@@ -138,7 +140,11 @@ export default function AppRoutes() {
           <Route path="quotations/:id/fulfillment" element={<QuotationFulfillment />} />
           <Route path="quotations/:id/billing" element={<QuotationBilling />} />
           <Route path="quotations/:id/invoice" element={<QuotationInvoice />} />
-          <Route path="reports" element={<Reports />} />
+          {/* Same gate as the nav item — a rep reaching this by URL gets /403 rather
+              than a screen of failed requests. */}
+          <Route element={<RequireRole allow={APPROVER_ROLES} />}>
+            <Route path="reports" element={<Reports />} />
+          </Route>
 
           {/* --------------------------------- backend configuration */}
           <Route element={<RequireRole allow={BACKEND_ROLES} />}>

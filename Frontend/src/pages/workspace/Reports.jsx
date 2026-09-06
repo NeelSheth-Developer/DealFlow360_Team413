@@ -37,6 +37,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState, Skeleton } from '@/components/ui/Misc';
 import { SkeletonTiles } from '@/components/ui/Loading';
+import { MultiSelect } from '@/components/ui/MultiSelect';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { StatTile } from '@/components/shared/Indicators';
 
@@ -169,12 +170,8 @@ export default function Reports() {
     setTo(new Date().toISOString().slice(0, 10));
   };
 
-  const toggleIn = (setter) => (value) =>
-    setter((list) => (list.includes(value) ? list.filter((x) => x !== value) : [...list, value]));
-
-  const toggleStage = toggleIn(setStages);
-  const toggleRep = toggleIn(setRepIds);
-  const toggleTeam = toggleIn(setTeamIds);
+  // The per-option toggles are gone with the chip rows — MultiSelect owns selection now
+  // and hands back the whole array.
 
   const clearFilters = () => {
     setPreset('all');
@@ -393,73 +390,45 @@ export default function Reports() {
             )}
           </div>
 
-          {/* reps */}
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold text-ink-soft">Sales rep</p>
-            <div className="flex flex-wrap gap-1">
-              {users
-                .filter((u) => ['sales_rep', 'sales_manager'].includes(u.role))
-                .map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => toggleRep(u.id)}
-                    className={cn(
-                      'rounded-lg px-2 py-1 text-[11px] font-semibold transition-colors',
-                      repIds.includes(u.id)
-                        ? 'bg-gradient-to-r from-brand-500 to-accent-indigo text-white'
-                        : 'bg-white/60 text-ink-soft hover:text-brand-700',
-                    )}
-                  >
-                    {u.name.split(' ')[0]}
-                  </button>
-                ))}
-            </div>
-          </div>
+          {/*
+            Searchable pickers rather than a chip per option. A chip list is a function of
+            headcount: fine for three reps, unusable at three hundred, and it pushed the
+            report itself below the fold. These stay one row tall whatever the org size.
+          */}
+          <MultiSelect
+            label="Sales rep"
+            placeholder="All reps"
+            searchPlaceholder="Search reps…"
+            emptyLabel="No reps loaded yet"
+            value={repIds}
+            onChange={setRepIds}
+            options={users
+              .filter((u) => ['sales_rep', 'sales_manager'].includes(u.role))
+              .map((u) => ({ value: u.id, label: u.name, hint: u.team ?? undefined }))}
+          />
 
-          {/* teams */}
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold text-ink-soft">Sales team</p>
-            <div className="flex flex-wrap gap-1">
-              {teams.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => toggleTeam(t.id)}
-                  className={cn(
-                    'rounded-lg px-2 py-1 text-[11px] font-semibold transition-colors',
-                    teamIds.includes(t.id)
-                      ? 'bg-gradient-to-r from-brand-500 to-accent-indigo text-white'
-                      : 'bg-white/60 text-ink-soft hover:text-brand-700',
-                  )}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          <MultiSelect
+            label="Sales team"
+            placeholder="All teams"
+            searchPlaceholder="Search teams…"
+            emptyLabel="No teams loaded yet"
+            value={teamIds}
+            onChange={setTeamIds}
+            options={teams.map((t) => ({
+              value: t.id,
+              label: t.name,
+              hint: t.memberCount ? `${t.memberCount}` : undefined,
+            }))}
+          />
 
-          {/* approval status */}
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold text-ink-soft">Approval status</p>
-            <div className="flex flex-wrap gap-1">
-              {STATUS_CHIPS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => toggleStage(s)}
-                  className={cn(
-                    'rounded-lg px-2 py-1 text-[11px] font-semibold transition-colors',
-                    stages.includes(s)
-                      ? 'bg-gradient-to-r from-brand-500 to-accent-indigo text-white'
-                      : 'bg-white/60 text-ink-soft hover:text-brand-700',
-                  )}
-                >
-                  {stageLabel(s)}
-                </button>
-              ))}
-            </div>
-          </div>
+          <MultiSelect
+            label="Approval status"
+            placeholder="All statuses"
+            searchPlaceholder="Search statuses…"
+            value={stages}
+            onChange={setStages}
+            options={STATUS_CHIPS.map((v) => ({ value: v, label: stageLabel(v) }))}
+          />
 
           {/* category */}
           <div>

@@ -28,7 +28,7 @@ export function UpsellPanel({
   const [trayOpen, setTrayOpen] = useState(false);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/*
         Three different facts, three different panels. Ranking is a request now, so
         "still asking" and "the request failed" both used to collapse into "there are
@@ -95,21 +95,34 @@ export function UpsellPanel({
                 <ProgressBar value={s.coPurchaseScore} max={100} />
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <span className="num text-sm font-extrabold text-ink">
+              {/*
+                Wraps rather than clips. Price + "Dismiss" + "Add to Quote" all set to
+                nowrap came to more than the rail is wide, so the last button was cut off
+                by the card edge. Allowing the row to wrap costs one line in the worst
+                case and never loses a control.
+              */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
+                <span className="num min-w-0 text-sm font-extrabold text-ink">
                   {money(s.price, currency)}
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="ml-auto flex items-center gap-1.5">
                   <Button
                     size="xs"
                     variant="ghost"
                     disabled={disabled}
                     onClick={() => onDismiss(s.productId)}
+                    className="whitespace-nowrap"
                   >
                     Dismiss
                   </Button>
-                  <Button size="xs" disabled={disabled} onClick={() => onAccept(s.productId)}>
-                    Add to Quote
+                  {/* nowrap: "Add to Quote" broke onto two lines in the narrow rail. */}
+                  <Button
+                    size="xs"
+                    className="whitespace-nowrap"
+                    disabled={disabled}
+                    onClick={() => onAccept(s.productId)}
+                  >
+                    Add
                   </Button>
                 </div>
               </div>

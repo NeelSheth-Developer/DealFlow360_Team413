@@ -38,7 +38,11 @@ export function CatalogPanel({ items, currency, onAdd, disabled }) {
   }, [items, search, category]);
 
   return (
-    <div className="flex h-full flex-col">
+    /* `min-h-0 flex-1` rather than `h-full`: this sits inside a flex column, so it
+       takes the remaining space directly instead of asking for 100% of a parent whose
+       height is only a max. `min-h-0` is what lets it shrink below its content so the
+       list below can scroll. */
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-2.5 border-b border-brand-500/12 pb-3">
         <Input
           placeholder="Search catalog…"
@@ -151,8 +155,8 @@ export function CatalogPanel({ items, currency, onAdd, disabled }) {
                   />
                 )}
 
-                <div className="mt-2.5 flex items-center justify-between gap-2">
-                  <span className="num text-sm font-extrabold text-ink">
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
+                  <span className="num min-w-0 text-sm font-extrabold text-ink">
                     {money(product.price, currency)}
                     <span className="ml-1 text-[10px] font-normal text-ink-muted">
                       /{product.unit}
@@ -161,6 +165,7 @@ export function CatalogPanel({ items, currency, onAdd, disabled }) {
                   <Button
                     size="xs"
                     icon={Plus}
+                    className="ml-auto shrink-0"
                     disabled={disabled}
                     onClick={() => onAdd(product.id, isSubscription ? selectedPlan : null)}
                   >

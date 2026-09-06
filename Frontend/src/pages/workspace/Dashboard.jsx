@@ -350,6 +350,14 @@ export default function Dashboard() {
             its height while detection runs, so the charts beside it and everything below
             do not jump when the rows land.
           */}
+          {/*
+            The feed scrolls INSIDE the panel. With 50 alerts the page grew to several
+            screens, so reaching the charts beside it meant scrolling past every alert —
+            and the KPI row scrolled away with them. Capping the height keeps the feed,
+            the charts and the tiles on one screen and moves the scrolling into the list
+            where it belongs.
+          */}
+          <div className="max-h-[calc(100vh-22rem)] min-h-64 overflow-y-auto overscroll-contain">
           {alertsLoading && allAlerts.length === 0 ? (
             <SkeletonFeed rows={4} />
           ) : alerts.length === 0 ? (
@@ -450,6 +458,7 @@ export default function Dashboard() {
               })}
             </ul>
           )}
+          </div>
         </GlassPanel>
 
         {/* ----------------------------------------------------- charts */}

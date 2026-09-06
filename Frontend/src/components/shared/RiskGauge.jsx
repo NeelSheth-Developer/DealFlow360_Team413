@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react';
-import { riskBand, riskBandMeta } from '@/lib/riskEngine';
+import { formatScore, riskBand, riskBandMeta } from '@/lib/riskEngine';
 import { cn } from '@/lib/utils';
 
 const MAX_SCORE = 15;
@@ -30,7 +30,7 @@ export function RiskGauge({ score = 0, label, size = 'md', showLabel = true, cla
   return (
     <div className={cn('flex flex-col items-center', className)}>
       <div className="relative" style={{ width: w, height: h }}>
-        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Blended risk score ${score.toFixed(2)} points, ${meta.label}`}>
+        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Blended risk score ${formatScore(score)} points, ${meta.label}`}>
           <defs>
             <linearGradient id={`riskgrad-${band}`} x1="0" y1="0" x2="1" y2="0">
               {band === 'low' && (
@@ -85,7 +85,7 @@ export function RiskGauge({ score = 0, label, size = 'md', showLabel = true, cla
             transition={{ duration: 0.28 }}
             className={cn('num font-extrabold leading-none', dims.text, meta.tone)}
           >
-            {score.toFixed(2)}
+            {formatScore(score)}
           </motion.span>
           <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
             pts over
@@ -123,7 +123,7 @@ export function RiskBadge({ score = 0, showScore = true, className }) {
       title={meta.label}
     >
       <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
-      {showScore ? score.toFixed(2) : meta.label}
+      {showScore ? formatScore(score) : meta.label}
     </span>
   );
 }

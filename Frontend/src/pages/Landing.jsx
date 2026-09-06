@@ -26,6 +26,7 @@ import { RiskEngineDemo } from '@/components/landing/RiskEngineDemo';
 import { StatTile } from '@/components/shared/Indicators';
 import { RiskGauge } from '@/components/shared/RiskGauge';
 import { money } from '@/lib/format';
+import { Logo } from '@/components/shared/Logo';
 
 const FEATURES = [
   {
@@ -72,15 +73,35 @@ const FLOW = [
   { icon: UserCheck, label: 'Approve', hands: 'A route the score picked, not a person' },
   { icon: Boxes, label: 'Fulfil', hands: 'A warehouse split already computed' },
   { icon: CreditCard, label: 'Bill', hands: 'One-time and recurring, kept apart' },
-  { icon: MessageSquareQuote, label: 'Negotiate', hands: 'Counter-offers that re-trigger approval' },
+  {
+    icon: MessageSquareQuote,
+    label: 'Negotiate',
+    hands: 'Counter-offers that re-trigger approval',
+  },
   { icon: BarChart3, label: 'Report', hands: 'Every stage change, already logged' },
 ];
 
 const ROLES = [
-  { icon: Package, role: 'Sales Rep', blurb: 'Builds quotes, sees margin and risk live, handles customer replies.' },
-  { icon: UserCheck, role: 'Sales Manager', blurb: 'Approves discounts, sets ceilings, watches deal health.' },
-  { icon: CreditCard, role: 'Finance', blurb: 'Second-level sign-off, billing reconciliation, credit notes.' },
-  { icon: MessageSquareQuote, role: 'Customer', blurb: 'Reviews and negotiates in a restricted portal view.' },
+  {
+    icon: Package,
+    role: 'Sales Rep',
+    blurb: 'Builds quotes, sees margin and risk live, handles customer replies.',
+  },
+  {
+    icon: UserCheck,
+    role: 'Sales Manager',
+    blurb: 'Approves discounts, sets ceilings, watches deal health.',
+  },
+  {
+    icon: CreditCard,
+    role: 'Finance',
+    blurb: 'Second-level sign-off, billing reconciliation, credit notes.',
+  },
+  {
+    icon: MessageSquareQuote,
+    role: 'Customer',
+    blurb: 'Reviews and negotiates in a restricted portal view.',
+  },
   { icon: Users, role: 'Admin', blurb: 'Owns catalog, warehouses, plans and platform analytics.' },
 ];
 
@@ -110,9 +131,7 @@ function LandingNav() {
     <header className="glass-nav sticky top-0 z-40">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2.5">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-accent-indigo text-white shadow-glass">
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-          </span>
+          <Logo size="md" />
           <span className="text-sm font-extrabold tracking-tight text-ink">DealFlow360</span>
         </Link>
 
@@ -166,8 +185,7 @@ function Hero() {
           </Badge>
 
           <h1 className="text-4xl font-extrabold leading-[1.08] tracking-tight text-ink sm:text-5xl lg:text-6xl">
-            The sales engine that{' '}
-            <span className="text-gradient">governs itself</span>
+            The sales engine that <span className="text-gradient">governs itself</span>
           </h1>
 
           <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">
@@ -223,7 +241,7 @@ function HeroQuoteCard() {
         <HeroLine name="Onboarding Setup Service" qty="× 1" amount={15088} discount="18%" />
       </div>
 
-      <div className="mt-4 flex items-end justify-between gap-4 border-t border-brand-500/12 pt-4">
+      <div className="border-brand-500/12 mt-4 flex items-end justify-between gap-4 border-t pt-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
             Order total
@@ -236,7 +254,7 @@ function HeroQuoteCard() {
         <RiskGauge score={0.19} size="sm" showLabel={false} />
       </div>
 
-      <div className="mt-4 rounded-xl border border-accent-amber/35 bg-accent-amber/12 px-3 py-2.5">
+      <div className="bg-accent-amber/12 mt-4 rounded-xl border border-accent-amber/35 px-3 py-2.5">
         <p className="text-xs font-bold text-accent-amber">Routes to Sales Manager</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-soft">
           Setup Service is 8 pts over its 10% ceiling — one line flags the whole quote.
@@ -267,10 +285,34 @@ function HeroLine({ name, qty, amount, discount, ok = false }) {
 
 function StatStrip() {
   const stats = [
-    { label: 'Fewer manual approvals', value: 62, format: (v) => `${Math.round(v)}%`, icon: ShieldCheck, tone: 'brand' },
-    { label: 'Upsell attach rate', value: 3.2, format: (v) => `${v.toFixed(1)}×`, icon: TrendingUp, tone: 'teal' },
-    { label: 'Warehouses auto-split', value: 3, format: (v) => Math.round(v), icon: Truck, tone: 'indigo' },
-    { label: 'Email threads needed', value: 0, format: () => '0', icon: MessageSquareQuote, tone: 'pink' },
+    {
+      label: 'Fewer manual approvals',
+      value: 62,
+      format: (v) => `${Math.round(v)}%`,
+      icon: ShieldCheck,
+      tone: 'brand',
+    },
+    {
+      label: 'Upsell attach rate',
+      value: 3.2,
+      format: (v) => `${v.toFixed(1)}×`,
+      icon: TrendingUp,
+      tone: 'teal',
+    },
+    {
+      label: 'Warehouses auto-split',
+      value: 3,
+      format: (v) => Math.round(v),
+      icon: Truck,
+      tone: 'indigo',
+    },
+    {
+      label: 'Email threads needed',
+      value: 0,
+      format: () => '0',
+      icon: MessageSquareQuote,
+      tone: 'pink',
+    },
   ];
 
   return (
@@ -382,7 +424,7 @@ function RiskSection() {
         center
         eyebrow="The differentiator"
         title="Why one line can flag an entire quotation"
-        description="A Gold customer is allowed 15%. But Services only permit 10% — so an 18% service discount breaks its own limit even though the headline tier number looks fine. Try it."
+        description="A Gold customer is allowed 15%. But Services only permit 10% — so an 18% service discount breaks its own limit even though the headline tier number looks fine. Here is how the engine scores it."
       />
 
       <div className="mt-10">
@@ -393,11 +435,11 @@ function RiskSection() {
         <GlassCard className="p-5">
           <h3 className="text-sm font-bold text-ink">Why “blended”?</h3>
           <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-            Sometimes no single line looks alarming, but many are each a little over — 2 points here,
-            3 there. Individually they pass a spot check. Added up across the order, the rep has
-            quietly given away real margin. The blended score is value-weighted across every line,
-            so small violations spread thin can&apos;t slip through. A separate single-line trip point
-            catches the opposite case: one badly-over line in an otherwise clean order.
+            Sometimes no single line looks alarming, but many are each a little over — 2 points
+            here, 3 there. Individually they pass a spot check. Added up across the order, the rep
+            has quietly given away real margin. The blended score is value-weighted across every
+            line, so small violations spread thin can&apos;t slip through. A separate single-line
+            trip point catches the opposite case: one badly-over line in an otherwise clean order.
           </p>
         </GlassCard>
       </div>
@@ -409,10 +451,26 @@ function RiskSection() {
 
 function DashboardPreview() {
   const alerts = [
-    { severity: 'high', title: 'Delta Logistics — no activity for 11 days', detail: 'Draft · threshold is 5 days' },
-    { severity: 'medium', title: '20.2% discount vs Kiran’s 9.2% average', detail: '2.2× this rep’s 90-day average' },
-    { severity: 'high', title: 'Waiting on Sales Manager for 4 days', detail: 'Beta Industries · SLA is 24h' },
-    { severity: 'medium', title: 'Delivery slipping 4 days on Gemini Healthcare', detail: '2 units on backorder' },
+    {
+      severity: 'high',
+      title: 'Delta Logistics — no activity for 11 days',
+      detail: 'Draft · threshold is 5 days',
+    },
+    {
+      severity: 'medium',
+      title: '20.2% discount vs Kiran’s 9.2% average',
+      detail: '2.2× this rep’s 90-day average',
+    },
+    {
+      severity: 'high',
+      title: 'Waiting on Sales Manager for 4 days',
+      detail: 'Beta Industries · SLA is 24h',
+    },
+    {
+      severity: 'medium',
+      title: 'Delivery slipping 4 days on Gemini Healthcare',
+      detail: '2 units on backorder',
+    },
   ];
 
   const tones = {
@@ -440,7 +498,10 @@ function DashboardPreview() {
               </div>
               <ul className="space-y-2">
                 {alerts.map((a) => (
-                  <li key={a.title} className="flex items-start gap-2.5 rounded-xl bg-white/55 px-3 py-2.5">
+                  <li
+                    key={a.title}
+                    className="flex items-start gap-2.5 rounded-xl bg-white/55 px-3 py-2.5"
+                  >
                     <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${tones[a.severity]}`} />
                     <div className="min-w-0">
                       <p className="truncate text-xs font-bold text-ink">{a.title}</p>
@@ -480,12 +541,16 @@ function MiniStat({ icon: Icon, label, value, hint }) {
 function RolesBand() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-      <SectionHeading center eyebrow="Built for five people" title="Everyone gets the view they need" />
+      <SectionHeading
+        center
+        eyebrow="Built for five people"
+        title="Everyone gets the view they need"
+      />
 
       <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {ROLES.map((r) => (
           <GlassCard key={r.role} hover className="p-4">
-            <span className="mb-2.5 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500/12 text-brand-600">
+            <span className="bg-brand-500/12 mb-2.5 inline-flex h-9 w-9 items-center justify-center rounded-xl text-brand-600">
               <r.icon className="h-4 w-4" aria-hidden="true" />
             </span>
             <p className="text-xs font-bold text-ink">{r.role}</p>
@@ -579,7 +644,10 @@ function LandingFooter() {
               </p>
               <ul className="space-y-1.5">
                 <li>
-                  <Link to="/login" className="text-xs font-medium text-ink-soft hover:text-brand-700">
+                  <Link
+                    to="/login"
+                    className="text-xs font-medium text-ink-soft hover:text-brand-700"
+                  >
                     Sales team login
                   </Link>
                 </li>
@@ -592,7 +660,10 @@ function LandingFooter() {
                   </Link>
                 </li>
                 <li>
-                  <Link to="/signup" className="text-xs font-medium text-ink-soft hover:text-brand-700">
+                  <Link
+                    to="/signup"
+                    className="text-xs font-medium text-ink-soft hover:text-brand-700"
+                  >
                     Create an account
                   </Link>
                 </li>
@@ -602,7 +673,8 @@ function LandingFooter() {
         </div>
 
         <p className="mt-8 text-[11px] text-ink-muted">
-          © {new Date().getFullYear()} DealFlow360. Demo build — data lives in your browser session.
+          © {new Date().getFullYear()} DealFlow360. Demo build — data lives in your browser
+          session.
         </p>
       </div>
     </footer>
@@ -612,7 +684,9 @@ function LandingFooter() {
 function FooterCol({ title, links }) {
   return (
     <div>
-      <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-ink-muted">{title}</p>
+      <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+        {title}
+      </p>
       <ul className="space-y-1.5">
         {links.map(([label, href]) => (
           <li key={href}>

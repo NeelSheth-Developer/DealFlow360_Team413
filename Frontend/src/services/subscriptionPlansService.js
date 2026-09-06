@@ -19,6 +19,33 @@
 
 import { api } from './apiClient';
 
+/**
+ * The exact keys the schema accepts. WHITELISTED, not blacklisted — the editors seed
+ * their forms from the server's own object, so `id`, `active`, `createdAt` and anything
+ * else the API returns would otherwise be echoed back into a `.strict()` body and earn
+ * `400 FIELD_NOT_ALLOWED`.
+ */
+function pick(source = {}, keys) {
+  const out = {};
+  for (const key of keys) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  return out;
+}
+
+const PLAN_KEYS = [
+  'name',
+  'cadence',
+  'prorationRule',
+  'cancellationRule',
+  'minCommitmentMonths',
+  'trialDays',
+  'billingDayOfCycle',
+  'productIds',
+];
+const PLAN_UPDATE_KEYS = [...PLAN_KEYS, 'active'];
+
+
 export const CADENCES = ['monthly', 'quarterly', 'yearly'];
 export const PRORATION_RULES = ['daily_prorate', 'full_period', 'next_cycle_adjust'];
 export const CANCELLATION_RULES = ['refund_unused', 'no_refund', 'credit_note_only'];
@@ -35,7 +62,7 @@ export function getSubscriptionPlan(planId) {
 
 /** Unknown product ids are rejected with 400 and named in `details.unknown`. */
 export function createSubscriptionPlan(payload) {
-  return api.post('/subscription-plans', clampBillingDay(payload));
+  return api.post('/subscription-plans', pick(clampBillingDay(payload), PLAN_KEYS));
 }
 
 /**
@@ -44,7 +71,10 @@ export function createSubscriptionPlan(payload) {
  * already issued as credit notes are financial facts and are not recomputed.
  */
 export function updateSubscriptionPlan(planId, payload) {
-  return api.put(`/subscription-plans/${encodeURIComponent(planId)}`, clampBillingDay(payload));
+  return api.put(
+    `/subscription-plans/${encodeURIComponent(planId)}`,
+    pick(clampBillingDay(payload), PLAN_UPDATE_KEYS),
+  );
 }
 
 function clampBillingDay(payload = {}) {

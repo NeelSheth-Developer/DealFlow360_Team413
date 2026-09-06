@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   CheckCircle2,
-  Save,
   Send,
   ServerCog,
   Share2,
@@ -32,8 +31,9 @@ export function QuoteSummaryRail({
   busy,
   riskLoading = false,
   riskIsFallback = false,
+  /** Live, stateless score from POST /risk/blended-score. Advisory — see below. */
+  preview = null,
   onSubmit,
-  onSaveDraft,
   onSendToCustomer,
 }) {
   const approverCount = approvalPath.approvers.length;
@@ -151,6 +151,23 @@ export function QuoteSummaryRail({
           {riskLoading ? 'Fetching the score from the governance service…' : explainRisk(risk)}
         </p>
 
+        {/*
+          The live preview from POST /risk/blended-score, shown only while the
+          authoritative score is being refetched and only when it actually disagrees.
+          It is stateless, so it reflects the discount the rep just typed before the
+          PATCH and the re-score have both landed.
+
+          Labelled "preview" deliberately: that endpoint matches the approval chain on
+          score bands alone and ignores singleLineTrip, so it can under-state the
+          approvers. Only /submit-approval decides.
+        */}
+        {preview && riskLoading && preview.score !== risk.score && (
+          <p className="mt-2 rounded-lg bg-brand-500/10 px-2.5 py-1.5 text-center text-[10px] font-semibold leading-relaxed text-brand-700">
+            Live preview {preview.score.toFixed(2)} pts
+            {preview.requiresApproval ? ` · ${preview.label.toLowerCase()}` : ' · inside every ceiling'}
+          </p>
+        )}
+
         {riskIsFallback && (
           <p className="mt-2 rounded-lg bg-accent-amber/12 px-2.5 py-1.5 text-center text-[10px] font-semibold leading-relaxed text-accent-amber">
             Scoring service unreachable — showing a provisional local estimate.
@@ -208,17 +225,13 @@ export function QuoteSummaryRail({
               : `${approverCount} approver${approverCount > 1 ? 's' : ''} required`}
         </p>
 
+        {/*
+          "Save Draft" is gone. There is no draft endpoint — every edit already PATCHes
+          as it is made — so the button called nothing and raised a toast claiming a save
+          that had not just happened. A control that lies about persistence is worse than
+          no control, and its absence is now explained by the line below.
+        */}
         <div className="mt-3 space-y-2 border-t border-brand-500/12 pt-3">
-          <Button
-            fullWidth
-            variant="secondary"
-            size="sm"
-            icon={Save}
-            disabled={!editable}
-            onClick={onSaveDraft}
-          >
-            Save Draft
-          </Button>
           <Button
             fullWidth
             variant="ghost"
@@ -230,7 +243,8 @@ export function QuoteSummaryRail({
             Share with customer
           </Button>
           <p className="text-center text-[10px] leading-relaxed text-ink-muted">
-            Appears in their own signed-in account. No link to send.
+            Shared into their own signed-in account — no link to send. Every edit above is
+            saved as you make it.
           </p>
         </div>
       </GlassCard>

@@ -1,11 +1,13 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, FileText, LogOut, ShieldCheck, Sparkles } from 'lucide-react';
+import { ChevronDown, FileText, LogOut, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
+import { ConnectionBanner } from '@/components/shared/ConnectionBanner';
 import { cn } from '@/lib/utils';
 import { tierLabel } from '@/lib/format';
 import { Avatar } from '@/components/ui/Misc';
 import { GradientBlobBackground } from '@/components/glass/Glass';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * Customer-facing shell for signed-in customers.
@@ -24,12 +26,13 @@ export default function CustomerLayout() {
     <div className="relative min-h-screen">
       <GradientBlobBackground variant="subtle" />
 
+      <ConnectionBanner />
+
+
       <header className="glass-nav sticky top-0 z-40">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/customer/quotations" className="flex items-center gap-2.5">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent-teal to-state-info text-white shadow-glass">
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-            </span>
+            <Logo size="md" />
             <span className="leading-tight">
               <span className="block text-sm font-extrabold tracking-tight text-ink">
                 DealFlow360
@@ -44,7 +47,7 @@ export default function CustomerLayout() {
               className={({ isActive }) =>
                 cn(
                   'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
-                  isActive ? 'bg-accent-teal/14 text-accent-teal' : 'text-ink-soft hover:text-brand-700',
+                  isActive ? 'bg-accent-teal/14 text-accent-pink' : 'text-ink-soft hover:text-brand-700',
                 )
               }
             >
@@ -62,7 +65,7 @@ export default function CustomerLayout() {
                 >
                   <Avatar
                     name={customer.contactName || customer.name}
-                    gradient="from-accent-teal to-state-info"
+                    gradient="from-accent-indigo to-accent-pink"
                     size="sm"
                   />
                   <span className="hidden text-left leading-tight sm:block">
@@ -84,7 +87,7 @@ export default function CustomerLayout() {
                   <div className="px-2.5 py-2">
                     <p className="text-xs font-bold text-ink">{customer.contactName}</p>
                     <p className="text-[11px] text-ink-muted">{customer.email}</p>
-                    <p className="mt-1 text-[11px] font-semibold text-accent-teal">
+                    <p className="mt-1 text-[11px] font-semibold text-accent-pink">
                       {customer.name} · {tierLabel(customer.tier)}
                     </p>
                   </div>

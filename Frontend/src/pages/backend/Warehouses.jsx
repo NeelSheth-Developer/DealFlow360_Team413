@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import { Boxes, Package, Pencil, Plus, Truck, Warehouse as WarehouseIcon, Zap } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectWarehouseStockRows, selectWarehouseSummary } from '@/store/selectors';
@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Dialog } from '@/components/ui/Dialog';
 import { Slider } from '@/components/ui/Misc';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
+import { SplitPlanner } from '@/components/quotation/SplitPlanner';
 
 const EMPTY = {
   name: '',
@@ -36,6 +37,7 @@ export default function Warehouses() {
   const [form, setForm] = useState(EMPTY);
   const [stockTarget, setStockTarget] = useState(null);
   const [stockDraft, setStockDraft] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const stockRows = useAppStore((s) =>
     stockTarget ? selectWarehouseStockRows(s, stockTarget.id) : [],
@@ -51,25 +53,57 @@ export default function Warehouses() {
     setStockDraft({});
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.name?.trim()) {
-      toast.error('Give the warehouse a name.');
+      notify.error('Give the warehouse a name.');
       return;
     }
-    const saved = upsertWarehouse(editing === 'new' ? { ...form, id: undefined } : form);
+    // Shipping weights, costs, thresholds and lead times are all quantities that have no
+    // meaningful negative. `type="number"` only enforces `min` on native form submit,
+    // which this dialog never does, so the floor is checked here.
+    const negative = ['shippingCostWeight', 'baseShipCost', 'replenishThreshold', 'replenishQty', 'replenishLeadDays']
+      .find((k) => Number(form[k]) < 0);
+    if (negative) {
+      notify.error('That value cannot be negative.', `Check the ${negative.replace(/([A-Z])/g, ' $1').toLowerCase()} field.`);
+      return;
+    }
+    setSaving(true);
+    const isNew = editing === 'new';
+    const result = await upsertWarehouse(isNew ? { ...form, id: undefined } : form);
+    setSaving(false);
+
+    // Kept open on failure so the entered values are not lost — 409 on a duplicate name
+    // is the common one and it is fixed by editing the field that is still on screen.
+    if (!result.ok) {
+      notify.report(result, null, isNew ? 'Could not create the warehouse' : 'Could not save');
+      return;
+    }
     setEditing(null);
-    toast.success(editing === 'new' ? 'Warehouse created' : 'Warehouse updated', {
-      description: `${saved.name} · shipping weight ×${saved.shippingCostWeight}`,
-    });
+    const saved = result.warehouse ?? form;
+    notify.success(
+      isNew ? 'Warehouse created' : 'Warehouse updated',
+      `${saved.name} · shipping weight ×${saved.shippingCostWeight}`,
+    );
   };
 
-  const saveStock = () => {
-    setWarehouseStockBulk(stockTarget.id, stockDraft);
+  const saveStock = async () => {
     const changed = Object.keys(stockDraft).length;
+    if (changed === 0) {
+      notify.info('Nothing to save', 'No stock levels were changed.');
+      return;
+    }
+    setSaving(true);
+    const result = await setWarehouseStockBulk(stockTarget.id, stockDraft);
+    setSaving(false);
+    if (!result.ok) {
+      notify.report(result, null, 'Could not update stock');
+      return;
+    }
     setStockTarget(null);
-    toast.success('Stock updated', {
-      description: `${changed} product(s) changed. Fulfillment plans recomputed.`,
-    });
+    notify.success(
+      'Stock updated',
+      `${changed} product(s) changed. Fulfillment plans recomputed.`,
+    );
   };
 
   return (
@@ -136,13 +170,14 @@ export default function Warehouses() {
                   // never `=== 0`, so a no-op restock still claimed success.
                   const result = await simulateRestock(w.id);
                   if (!result.ok) {
-                    toast.error('Could not restock', { description: result.error });
+                    notify.report(result, null, 'Could not restock');
                   } else if (!result.restocked) {
-                    toast.info(`Nothing below threshold at ${w.name}.`);
+                    notify.info('Nothing to restock', `Nothing is at or below its threshold at ${w.name}.`);
                   } else {
-                    toast.success(`Restocked ${result.restocked} product(s) at ${w.name}`, {
-                      description: 'Open backorders that can now be filled will prompt to consolidate.',
-                    });
+                    notify.success(
+                      `Restocked ${result.restocked} product(s) at ${w.name}`,
+                      'Open backorders that can now be filled will prompt to consolidate.',
+                    );
                   }
                 }}
               >
@@ -151,6 +186,11 @@ export default function Warehouses() {
             </div>
           </GlassCard>
         ))}
+      </div>
+
+      {/* Ad-hoc planner against POST /warehouses/split — see SplitPlanner. */}
+      <div className="mb-4">
+        <SplitPlanner />
       </div>
 
       <GlassPanel
@@ -193,7 +233,7 @@ export default function Warehouses() {
             <Button variant="secondary" onClick={() => setEditing(null)}>
               Cancel
             </Button>
-            <Button onClick={save}>{editing === 'new' ? 'Create' : 'Save changes'}</Button>
+            <Button onClick={save} loading={saving}>{editing === 'new' ? 'Create' : 'Save changes'}</Button>
           </>
         }
       >
@@ -276,7 +316,7 @@ export default function Warehouses() {
             <Button variant="secondary" onClick={() => setStockTarget(null)}>
               Cancel
             </Button>
-            <Button onClick={saveStock} disabled={Object.keys(stockDraft).length === 0}>
+            <Button onClick={saveStock} loading={saving} disabled={Object.keys(stockDraft).length === 0}>
               Save stock levels
             </Button>
           </>

@@ -12,7 +12,6 @@ import {
   PieChart,
   RefreshCw,
   Settings,
-  Sparkles,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -26,6 +25,8 @@ import { ConfirmDialog } from '@/components/shared/Dialogs';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { GradientBlobBackground } from '@/components/glass/Glass';
 import { ConsolidationWatcher } from '@/components/quotation/ConsolidationWatcher';
+import { ConnectionBanner } from '@/components/shared/ConnectionBanner';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * `roles: null` means everyone. Approvals is gated to the roles that can act on a step
@@ -43,7 +44,17 @@ const NAV = [
     badge: 'approvals',
   },
   { to: '/app/dashboard', label: 'Deal Health', icon: PieChart, roles: null },
-  { to: '/app/reports', label: 'Reports', icon: PieChart, roles: null },
+  /*
+    Reports is manager/finance/admin only — GET /reports/summary and
+    GET /reports/products both answer a sales_rep with 403, so the screen could only ever
+    show them an error. Hidden rather than left to fail.
+  */
+  {
+    to: '/app/reports',
+    label: 'Reports',
+    icon: PieChart,
+    roles: ['admin', 'sales_manager', 'finance'],
+  },
 ];
 
 export default function WorkspaceLayout() {
@@ -109,12 +120,12 @@ export default function WorkspaceLayout() {
       <GradientBlobBackground variant="default" />
 
       {/* --------------------------------------------------------- top nav */}
+      <ConnectionBanner />
+
       <header className="glass-nav sticky top-0 z-40">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:px-6">
           <Link to="/app/dashboard" className="flex shrink-0 items-center gap-2.5">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-accent-indigo text-white shadow-glass">
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-            </span>
+            <Logo size="md" />
             <span className="hidden text-sm font-extrabold tracking-tight text-ink sm:block">
               DealFlow360
             </span>
