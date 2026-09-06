@@ -20,13 +20,26 @@
 | | Link |
 |:--|:--|
 | 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
-| 🌐 **Live App** | **<https://dealflow360.teamvector.space>** · <https://deal-flow360-team413.vercel.app> |
-| ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** |
+| 🌐 **Live App** | **<https://deal-flow360-team413.vercel.app>** |
+| ⚙️ **Live API** | **<https://dealflow360-team413-2.onrender.com/api/v1>** |
 | 📘 **Project README** | [`../README.md`](../README.md) |
 | 🖥️ **Backend README** | [`../backend/README.md`](../backend/README.md) |
 | 📖 **API Reference** | [`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md) — every endpoint, in one file |
-| 🗂️ **DBML Diagram** | **[`../backend/docs/schema.dbml`](../backend/docs/schema.dbml)** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
+| 🗂️ **DBML Diagram** | **[`../backend/docs/schema.dbml`](../backend/docs/schema.dbml)** |
 | 🧩 **ER Diagrams** | **[§24 Data model](../backend/docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
+
+---
+
+## 👥 Team 413 — Team Vector
+
+DealFlow360 is designed and developed by **Team Vector**.
+
+| # | Team Member | Email | LinkedIn |
+|:--|:--|:--|:--|
+| 1 | **Tirth Patel** | <tirthpatel4822@gmail.com> | [linkedin.com/in/tirthpatel-7ab9ba264](https://www.linkedin.com/in/tirthpatel-7ab9ba264/) |
+| 2 | **Parth Thakkar** | <parththakkar1208@gmail.com> | [linkedin.com/in/parth-thakkar-1812p5d](https://www.linkedin.com/in/parth-thakkar-1812p5d/) |
+| 3 | **Neel Sheth** | <shethneel2022@gmail.com> | [linkedin.com/in/neel-sheth-91b362262](https://www.linkedin.com/in/neel-sheth-91b362262/) |
+| 4 | **Ridham Rangani** | <ridhamrangani2004@gmail.com> | [linkedin.com/in/ridham-rangani](https://www.linkedin.com/in/ridham-rangani/) |
 
 ---
 
@@ -81,7 +94,6 @@ Staff sign in at `/login`, customers at `/customer/login`.
 | **[11](#11-demo-script)** | **Demo Script** | The eight-step walkthrough |
 | **[12](#12-deployment)** | **Deployment** | Vercel and Netlify |
 | **[13](#13-roadmap)** | **Roadmap** | What we'd build next |
-| **[14](#14-team)** | **Team** | Team 413 — Team Vector |
 
 ---
 
@@ -102,7 +114,7 @@ no client-side scoring.
 | 1 | **[`../README.md`](../README.md)** | The whole-project guide — both halves, architecture, demo |
 | 2 | **[`../backend/README.md`](../backend/README.md)** | Backend setup, environment, module map |
 | 3 | **[`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md)** | **API reference** — every endpoint, request/response shapes, roles, error codes |
-| 4 | **[`../backend/docs/schema.dbml`](../backend/docs/schema.dbml)** | **DBML diagram** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
+| 4 | **[`../backend/docs/schema.dbml`](../backend/docs/schema.dbml)** | **DBML diagram** |
 | 5 | **[§24 — Data model](../backend/docs/API-REFERENCE.md#24-data-model)** | **ER diagrams** — the same 31 tables drawn per area, inline on GitHub |
 | 6 | [§19 — Error catalogue](../backend/docs/API-REFERENCE.md#19-error-catalogue) | Every stable error code the UI branches on |
 | 7 | [§22 — Role matrix](../backend/docs/API-REFERENCE.md#22-role-permission-matrix) | Per-endpoint role requirements |
@@ -137,8 +149,8 @@ npm run dev
 
 Open **<http://localhost:5173>**.
 
-With **no** `.env` file the app targets the deployed API
-(`https://api.dealflow360.teamvector.space/api/v1`), so a fresh clone works immediately.
+With **no** `.env` file the app falls back to the deployed API — the default is set in
+[`src/services/apiClient.js`](src/services/apiClient.js) — so a fresh clone works immediately.
 
 To run against a local backend instead:
 
@@ -683,22 +695,9 @@ Static SPA, no server runtime. Both configs carry the SPA rewrite, so deep links
 
 ---
 
-## 14. Team
-
-### 👥 Team 413 — Team Vector
-
-DealFlow360 is designed and developed by **Team Vector**.
-
-| # | Team Member | Email | LinkedIn |
-|:--|:--|:--|:--|
-| 1 | **Tirth Patel** | <tirthpatel4822@gmail.com> | [linkedin.com/in/tirthpatel-7ab9ba264](https://www.linkedin.com/in/tirthpatel-7ab9ba264/) |
-| 2 | **Parth Thakkar** | <parththakkar1208@gmail.com> | [linkedin.com/in/parth-thakkar-1812p5d](https://www.linkedin.com/in/parth-thakkar-1812p5d/) |
-| 3 | **Neel Sheth** | <shethneel2022@gmail.com> | [linkedin.com/in/neel-sheth-91b362262](https://www.linkedin.com/in/neel-sheth-91b362262/) |
-| 4 | **Ridham Rangani** | <ridhamrangani2004@gmail.com> | [linkedin.com/in/ridham-rangani](https://www.linkedin.com/in/ridham-rangani/) |
-
 <div align="center">
 
-**Odoo Hackathon 2026** · <https://teamvector.space>
+**Odoo Hackathon 2026**
 
 **[⬆ Back to top](#dealflow360--frontend)**
 

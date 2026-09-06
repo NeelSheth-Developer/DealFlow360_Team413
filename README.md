@@ -17,13 +17,26 @@ Quote → Risk Scoring → Approval Routing → Fulfillment → Billing → Invo
 | | Link |
 |:--|:--|
 | 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
-| 🌐 **Live App** | **<https://dealflow360.teamvector.space>** · <https://deal-flow360-team413.vercel.app> |
-| ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** · <https://dealflow360-team413-2.onrender.com/api/v1> |
+| 🌐 **Live App** | **<https://deal-flow360-team413.vercel.app>** |
+| ⚙️ **Live API** | **<https://dealflow360-team413-2.onrender.com/api/v1>** |
 | 📖 **API Reference** | [`backend/docs/API-REFERENCE.md`](backend/docs/API-REFERENCE.md) — every endpoint, in one file |
-| 🗂️ **DBML Diagram** | **[`backend/docs/schema.dbml`](backend/docs/schema.dbml)** — the standalone schema file; paste into [dbdiagram.io](https://dbdiagram.io/d) |
+| 🗂️ **DBML Diagram** | **[`backend/docs/schema.dbml`](backend/docs/schema.dbml)** |
 | 🧩 **ER Diagrams** | **[§24 Data model](backend/docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
 | 💻 **Frontend README** | [`Frontend/README.md`](Frontend/README.md) |
 | 🖥️ **Backend README** | [`backend/README.md`](backend/README.md) |
+
+---
+
+## 👥 Team 413 — Team Vector
+
+DealFlow360 is designed and developed by **Team Vector**.
+
+| # | Team Member | Email | LinkedIn |
+|:--|:--|:--|:--|
+| 1 | **Tirth Patel** | <tirthpatel4822@gmail.com> | [linkedin.com/in/tirthpatel-7ab9ba264](https://www.linkedin.com/in/tirthpatel-7ab9ba264/) |
+| 2 | **Parth Thakkar** | <parththakkar1208@gmail.com> | [linkedin.com/in/parth-thakkar-1812p5d](https://www.linkedin.com/in/parth-thakkar-1812p5d/) |
+| 3 | **Neel Sheth** | <shethneel2022@gmail.com> | [linkedin.com/in/neel-sheth-91b362262](https://www.linkedin.com/in/neel-sheth-91b362262/) |
+| 4 | **Ridham Rangani** | <ridhamrangani2004@gmail.com> | [linkedin.com/in/ridham-rangani](https://www.linkedin.com/in/ridham-rangani/) |
 
 ---
 
@@ -91,7 +104,6 @@ Sign in immediately with any of these. Staff use `"type": "internal"`, customers
 | **[13](#13-scripts-reference)** | **Scripts Reference** | Every npm script, both sides |
 | **[14](#14-deployment)** | **Deployment** | Vercel / Netlify / Render |
 | **[15](#15-branching-strategy)** | **Branching Strategy** | main, dev-*, prod-* |
-| **[16](#16-team)** | **Team** | Team 413 — Team Vector |
 
 ---
 
@@ -115,10 +127,10 @@ Sign in immediately with any of these. Staff use `"type": "internal"`, customers
 
 ### 1.2 Deployed Environments
 
-| Surface | Custom domain | Platform URL |
+| # | Surface | URL |
 |:--|:--|:--|
-| **Frontend** | <https://dealflow360.teamvector.space> | <https://deal-flow360-team413.vercel.app> |
-| **Backend API** | <https://api.dealflow360.teamvector.space/api/v1> | <https://dealflow360-team413-2.onrender.com/api/v1> |
+| 1 | **Frontend** | <https://deal-flow360-team413.vercel.app> |
+| 2 | **Backend API** | <https://dealflow360-team413-2.onrender.com/api/v1> |
 
 > The frontend ships with the deployed API as its **default** base URL, so a fresh clone
 > runs against the live backend with no `.env` file at all.
@@ -1061,27 +1073,9 @@ Both platform configs carry the SPA rewrite, so deep links like
 
 ---
 
-## 16. Team
-
-### 👥 Team 413 — Team Vector
-
-DealFlow360 is designed and developed by **Team Vector**.
-
-| # | Team Member | Email | LinkedIn |
-|:--|:--|:--|:--|
-| 1 | **Tirth Patel** | <tirthpatel4822@gmail.com> | [linkedin.com/in/tirthpatel-7ab9ba264](https://www.linkedin.com/in/tirthpatel-7ab9ba264/) |
-| 2 | **Parth Thakkar** | <parththakkar1208@gmail.com> | [linkedin.com/in/parth-thakkar-1812p5d](https://www.linkedin.com/in/parth-thakkar-1812p5d/) |
-| 3 | **Neel Sheth** | <shethneel2022@gmail.com> | [linkedin.com/in/neel-sheth-91b362262](https://www.linkedin.com/in/neel-sheth-91b362262/) |
-| 4 | **Ridham Rangani** | <ridhamrangani2004@gmail.com> | [linkedin.com/in/ridham-rangani](https://www.linkedin.com/in/ridham-rangani/) |
-
 <div align="center">
 
-**Odoo Hackathon 2026** · <https://teamvector.space>
-
-| | |
-|:--|:--|
-| **Live app** | <https://dealflow360.teamvector.space> |
-| **API** | <https://api.dealflow360.teamvector.space/api/v1> |
+**Odoo Hackathon 2026**
 
 **[⬆ Back to top](#dealflow360)**
 
