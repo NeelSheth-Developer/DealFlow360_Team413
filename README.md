@@ -17,8 +17,8 @@ Quote → Risk Scoring → Approval Routing → Fulfillment → Billing → Invo
 | | Link |
 |:--|:--|
 | 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
-| 🌐 **Live App** | **<https://deal-flow360-team413.vercel.app>** |
-| ⚙️ **Live API** | **<https://dealflow360-team413-2.onrender.com/api/v1>** |
+| 🌐 **Live App** | **<https://dealflow360.teamvector.space/>** · <https://deal-flow360-team413.vercel.app> |
+| ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** |
 | 📖 **API Reference** | [`backend/docs/API-REFERENCE.md`](backend/docs/API-REFERENCE.md) — every endpoint, in one file |
 | 🗂️ **DBML Diagram** | **[`backend/docs/schema.dbml`](backend/docs/schema.dbml)** |
 | 🧩 **ER Diagrams** | **[§24 Data model](backend/docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
@@ -62,9 +62,7 @@ Sign in immediately with any of these. Staff use `"type": "internal"`, customers
 
 | § | Section | What's inside |
 |:--|:--|:--|
-| **[1](#1-quick-links)** | **Quick Links** | Every document, diagram and deployed URL in one table |
-| [1.1](#11-documentation) | Documentation | API reference, DBML, sub-project READMEs |
-| [1.2](#12-deployed-environments) | Deployed environments | Frontend and backend URLs |
+| **[1](#1-documentation)** | **Documentation** | API reference, DBML, ER diagrams, sub-project READMEs, Postman |
 | **[2](#2-about-the-project)** | **About the Project** | The problem and how DealFlow360 solves it |
 | [2.1](#21-the-problem) | The problem | Why discount governance breaks down |
 | [2.2](#22-core-capabilities) | Core capabilities | The nine engines and where each lives |
@@ -107,9 +105,7 @@ Sign in immediately with any of these. Staff use `"type": "internal"`, customers
 
 ---
 
-## 1. Quick Links
-
-### 1.1 Documentation
+## 1. Documentation
 
 | # | Document | What it contains |
 |:--|:--|:--|
@@ -124,16 +120,6 @@ Sign in immediately with any of these. Staff use `"type": "internal"`, customers
 | 9 | [§22 — Role permission matrix](backend/docs/API-REFERENCE.md#22-role-permission-matrix) | Per-endpoint role requirements |
 | 10 | [§23 — Endpoint index](backend/docs/API-REFERENCE.md#23-endpoint-index) | Numbered index of every endpoint |
 | 11 | [`backend/postman/`](backend/postman) | Importable Postman collection + local environment |
-
-### 1.2 Deployed Environments
-
-| # | Surface | URL |
-|:--|:--|:--|
-| 1 | **Frontend** | <https://deal-flow360-team413.vercel.app> |
-| 2 | **Backend API** | <https://dealflow360-team413-2.onrender.com/api/v1> |
-
-> The frontend ships with the deployed API as its **default** base URL, so a fresh clone
-> runs against the live backend with no `.env` file at all.
 
 ---
 

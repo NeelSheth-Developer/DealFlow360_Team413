@@ -20,8 +20,8 @@
 | | Link |
 |:--|:--|
 | 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
-| 🌐 **Live App** | **<https://deal-flow360-team413.vercel.app>** |
-| ⚙️ **Live API** | **<https://dealflow360-team413-2.onrender.com/api/v1>** |
+| 🌐 **Live App** | **<https://dealflow360.teamvector.space/>** · <https://deal-flow360-team413.vercel.app> |
+| ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** |
 | 📘 **Project README** | [`../README.md`](../README.md) |
 | 🖥️ **Backend README** | [`../backend/README.md`](../backend/README.md) |
 | 📖 **API Reference** | [`../backend/docs/API-REFERENCE.md`](../backend/docs/API-REFERENCE.md) — every endpoint, in one file |
@@ -149,8 +149,9 @@ npm run dev
 
 Open **<http://localhost:5173>**.
 
-With **no** `.env` file the app falls back to the deployed API — the default is set in
-[`src/services/apiClient.js`](src/services/apiClient.js) — so a fresh clone works immediately.
+With **no** `.env` file the app falls back to the deployed API
+(`https://api.dealflow360.teamvector.space/api/v1`, set as the default in
+[`src/services/apiClient.js`](src/services/apiClient.js)), so a fresh clone works immediately.
 
 To run against a local backend instead:
 

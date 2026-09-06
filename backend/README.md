@@ -21,8 +21,8 @@
 | | Link |
 |:--|:--|
 | 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
-| 🌐 **Live App** | **<https://deal-flow360-team413.vercel.app>** |
-| ⚙️ **Live API** | **<https://dealflow360-team413-2.onrender.com/api/v1>** |
+| 🌐 **Live App** | **<https://dealflow360.teamvector.space/>** · <https://deal-flow360-team413.vercel.app> |
+| ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** |
 | 📖 **API Reference** | **[`docs/API-REFERENCE.md`](docs/API-REFERENCE.md)** — every endpoint, request/response shape, role and error code |
 | 🗂️ **DBML Diagram** | **[`docs/schema.dbml`](docs/schema.dbml)** |
 | 🧩 **ER Diagrams** | **[§24 Data model](docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
