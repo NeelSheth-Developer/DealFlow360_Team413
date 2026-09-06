@@ -146,17 +146,6 @@ export function riskBandMeta(score) {
   return RISK_BAND_META[riskBand(score)];
 }
 
-/** Build the approval step list from a resolved path. */
-export function buildApprovalSteps(approvers = []) {
-  return approvers.map((role) => ({
-    role,
-    status: 'pending',
-    reviewerId: null,
-    reviewerName: null,
-    at: null,
-    reason: null,
-  }));
-}
 
 /** The first step still awaiting action — Finance cannot act before the Manager. */
 export function currentPendingStep(quotation) {
@@ -175,6 +164,25 @@ export function canUserActOnApproval(quotation, user) {
  * Explain the score in one sentence — reused by the builder rail, the approval
  * header and the landing-page widget so the wording never drifts.
  */
+/**
+ * Format a blended score for display.
+ *
+ * The blend is VALUE-WEIGHTED: `sum(overage x lineValue) / orderValue`. So one small line
+ * far over its ceiling, inside a very large order, produces a genuinely tiny number —
+ * 0.00026 on the quotation this was found on. Printed as `0.00` next to a route of
+ * "Manager + Finance" it reads as a broken calculation, when in fact the score is right
+ * and the SINGLE-LINE TRIP is what demanded the approvers.
+ *
+ * `<0.01` says the same thing honestly: not zero, just small. Rounding a non-zero risk to
+ * a flat zero is the one thing this must not do.
+ */
+export function formatScore(score = 0) {
+  const n = Number(score) || 0;
+  if (n > 0 && n < 0.01) return '<0.01';
+  return n.toFixed(2);
+}
+
+
 export function explainRisk(risk) {
   if (risk.violationCount === 0) {
     return 'Every line is inside its category ceiling. No approval required.';
@@ -183,8 +191,22 @@ export function explainRisk(risk) {
     .filter((r) => r.isViolation)
     .sort((a, b) => b.overBy - a.overBy)[0];
 
+  /*
+   * When the blend rounds to nothing, say so explicitly.
+   *
+   * The score is value-weighted, so a small line well over its ceiling inside a large
+   * order scores near zero while the single-line trip still forces approval. Without
+   * this sentence the screen shows "0.00" beside "Manager + Finance" and looks broken.
+   */
+  const blendIsNegligible = risk.score < 0.01;
+
   if (risk.violationCount === 1) {
-    return `${worst.productName} is ${worst.overBy.toFixed(1)} pts over its ${worst.ceilingPct}% ceiling, which flags the whole quotation.`;
+    const base = `${worst.productName} is ${worst.overBy.toFixed(1)} pts over its ${worst.ceilingPct}% ceiling, which flags the whole quotation.`;
+    return blendIsNegligible
+      ? `${base} The blended score is near zero because that line is small next to the order total — the single-line trip is what requires approval.`
+      : base;
   }
-  return `${risk.violationCount} lines are over their ceilings. Value-weighted, that blends to ${risk.score.toFixed(2)} pts across the order.`;
+
+  const blended = blendIsNegligible ? 'under 0.01' : `${risk.score.toFixed(2)}`;
+  return `${risk.violationCount} lines are over their ceilings. Value-weighted, that blends to ${blended} pts across the order.`;
 }

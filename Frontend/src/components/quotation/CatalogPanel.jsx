@@ -38,7 +38,11 @@ export function CatalogPanel({ items, currency, onAdd, disabled }) {
   }, [items, search, category]);
 
   return (
-    <div className="flex h-full flex-col">
+    /* `min-h-0 flex-1` rather than `h-full`: this sits inside a flex column, so it
+       takes the remaining space directly instead of asking for 100% of a parent whose
+       height is only a max. `min-h-0` is what lets it shrink below its content so the
+       list below can scroll. */
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-2.5 border-b border-brand-500/12 pb-3">
         <Input
           placeholder="Search catalog…"

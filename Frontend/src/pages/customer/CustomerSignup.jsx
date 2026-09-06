@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { AuthAside, AuthShell } from '@/components/auth/AuthShell';
 import { OtpVerification } from '@/components/auth/OtpVerification';
+import { PasswordChecklist, PasswordField } from '@/components/auth/PasswordField';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * Customer self-registration. POST /auth/signup with type:'customer'.
@@ -128,9 +130,9 @@ export default function CustomerSignup() {
         <AuthAside
           tone="teal"
           title="Review and negotiate online"
-          description="Registering turns every quotation you receive into a live document — question a line, counter a discount, and confirm without a single email."
+          description="Registering turns every quotation you receive into a live document."
           items={STEPS}
-          note="New accounts start on our standard price list. If your organisation has an agreed commercial tier, your account manager applies it — tiers decide pricing, so they are never self-selected."
+          note="New accounts start on our standard price list."
         />
       }
     >
@@ -143,9 +145,7 @@ export default function CustomerSignup() {
         />
       ) : (
         <>
-          <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-teal to-state-info text-white shadow-glass">
-            <Building2 className="h-5 w-5" aria-hidden="true" />
-          </span>
+          <Logo size="lg" className="mb-4" />
 
           <h1 className="text-xl font-extrabold tracking-tight text-ink">
             Create a customer account
@@ -175,9 +175,8 @@ export default function CustomerSignup() {
               error={errors.email}
               onChange={setField('email')}
             />
-            <Input
+            <PasswordField
               label="Password"
-              type="password"
               required
               autoComplete="new-password"
               placeholder="At least 8 characters"
@@ -185,9 +184,9 @@ export default function CustomerSignup() {
               error={errors.password}
               onChange={setField('password')}
             />
-            <Input
+            <PasswordChecklist value={form.password} />
+            <PasswordField
               label="Confirm password"
-              type="password"
               required
               autoComplete="new-password"
               value={form.confirm}

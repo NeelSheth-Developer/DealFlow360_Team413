@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import { Copy, Package, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { productMarginPct } from '@/lib/pricing';
@@ -9,6 +9,7 @@ import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Input, Select, Textarea } from '@/components/ui/Input';
+import { NumberField } from '@/components/ui/NumberField';
 import { Badge } from '@/components/ui/Badge';
 import { Drawer } from '@/components/ui/Dialog';
 import { EmptyState, Switch } from '@/components/ui/Misc';
@@ -52,6 +53,7 @@ export default function Products() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -73,21 +75,44 @@ export default function Products() {
     setErrors((e) => ({ ...e, [key]: null }));
   };
 
-  const save = () => {
+  /**
+   * AWAITED, and the dialog stays open on failure.
+   *
+   * This used to fire `upsertProduct` without awaiting it, close the editor and show a
+   * green toast unconditionally — so a 403 (this route is admin-only), a 409 SKU_TAKEN or
+   * a validation failure all looked like a successful save, and the row simply never
+   * changed on the next reload. `saved.name` was also read off the un-awaited promise, so
+   * the toast said "undefined".
+   */
+  const save = async () => {
     const next = {};
     if (!form.name?.trim()) next.name = 'Name is required.';
     if (Number(form.basePrice) < 0) next.basePrice = 'Price cannot be negative.';
+    if (Number(form.costPrice) < 0) next.costPrice = 'Cost cannot be negative.';
     if (Number(form.taxPct) < 0 || Number(form.taxPct) > 100) next.taxPct = 'Tax must be 0–100.';
     if (Object.keys(next).length) {
       setErrors(next);
       return;
     }
 
-    const saved = upsertProduct(editing === 'new' ? { ...form, id: undefined } : form);
+    setSaving(true);
+    const isNew = editing === 'new';
+    const result = await upsertProduct(isNew ? { ...form, id: undefined } : form);
+    setSaving(false);
+
+    if (!result.ok) {
+      // Left open on purpose — the rejected values are still in the form and the message
+      // usually names the field to change.
+      notify.report(result, null, isNew ? 'Could not create the product' : 'Could not save');
+      return;
+    }
+
     setEditing(null);
-    toast.success(editing === 'new' ? 'Product created' : 'Product updated', {
-      description: `${saved.name} · ${percent(productMarginPct(saved), 0)} margin at list price.`,
-    });
+    const saved = result.product ?? form;
+    notify.success(
+      isNew ? 'Product created' : 'Product updated',
+      `${saved.name} · ${percent(productMarginPct(saved), 0)} margin at list price.`,
+    );
   };
 
   const marginNow = productMarginPct({ basePrice: form.basePrice, costPrice: form.costPrice });
@@ -207,7 +232,14 @@ export default function Products() {
                       <Switch
                         id={`active-${product.id}`}
                         checked={product.active}
-                        onCheckedChange={(v) => setProductActive(product.id, v)}
+                        onCheckedChange={async (v) => {
+                          const r = await setProductActive(product.id, v);
+                          notify.report(
+                            r,
+                            { title: v ? `${product.name} restored` : `${product.name} archived` },
+                            'Could not change the status',
+                          );
+                        }}
                       />
                     </TD>
                     <TD align="right">
@@ -222,9 +254,17 @@ export default function Products() {
                           icon={Copy}
                           label={`Duplicate ${product.name}`}
                           size="xs"
-                          onClick={() => {
-                            const copy = duplicateProduct(product.id);
-                            if (copy) toast.success(`${copy.name} created`);
+                          onClick={async () => {
+                            const r = await duplicateProduct(product.id);
+                            notify.report(
+                              r,
+                              {
+                                title: 'Product duplicated',
+                                description: (res) =>
+                                  `${res.product?.name ?? 'The copy'} was created archived — activate it when the details are right.`,
+                              },
+                              'Could not duplicate',
+                            );
                           }}
                         />
                       </div>
@@ -248,7 +288,9 @@ export default function Products() {
             <Button variant="secondary" onClick={() => setEditing(null)}>
               Cancel
             </Button>
-            <Button onClick={save}>{editing === 'new' ? 'Create product' : 'Save changes'}</Button>
+            <Button onClick={save} loading={saving}>
+              {editing === 'new' ? 'Create product' : 'Save changes'}
+            </Button>
           </>
         }
       >
@@ -470,20 +512,21 @@ export default function Products() {
                           return (
                             <TD key={currency} align="right">
                               <div className="flex flex-col items-end gap-0.5">
-                                <input
-                                  type="number"
+                                {/* Commits once on blur — this used to PUT per keystroke. */}
+                                <NumberField
                                   min={0}
+                                  className="w-28"
                                   aria-label={`${tier} price in ${currency}`}
                                   value={entry?.price ?? 0}
-                                  onChange={(e) =>
-                                    upsertPriceListEntry({
+                                  onCommit={async (price) => {
+                                    const r = await upsertPriceListEntry({
                                       productId: form.id,
                                       tier,
                                       currency,
-                                      price: Number(e.target.value),
-                                    })
-                                  }
-                                  className="num h-8 w-28 rounded-lg border border-brand-500/20 bg-white/70 px-2 text-right text-xs font-semibold text-ink focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
+                                      price,
+                                    });
+                                    if (!r.ok) notify.report(r, null, 'Could not update the price');
+                                  }}
                                 />
                                 {currency === 'INR' && (
                                   <span className="num text-[10px] text-ink-muted">

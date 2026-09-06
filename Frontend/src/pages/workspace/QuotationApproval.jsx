@@ -54,7 +54,14 @@ export default function QuotationApproval() {
   const [busy, setBusy] = useState(false);
 
   // Server-scored. The approver sees the same number the router used.
-  const { risk, approvalPath, isLoading: riskLoading, isFallback } = useRisk(id);
+  const {
+    risk,
+    approvalPath,
+    isLoading: riskLoading,
+    isError: riskError,
+    error: riskErrorMessage,
+    isFallback,
+  } = useRisk(id);
 
   /**
    * The trail is fetched here rather than assumed to be in the store: an approver
@@ -240,7 +247,12 @@ export default function QuotationApproval() {
         className="mb-4"
         bodyClassName="px-0 py-0 sm:px-0"
       >
-        <RiskBreakdownTable risk={risk} currency={quote.currency} />
+        <RiskBreakdownTable
+          risk={risk}
+          currency={quote.currency}
+          loading={riskLoading}
+          error={riskError ? riskErrorMessage : null}
+        />
       </GlassPanel>
 
       {/* ----------------------------------------------------- actions */}

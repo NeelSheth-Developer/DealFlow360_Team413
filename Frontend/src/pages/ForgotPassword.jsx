@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowRight, KeyRound, Lock, LogIn, Mail, ShieldCheck } from 'lucide-react';
+import { ArrowRight, KeyRound, Lock, LogIn, Mail } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { CUSTOMER, INTERNAL } from '@/services/authService';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { AuthAside, AuthShell } from '@/components/auth/AuthShell';
 import { OtpVerification } from '@/components/auth/OtpVerification';
+import { PasswordChecklist, PasswordField } from '@/components/auth/PasswordField';
+import { requiredText } from '@/lib/validate';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * Password reset. Both endpoints existed on the server with no UI at all.
@@ -99,6 +102,11 @@ export default function ForgotPassword() {
 
   const handleReset = async (e) => {
     e.preventDefault();
+    const noCode = requiredText(otp, 'Enter the 6-digit code from your email.');
+    if (noCode) {
+      setError(noCode);
+      return;
+    }
     if (passwords.next.length < 8) {
       setError('Use at least 8 characters.');
       return;
@@ -145,7 +153,7 @@ export default function ForgotPassword() {
           title="Resetting your password"
           description={`Four steps on your ${isCustomer ? 'customer' : 'staff'} account. Codes arrive by email and expire, so nothing lingers if you change your mind.`}
           items={RESET_STEPS}
-          note="We return the same response whether or not an account exists at that address — anything else would let someone probe which emails are registered. Finishing a reset signs out every other device."
+          note="We return the same response whether or not an account exists at that address."
         />
       }
     >
@@ -161,14 +169,12 @@ export default function ForgotPassword() {
 
       {step === 'request' && (
         <>
-          <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-accent-indigo text-white shadow-glass">
-            <KeyRound className="h-5 w-5" aria-hidden="true" />
-          </span>
+          <Logo size="lg" className="mb-4" />
 
           <h1 className="text-xl font-extrabold tracking-tight text-ink">Reset your password</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
-            Enter the email on your {isCustomer ? 'customer' : 'staff'} account and we&apos;ll send a
-            6-digit code.
+            Enter the email on your {isCustomer ? 'customer' : 'staff'} account and we&apos;ll send
+            a 6-digit code.
           </p>
 
           <form onSubmit={handleRequest} className="mt-5 space-y-3.5">
@@ -199,21 +205,16 @@ export default function ForgotPassword() {
 
       {step === 'reset' && (
         <>
-          <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-teal to-state-info text-white shadow-glass">
-            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-          </span>
+          <Logo size="lg" className="mb-4" />
 
-          <h1 className="text-xl font-extrabold tracking-tight text-ink">
-            Choose a new password
-          </h1>
+          <h1 className="text-xl font-extrabold tracking-tight text-ink">Choose a new password</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
             Setting a new password signs out every other device.
           </p>
 
           <form onSubmit={handleReset} className="mt-5 space-y-3.5">
-            <Input
+            <PasswordField
               label="New password"
-              type="password"
               required
               autoComplete="new-password"
               placeholder="At least 8 characters"
@@ -223,9 +224,9 @@ export default function ForgotPassword() {
                 setError(null);
               }}
             />
-            <Input
+            <PasswordChecklist value={passwords.next} />
+            <PasswordField
               label="Confirm new password"
-              type="password"
               required
               autoComplete="new-password"
               value={passwords.confirm}

@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowRight,
-  Building2,
   FileText,
   LogIn,
   MessageSquareQuote,
@@ -15,6 +14,9 @@ import { useAppStore } from '@/store/useAppStore';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { AuthAside, AuthShell } from '@/components/auth/AuthShell';
+import { PasswordField } from '@/components/auth/PasswordField';
+import { requiredText, runChecks, validEmail } from '@/lib/validate';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * Customer sign-in. POST /auth/login with type:'customer'.
@@ -43,7 +45,7 @@ const PORTAL_NOTES = [
   {
     icon: Percent,
     title: 'Counter the discount',
-    blurb: 'Propose the number you want with a justification, and get a real answer.',
+    blurb: 'Propose the number you want with a justification.',
   },
   {
     icon: Repeat,
@@ -65,12 +67,24 @@ export default function CustomerLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
 
   const destination = location.state?.from ?? '/customer/quotations';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Checked before the request is spent. Posting a blank field earned
+    // "Invalid email or password" from the server — true, but it points at the
+    // credentials rather than at the empty box that actually caused it.
+    const { errors, ok } = runChecks({
+      email: () => validEmail(email),
+      password: () => requiredText(password, 'Enter your password.'),
+    });
+    setFieldErrors(errors);
+    if (!ok) return;
+
     setBusy(true);
     const result = await customerLogin({ email: email.trim(), password });
     setBusy(false);
@@ -99,15 +113,13 @@ export default function CustomerLogin() {
         <AuthAside
           tone="teal"
           title="Your quotations, in one place"
-          description="Everything your account manager sends you becomes a live document you can question and negotiate — not a PDF attached to an email."
+          description="Everything your account manager sends you becomes a live document you can question and negotiate."
           items={PORTAL_NOTES}
-          note="The portal is a genuinely separate area from the sales workspace. Cost prices, margins and other customers’ data are never part of what it returns."
+          note="The portal is a genuinely separate area from the sales workspace."
         />
       }
     >
-      <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-teal to-state-info text-white shadow-glass">
-        <Building2 className="h-5 w-5" aria-hidden="true" />
-      </span>
+      <Logo size="lg" className="mb-4" />
 
       <h1 className="text-xl font-extrabold tracking-tight text-ink">Customer sign in</h1>
       <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
@@ -122,22 +134,26 @@ export default function CustomerLogin() {
           autoComplete="email"
           placeholder="you@company.com"
           value={email}
-          error={error}
+          error={fieldErrors.email ?? error}
           onChange={(e) => {
             setEmail(e.target.value);
             setError(null);
+            setFieldErrors((f) => ({ ...f, email: null }));
+            setFieldErrors((f) => ({ ...f, email: null }));
           }}
         />
-        <Input
+        <PasswordField
           label="Password"
-          type="password"
           required
           autoComplete="current-password"
           placeholder="Your password"
           value={password}
+          error={fieldErrors.password}
           onChange={(e) => {
             setPassword(e.target.value);
             setError(null);
+            setFieldErrors((f) => ({ ...f, password: null }));
+            setFieldErrors((f) => ({ ...f, password: null }));
           }}
         />
 
@@ -162,7 +178,7 @@ export default function CustomerLogin() {
         </Link>
       </p>
 
-      <div className="mt-4 border-t border-brand-500/12 pt-4">
+      <div className="border-brand-500/12 mt-4 border-t pt-4">
         <p className="text-xs text-ink-muted">
           Are you on the sales team?{' '}
           <Link

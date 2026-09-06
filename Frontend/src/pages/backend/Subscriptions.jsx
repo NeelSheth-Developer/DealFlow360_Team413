@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import { Info, Pencil, Plus, Repeat } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { computeProration } from '@/lib/billingEngine';
@@ -59,6 +59,7 @@ export default function Subscriptions() {
 
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
+  const [saving, setSaving] = useState(false);
 
   const subscriptionProducts = products.filter((p) => p.category === 'subscription');
 
@@ -67,16 +68,32 @@ export default function Subscriptions() {
     setForm(plan ? { ...plan } : EMPTY);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.name?.trim()) {
-      toast.error('Give the plan a name.');
+      notify.error('Give the plan a name.');
       return;
     }
-    const saved = upsertSubscriptionPlan(editing === 'new' ? { ...form, id: undefined } : form);
+    const negative = ['minCommitmentMonths', 'trialDays', 'billingDayOfCycle']
+      .find((k) => Number(form[k]) < 0);
+    if (negative) {
+      notify.error('That value cannot be negative.', `Check the ${negative.replace(/([A-Z])/g, ' $1').toLowerCase()} field.`);
+      return;
+    }
+    setSaving(true);
+    const isNew = editing === 'new';
+    const result = await upsertSubscriptionPlan(isNew ? { ...form, id: undefined } : form);
+    setSaving(false);
+
+    if (!result.ok) {
+      notify.report(result, null, isNew ? 'Could not create the plan' : 'Could not save');
+      return;
+    }
     setEditing(null);
-    toast.success(editing === 'new' ? 'Plan created' : 'Plan updated', {
-      description: `${saved.name} · ${prorationRuleLabel(saved.prorationRule)}`,
-    });
+    const saved = result.plan ?? form;
+    notify.success(
+      isNew ? 'Plan created' : 'Plan updated',
+      `${saved.name} · ${prorationRuleLabel(saved.prorationRule)}`,
+    );
   };
 
   // Worked example for whichever proration rule is currently selected.
@@ -197,7 +214,7 @@ export default function Subscriptions() {
             <Button variant="secondary" onClick={() => setEditing(null)}>
               Cancel
             </Button>
-            <Button onClick={save}>{editing === 'new' ? 'Create plan' : 'Save changes'}</Button>
+            <Button onClick={save} loading={saving}>{editing === 'new' ? 'Create plan' : 'Save changes'}</Button>
           </>
         }
       >

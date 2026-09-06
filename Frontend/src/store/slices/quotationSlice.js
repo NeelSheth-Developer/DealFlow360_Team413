@@ -32,8 +32,25 @@ export function createQuotationSlice(set, get) {
           : [quotation, ...state.quotations],
       };
     });
-    // The score depends on lines and ceilings, both of which may have just moved.
-    get().invalidateRisk(quotation.id);
+    /**
+     * NO `invalidateRisk` HERE, deliberately.
+     *
+     * It used to drop this quotation's cached score on every absorb, on the grounds that
+     * the lines may have moved. That was both redundant and destructive:
+     *
+     *  · REDUNDANT — `riskInputKey` already fingerprints the line ids, quantities, unit
+     *    prices, discounts, categories, the order discount and the ceilings. If any of
+     *    those actually changed, `useRisk`'s effect re-runs on its own and refetches.
+     *  · DESTRUCTIVE — deleting the entry does not schedule a replacement. `useRisk`
+     *    only re-runs when `inputKey` changes, and a plain re-read of the same quotation
+     *    leaves the key identical. So the sequence on every detail screen was: score
+     *    arrives and renders → `useQuotation`'s fetch resolves → absorb wipes the entry →
+     *    the effect does not re-run → the gauge and the whole "Why this needs review"
+     *    breakdown fall back to PENDING_RISK and sit at ₹0 / 0.00 forever.
+     *
+     * That is what made the risk table appear and then empty itself a moment later.
+     * Staleness is the fingerprint's job; this function's job is only to store the row.
+     */
     return quotation;
   }
 
@@ -390,6 +407,26 @@ export function createQuotationSlice(set, get) {
         const quotation = await quotationsApi.addLine(quoteId, { productId, qty: 1 });
         absorb(quotation);
         return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /**
+     * The quotation as a customer-facing PDF — §11.15.
+     *
+     * The endpoint and its service function both existed; nothing called them, so a rep
+     * had no way to produce the document they actually send. The render strips costs,
+     * margins and every risk figure server-side, so this is safe to hand to a customer
+     * directly.
+     *
+     * Resolves to `{ ok, url, hosted, revoke }` — `api.pdf` normalises the hosted-URL and
+     * streamed-bytes shapes, and `openPdfResult` revokes the object URL when it was a
+     * blob.
+     */
+    async quotationPdf(quoteId) {
+      try {
+        return { ok: true, ...(await quotationsApi.getQuotationPdf(quoteId)) };
       } catch (error) {
         return fail(error);
       }

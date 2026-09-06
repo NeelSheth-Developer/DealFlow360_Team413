@@ -96,8 +96,47 @@ export function createNotificationSlice(set, get) {
      * belongs on this side. Re-exported through the store so components do not each
      * import the service directly.
      */
+    /**
+     * Where a notification should open.
+     *
+     * The pure mapper handles quotation views. Everything else needs the store: an
+     * invoice notification carries the INVOICE id, and the only screen that can show it
+     * is nested under its quotation — so the id has to be translated before it becomes a
+     * URL. Sending it through untranslated is what produced the Not Found page.
+     *
+     * Config, catalogue and warehouse notifications point at back-end screens that a
+     * sales_rep cannot open, so those fall back to the dashboard rather than bouncing
+     * the user through a 403.
+     */
     notificationRoute(notification) {
-      return reportsApi.notificationRoute(notification);
+      const direct = reportsApi.notificationRoute(notification);
+      if (direct) return direct;
+
+      const { entityType, entityId } = notification ?? {};
+
+      if (entityType === 'invoice') {
+        const invoice = get().invoices.find((i) => i.id === entityId);
+        // Without the quotation it belongs to there is no invoice screen to open, so the
+        // list is the honest destination — never a URL that will 404.
+        return invoice?.quotationId
+          ? `/app/quotations/${invoice.quotationId}/invoice`
+          : '/app/quotations';
+      }
+
+      if (!get().canAccessBackend?.()) return '/app/dashboard';
+
+      switch (entityType) {
+        case 'product':
+          return '/app/backend/products';
+        case 'warehouse':
+          return '/app/backend/warehouses';
+        case 'config':
+          return '/app/backend/discount-tiers';
+        case 'customer':
+          return '/app/backend/directory';
+        default:
+          return '/app/dashboard';
+      }
     },
   };
 }

@@ -1,14 +1,47 @@
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Gauge } from 'lucide-react';
 import { categoryLabel, money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Table, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/Misc';
+import { SkeletonTable } from '@/components/ui/Loading';
 
 /**
  * Line-by-line audit of the blended score. The footer shows the arithmetic so an
  * approver can verify the number by eye rather than trusting it.
+ *
+ * THE ZERO STATE IS NOT A RESULT. `PENDING_RISK` carries `score: 0`, `totalValue: 0` and
+ * an empty `lineBreakdown`, so rendering it unconditionally printed a header, no rows,
+ * and a footer reading "₹0 weighted overage ÷ ₹0 order value · 0.0 worst · 0.00". An
+ * approver cannot tell that from a genuinely clean quotation, and it is the number they
+ * are being asked to sign off against — so the three states are now distinct and the
+ * numbers appear only once the server has actually answered.
  */
-export function RiskBreakdownTable({ risk, currency }) {
+export function RiskBreakdownTable({ risk, currency, loading = false, error = null }) {
+  if (loading) {
+    return <SkeletonTable rows={3} columns={7} />;
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Risk score unavailable"
+        description={`${error} — the breakdown is not shown rather than showing a zero, which would read as "no violations".`}
+      />
+    );
+  }
+
+  if (!risk?.lineBreakdown?.length) {
+    return (
+      <EmptyState
+        icon={Gauge}
+        title="Nothing to score"
+        description="This quotation has no lines yet, so there is no discount to measure against a ceiling."
+      />
+    );
+  }
+
   return (
     <div>
       <Table>

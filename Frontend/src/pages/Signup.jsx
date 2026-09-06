@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { AuthAside, AuthShell } from '@/components/auth/AuthShell';
 import { OtpVerification } from '@/components/auth/OtpVerification';
+import { PasswordChecklist, PasswordField } from '@/components/auth/PasswordField';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * Staff self-registration. POST /auth/signup with type:'internal'.
@@ -52,7 +54,7 @@ const STEPS = [
   {
     icon: ShieldCheck,
     title: 'Approvals route themselves',
-    blurb: 'The blended score picks Manager or Manager + Finance. No manual request step.',
+    blurb: 'The blended score picks Manager or Manager + Finance.',
   },
 ];
 
@@ -134,9 +136,9 @@ export default function Signup() {
       aside={
         <AuthAside
           title="Join the sales workspace"
-          description="Registration is for the internal sales team. Customers create their own accounts in the portal, which is a separate area entirely."
+          description="Registration is for the internal sales team."
           items={STEPS}
-          note="You don’t choose your role here. Permissions decide who can approve discounts and settle payments, so an admin grants them from Users & roles."
+          note="You don’t choose your role here."
         />
       }
     >
@@ -149,9 +151,7 @@ export default function Signup() {
         />
       ) : (
         <>
-          <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-accent-indigo text-white shadow-glass">
-            <Sparkles className="h-5 w-5" aria-hidden="true" />
-          </span>
+          <Logo size="lg" className="mb-4" />
 
           <h1 className="text-xl font-extrabold tracking-tight text-ink">Create your account</h1>
           <p className="mt-1.5 text-sm text-ink-soft">
@@ -178,9 +178,8 @@ export default function Signup() {
               error={errors.email}
               onChange={setField('email')}
             />
-            <Input
+            <PasswordField
               label="Password"
-              type="password"
               required
               autoComplete="new-password"
               placeholder="At least 8 characters"
@@ -188,6 +187,9 @@ export default function Signup() {
               error={errors.password}
               onChange={setField('password')}
             />
+            {/* Appears on the first keystroke — five red crosses against an untouched
+                field would read as five mistakes already made. */}
+            <PasswordChecklist value={form.password} />
 
             <Button type="submit" fullWidth size="lg" loading={busy} iconRight={ArrowRight}>
               Create account

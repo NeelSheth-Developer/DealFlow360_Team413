@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ServerCog } from 'lucide-react';
 import { computeBlendedRisk, resolveApprovalPath } from '@/lib/riskEngine';
+import { scoreBlended } from '@/services/riskService';
+import { hasSession } from '@/services/apiClient';
 import { money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '@/components/glass/Glass';
@@ -11,9 +13,23 @@ import { Badge } from '@/components/ui/Badge';
 /**
  * The interactive version of the worked example from the problem statement.
  *
- * Uses the exact same `computeBlendedRisk` and `resolveApprovalPath` functions
- * the real application uses, so what a visitor plays with here is genuinely the
- * production engine rather than a mock-up.
+ * SCORED BY THE SERVER WHENEVER THAT IS POSSIBLE. `POST /risk/blended-score` is the
+ * authority, and this widget calls it on every change (debounced) so what a visitor
+ * plays with is the real engine rather than a second implementation of it.
+ *
+ * WHY A LOCAL FALLBACK STILL EXISTS HERE, and nowhere else in the app:
+ *
+ *   · THE ROUTE REQUIRES A BEARER TOKEN. `riskRouter.use(requireAuth, requireKind('staff'))`
+ *     — a signed-out visitor on the public landing page gets 401. This is the only risk
+ *     surface in the product that renders without a session.
+ *   · THE ROUTE IS NEWER THAN SOME DEPLOYMENTS and answers 404 on at least one host the
+ *     app is pointed at.
+ *
+ * In both cases the widget degrades to `computeBlendedRisk` and SAYS SO on screen, so the
+ * number is never passed off as the server's when it is not. Everywhere a real quotation
+ * is scored — the builder, the approval screen, the list, the admin sandbox — there is no
+ * fallback at all: those call the API and show an error if it fails, because a score that
+ * decides an approval must never be invented locally.
  */
 
 const CATEGORY_CEILINGS = { hardware: 15, service: 10 };
@@ -51,12 +67,56 @@ export function RiskEngineDemo() {
     [hardwareDiscount, serviceDiscount],
   );
 
-  const risk = useMemo(
+  /** The illustration, used only while the server cannot be asked. */
+  const localRisk = useMemo(
     () => computeBlendedRisk(lines, CATEGORY_CEILINGS, TIER_CEILING, 0),
     [lines],
   );
+  const localPath = useMemo(() => resolveApprovalPath(localRisk, APPROVAL_CHAIN), [localRisk]);
 
-  const path = useMemo(() => resolveApprovalPath(risk, APPROVAL_CHAIN), [risk]);
+  const [served, setServed] = useState(null);
+  // Latched: once the route has answered 401/404 there is no point asking again on every
+  // slider move for the rest of the visit.
+  const unavailable = useRef(false);
+
+  useEffect(() => {
+    if (unavailable.current || !hasSession()) return undefined;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await scoreBlended({
+          customerTier: 'gold',
+          lines: lines.map((l) => ({
+            lineId: l.id,
+            category: l.category,
+            discountPct: l.discountPct,
+            lineTotal: l.qty * l.unitPrice * (1 - l.discountPct / 100),
+          })),
+        });
+        if (!cancelled) setServed(result);
+      } catch {
+        unavailable.current = true;
+        if (!cancelled) setServed(null);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [lines]);
+
+  /*
+   * The server owns the score and the routing when it answered; the local pass still
+   * supplies the per-line breakdown the table below renders, which `/risk/blended-score`
+   * does not return (it sends only the lines it flagged).
+   */
+  const isServed = Boolean(served);
+  const risk = isServed ? { ...localRisk, score: served.score } : localRisk;
+  const path = isServed
+    ? { approvers: served.approvers, ruleId: null, label: served.label }
+    : localPath;
 
   return (
     <GlassCard strong className="overflow-hidden">
@@ -187,6 +247,23 @@ export function RiskEngineDemo() {
         {/* ------------------------------------------------------ verdict */}
         <div className="flex w-full flex-col items-center justify-center gap-4 bg-white/40 p-6 lg:w-72">
           <RiskGauge score={risk.score} size="md" />
+
+          {/*
+            Says which engine produced the number. A locally computed score that looks
+            like the server's is the one thing this widget must not do — the whole point
+            of the panel is that the governance engine decides, not the browser.
+          */}
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold',
+              isServed
+                ? 'bg-state-success/12 text-state-success'
+                : 'bg-brand-500/10 text-brand-700',
+            )}
+          >
+            <ServerCog className="h-3 w-3" aria-hidden="true" />
+            {isServed ? 'Scored by the governance service' : 'Illustration — sign in for a live score'}
+          </span>
 
           <div className="w-full space-y-2">
             <p className="text-center text-[11px] font-bold uppercase tracking-wider text-ink-muted">

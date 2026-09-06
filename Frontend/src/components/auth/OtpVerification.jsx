@@ -134,7 +134,7 @@ export function OtpVerification({
         </Button>
       </form>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-brand-500/12 pt-4">
+      <div className="border-brand-500/12 mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-4">
         <Button
           variant="ghost"
           size="sm"

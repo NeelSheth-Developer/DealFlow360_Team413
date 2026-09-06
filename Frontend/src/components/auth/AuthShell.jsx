@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { GlassCard } from '@/components/glass/Glass';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * Shared two-column layout for every auth screen.
@@ -27,12 +28,8 @@ export function AuthShell({ backTo = '/', backLabel = 'Back to home', aside, chi
           {backLabel}
         </Link>
 
-        <div
-          className={
-            hasAside ? 'grid items-stretch gap-4 lg:grid-cols-[1fr_0.9fr]' : ''
-          }
-        >
-          <GlassCard strong className="p-6">
+        <div className={hasAside ? 'grid items-stretch gap-4 lg:grid-cols-[1fr_0.9fr]' : ''}>
+          <GlassCard strong className="p-7">
             {children}
           </GlassCard>
 
@@ -78,7 +75,7 @@ export function AuthAside({
     <section
       className={`relative flex h-full flex-col overflow-hidden rounded-glass bg-gradient-to-br ${
         TONES[tone] ?? TONES.brand
-      } p-6 shadow-glass-strong`}
+      } p-7 shadow-glass-strong`}
     >
       {/* Soft depth, matching the blob language used across the app. */}
       <span
@@ -92,31 +89,36 @@ export function AuthAside({
 
       <div className="relative flex h-full flex-col">
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-white">
-            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
+          {/* On the gradient aside the mark carries a soft ring so its own purple
+              does not disappear into the panel behind it. */}
+          <Logo size="sm" className="ring-1 ring-white/40" />
           <span className="text-xs font-extrabold tracking-tight text-white">{eyebrow}</span>
         </div>
 
-        <h2 className="mt-4 text-lg font-extrabold leading-snug tracking-tight text-white">
+        {/*
+          Bigger headline, fewer words under it. The panel used to run a paragraph of
+          description straight into five two-clause bullets, so the eye had nowhere to
+          rest and it read as documentation rather than the product's voice.
+        */}
+        <h2 className="mt-5 text-xl font-extrabold leading-tight tracking-tight text-white">
           {title}
         </h2>
         {description && (
-          <p className="mt-2 text-xs leading-relaxed text-white/80">{description}</p>
+          <p className="mt-2.5 text-[13px] leading-relaxed text-white/85">{description}</p>
         )}
 
         {items.length > 0 && (
-          <ul className="mt-5 space-y-3">
+          <ul className="mt-6 space-y-3.5">
             {items.map((item) => (
-              <li key={item.title} className="flex items-start gap-2.5">
-                <span className="mt-px inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white">
-                  <item.icon className="h-3 w-3" aria-hidden="true" />
+              <li key={item.title} className="flex items-start gap-3">
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white">
+                  <item.icon className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[11px] font-bold leading-snug text-white">
+                  <span className="block text-xs font-bold leading-snug text-white">
                     {item.title}
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-white/70">
+                  <span className="mt-0.5 block text-[11.5px] leading-relaxed text-white/70">
                     {item.blurb}
                   </span>
                 </span>
@@ -128,7 +130,7 @@ export function AuthAside({
         {/* `mt-auto` pins this to the bottom so the panel reads as full-height
             rather than top-weighted with dead space underneath. */}
         {note && (
-          <p className="mt-auto border-t border-white/20 pt-4 text-[11px] leading-relaxed text-white/75">
+          <p className="mt-auto border-t border-white/20 pt-5 text-[11px] leading-relaxed text-white/70">
             {note}
           </p>
         )}
