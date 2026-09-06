@@ -128,6 +128,19 @@ export function projectForCustomer(loaded: LoadedQuotation) {
     .sort((a, b) => b.at.getTime() - a.at.getTime())[0];
 
   return {
+    /*
+     * The quotation's own id.
+     *
+     * Every other portal route parses `:id` as a uuid (`portal.routes.ts`), but this
+     * projection is the ONLY thing a customer session can read — so omitting the id left
+     * the detail view, the PDF, the comment thread, the terms request and the confirm
+     * action unreachable. The list rendered, and nothing on it could be opened.
+     *
+     * Safe to expose: it is an opaque uuid, every route re-scopes by the session's own
+     * customer id, and another customer's record still answers 404 rather than 403. The
+     * line ids below have always been projected for exactly this reason.
+     */
+    id: loaded.id,
     reference: loaded.reference,
     customerId: loaded.customerId,
     customerName: loaded.customerName,

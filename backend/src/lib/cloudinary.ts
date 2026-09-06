@@ -29,6 +29,41 @@ function ensureConfigured() {
   configured = true;
 }
 
+/**
+ * Whether this cloud will actually SERVE what we upload.
+ *
+ * Cloudinary ships with "Allow delivery of PDF and ZIP files" DISABLED — a deliberate
+ * default, hardened years ago against people using the CDN to host arbitrary documents.
+ * An upload under that setting still succeeds and still returns a `secure_url`, and only
+ * a GET on that URL reveals the truth: `401` with `x-cld-error: deny or ACL failure`.
+ *
+ * So a successful upload is NOT evidence the link works, and the app was handing
+ * customers a URL that renders "This page isn't working". Probing once per process and
+ * remembering the answer costs one HEAD per cold start and turns a broken link into the
+ * streamed file, which has always been the fallback for an unconfigured deployment.
+ *
+ * `null` means "not probed yet". Once it is `false` no further uploads are attempted.
+ */
+let deliveryWorks: boolean | null = null;
+
+/** HEAD the uploaded URL to see whether the CDN will serve it to a customer. */
+async function canDeliver(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    if (response.ok) return true;
+
+    logger.warn(
+      { status: response.status, cldError: response.headers.get('x-cld-error'), url },
+      'Cloudinary accepted the upload but will not deliver it — falling back to streaming. ' +
+        'Enable "Allow delivery of PDF and ZIP files" under Settings > Security to use hosted links.',
+    );
+    return false;
+  } catch (error) {
+    logger.warn({ err: error, url }, 'Could not verify Cloudinary delivery — falling back to streaming');
+    return false;
+  }
+}
+
 export type UploadResult = {
   url: string;
   publicId: string;
@@ -46,6 +81,8 @@ export type UploadResult = {
  */
 export async function uploadPdf(buffer: Buffer, publicId: string): Promise<UploadResult | null> {
   if (!cloudinaryConfigured) return null;
+  // Already known not to deliver on this cloud — skip the upload entirely.
+  if (deliveryWorks === false) return null;
   ensureConfigured();
 
   try {
@@ -75,8 +112,15 @@ export async function uploadPdf(buffer: Buffer, publicId: string): Promise<Uploa
       stream.end(buffer);
     });
 
+    const url = result.secure_url || result.url || '';
+
+    // Verified once per process: an upload that cannot be delivered is worse than no
+    // upload at all, because the caller stops streaming and hands out a dead link.
+    if (deliveryWorks === null) deliveryWorks = await canDeliver(url);
+    if (!deliveryWorks) return null;
+
     return {
-      url: result.secure_url || result.url || '',
+      url,
       publicId: result.public_id || publicId,
       bytes: result.bytes || buffer.byteLength,
       format: result.format || 'pdf',
