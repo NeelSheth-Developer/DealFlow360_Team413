@@ -1,11 +1,10 @@
-import { differenceInDays, isAfter, isBefore, parseISO } from 'date-fns';
-import { lineTotal, productMarginPct, quoteTotals, tierPrice } from '@/lib/pricing';
+import { differenceInDays } from 'date-fns';
+import { productMarginPct, quoteTotals, tierPrice } from '@/lib/pricing';
 import { rankSuggestions } from '@/lib/upsellEngine';
-import { annualValue, invoiceBalances } from '@/lib/billingEngine';
 import { FUNNEL_ORDER, OPEN_STAGES, PIPELINE_COLUMNS } from '@/lib/stageMachine';
 import { stockSignal } from '@/lib/warehouseSplit';
 import { PENDING_RISK } from '@/services/riskService';
-import { mean, round2, sum } from '@/lib/utils';
+import { round2, sum } from '@/lib/utils';
 
 /**
  * Derived read models. Nothing here mutates state — these turn the raw store
@@ -18,10 +17,42 @@ import { mean, round2, sum } from '@/lib/utils';
 
 // ---------------------------------------------------------------- quotations
 
+/**
+ * Reconcile the server's totals with the extra figures the UI needs.
+ *
+ * The server is authoritative on money — `quotation.totals` (API-REFERENCE §11.0) is
+ * computed from the lines on read, and it is the number the approval screen, the invoice
+ * and the audit trail all quote. So it must win.
+ *
+ * But the server returns a smaller set than the screens read. `savings` and `margin`
+ * only exist server-side, while `lineDiscountAmount`, `orderDiscountAmount`,
+ * `netBeforeTax` and the one-time/recurring counts only exist in the local rollup and
+ * are presentation breakdowns rather than independent facts. Taking one shape alone
+ * left half the UI reading `undefined`, which is how a total renders as ₹0.
+ *
+ * So: local fills the gaps, server overrides anything it speaks about, and the last
+ * block bridges the two naming conventions (`margin` vs `marginAmount`, `cost` vs
+ * `totalCost`) so a component written against either one resolves.
+ */
+export function resolveTotals(quote) {
+  const local = quoteTotals(quote);
+  const server = quote?.totals;
+  if (!server) return local;
+
+  return {
+    ...local,
+    ...server,
+    savings: server.savings ?? local.lineDiscountAmount,
+    margin: server.margin ?? local.marginAmount,
+    marginAmount: server.margin ?? local.marginAmount,
+    totalCost: server.cost ?? local.totalCost,
+  };
+}
+
 export function selectQuoteWithTotals(state, quoteId) {
   const quote = state.quotations.find((q) => q.id === quoteId);
   if (!quote) return null;
-  return { ...quote, totals: quoteTotals(quote) };
+  return { ...quote, totals: resolveTotals(quote) };
 }
 
 /** Server-scored risk for a quotation, or a pending placeholder. */
@@ -151,53 +182,32 @@ export function selectWarehouseSummary(state) {
 
 // ------------------------------------------------------------------ billing
 
+/**
+ * The billing view as the server built it — GET /quotations/:id/billing (§14.1).
+ *
+ * This used to reassemble the whole thing locally: splitting lines on `isSubscription`,
+ * applying the order-discount factor, recomputing each per-cycle amount and summing an
+ * annual contract value. All of that is in the response now, so recomputing it here
+ * could only produce a second answer that disagrees.
+ *
+ * Returns null until `loadBilling(quoteId)` or `buildBilling(quoteId)` has run.
+ */
 export function selectBillingView(state, quoteId) {
-  const quote = state.quotations.find((q) => q.id === quoteId);
-  if (!quote) return null;
-
-  const orderFactor = 1 - (Number(quote.orderDiscountPct) || 0) / 100;
-  const oneTime = quote.lines.filter((l) => !l.isSubscription);
-  const recurring = quote.lines.filter((l) => l.isSubscription);
-  const schedules = state.billingSchedules[quoteId] ?? {};
-
-  const recurringRows = recurring.map((line) => {
-    const plan = state.subscriptionPlans.find((p) => p.id === line.planId) ?? null;
-    const occurrences = schedules[line.id] ?? [];
-    const next = occurrences.find((o) => o.status === 'scheduled') ?? null;
-    return {
-      line,
-      plan,
-      perCycle: round2(lineTotal(line) * orderFactor),
-      annual: plan ? annualValue(line, plan) : 0,
-      occurrences,
-      nextBillingDate: next?.date ?? null,
-      cancelled: line.subscriptionStatus === 'cancelled',
-    };
-  });
-
-  return {
-    quote,
-    currency: quote.currency,
-    oneTimeRows: oneTime.map((line) => ({ line, total: round2(lineTotal(line) * orderFactor) })),
-    oneTimeTotal: round2(sum(oneTime, (l) => lineTotal(l) * orderFactor)),
-    recurringRows,
-    recurringPerCycleTotal: round2(sum(recurringRows.filter((r) => !r.cancelled), (r) => r.perCycle)),
-    annualRecurringTotal: round2(sum(recurringRows.filter((r) => !r.cancelled), (r) => r.annual)),
-    invoice: state.invoices.find((i) => i.quotationId === quoteId) ?? null,
-    creditNotes: state.creditNotes.filter((n) => n.quotationId === quoteId),
-  };
+  return state.billingViews[quoteId] ?? null;
 }
 
+/**
+ * `amountPaid`, `balanceRemaining` and `status` are DERIVED SERVER-SIDE from the payment
+ * rows on every read (§15.2) and never stored. The old local `invoiceBalances()` pass is
+ * gone: a balance the client recomputes can drift from the ledger it is supposed to
+ * describe, and the server is the only thing that sees every payment row.
+ */
 export function selectInvoiceWithBalances(state, invoiceId) {
-  const invoice = state.invoices.find((i) => i.id === invoiceId);
-  if (!invoice) return null;
-  return { ...invoice, ...invoiceBalances(invoice) };
+  return state.invoices.find((i) => i.id === invoiceId) ?? null;
 }
 
 export function selectInvoiceForQuote(state, quoteId) {
-  const invoice = state.invoices.find((i) => i.quotationId === quoteId);
-  if (!invoice) return null;
-  return { ...invoice, ...invoiceBalances(invoice) };
+  return state.invoices.find((i) => i.quotationId === quoteId) ?? null;
 }
 
 // ----------------------------------------------------------------- pipeline
@@ -208,7 +218,8 @@ export function selectPipelineColumns(state, { ownerId = null, tier = null, sear
   const filtered = state.quotations.filter((q) => {
     if (ownerId && q.ownerId !== ownerId) return false;
     if (tier && q.tier !== tier) return false;
-    if (term && !`${q.id} ${q.customerName} ${q.ownerName}`.toLowerCase().includes(term)) return false;
+    if (term && !`${q.reference ?? ''} ${q.id} ${q.customerName} ${q.ownerName}`.toLowerCase().includes(term))
+        return false;
     return true;
   });
 
@@ -228,7 +239,7 @@ export function selectPipelineColumns(state, { ownerId = null, tier = null, sear
 
 /** Shared card/row decoration so list and Kanban always agree. */
 export function decorateQuote(state, quote) {
-  const totals = quoteTotals(quote);
+  const totals = resolveTotals(quote);
   const riskEntry = state.riskCache[quote.id] ?? PENDING_RISK;
   const idleDays = differenceInDays(new Date(), new Date(quote.lastActivityAt));
   return {
@@ -237,6 +248,9 @@ export function decorateQuote(state, quote) {
     risk: riskEntry.risk,
     approvalPath: riskEntry.approvalPath,
     riskStatus: riskEntry.status ?? riskEntry.source,
+    // `id` is a uuid; `reference` ("Q-1042") is what a human quotes. Guaranteed
+    // present so rows never print a uuid where a quote number belongs.
+    reference: quote.reference ?? quote.id,
     idleDays,
     isStale: OPEN_STAGES.includes(quote.stage) && idleDays > state.dashboardConfig.stallThresholdDays,
   };
@@ -251,7 +265,8 @@ export function selectQuotationRows(state, filters = {}) {
       if (ownerId && q.ownerId !== ownerId) return false;
       if (stage && q.stage !== stage) return false;
       if (tier && q.tier !== tier) return false;
-      if (term && !`${q.id} ${q.customerName} ${q.ownerName}`.toLowerCase().includes(term)) return false;
+      if (term && !`${q.reference ?? ''} ${q.id} ${q.customerName} ${q.ownerName}`.toLowerCase().includes(term))
+        return false;
       return true;
     })
     .map((q) => decorateQuote(state, q))
@@ -260,45 +275,77 @@ export function selectQuotationRows(state, filters = {}) {
 
 // ---------------------------------------------------------------- dashboard
 
+/**
+ * Shown while GET /dashboard/deal-health is in flight.
+ *
+ * Zeroes rather than nulls so the KPI tiles render their own layout instead of
+ * collapsing, and `thresholds` is present so the hint text has something to read. The
+ * tiles carry their own loading treatment; these are placeholders, not claims.
+ */
+const EMPTY_DEAL_HEALTH = {
+  activeCount: 0,
+  activeValue: 0,
+  stalledCount: 0,
+  anomalyCount: 0,
+  slippageCount: 0,
+  bottleneckCount: 0,
+  pendingApprovalCount: 0,
+  oldestPendingHours: 0,
+  winRate: 0,
+  avgCycleDays: 0,
+  avgDiscountPct: 0,
+  highSeverityCount: 0,
+  thresholds: { stallThresholdDays: 5, anomalySensitivity: 1.8, approvalSlaHours: 24 },
+};
+
+/**
+ * GET /dashboard/deal-health, verbatim.
+ *
+ * This used to be computed here from `state.quotations`. It cannot be: win rate and
+ * average cycle need every closed deal, and the store only holds the page of quotations
+ * the current screen asked for — so a local figure would silently mean "win rate across
+ * the 100 rows I happen to have loaded".
+ */
 export function selectDealHealth(state) {
-  const open = state.quotations.filter((q) => OPEN_STAGES.includes(q.stage));
-  const alerts = state.alerts;
-  const pendingApproval = state.quotations.filter((q) => q.stage === 'pending_approval');
-
-  const oldestPendingHours = pendingApproval.length
-    ? Math.max(
-        ...pendingApproval.map((q) =>
-          Math.round((Date.now() - new Date(q.lastActivityAt).getTime()) / 3600000),
-        ),
-      )
-    : 0;
-
-  const closed = state.quotations.filter((q) => ['confirmed', 'lost'].includes(q.stage));
-  const won = closed.filter((q) => q.stage === 'confirmed');
-
-  return {
-    activeCount: open.length,
-    activeValue: round2(sum(open, (q) => quoteTotals(q).grandTotal)),
-    stalledCount: alerts.filter((a) => a.type === 'stalled').length,
-    anomalyCount: alerts.filter((a) => a.type === 'discount_anomaly').length,
-    slippageCount: alerts.filter((a) => a.type === 'delivery_slippage').length,
-    bottleneckCount: alerts.filter((a) => a.type === 'approval_bottleneck').length,
-    pendingApprovalCount: pendingApproval.length,
-    oldestPendingHours,
-    winRate: closed.length ? round2((won.length / closed.length) * 100) : 0,
-    avgCycleDays: won.length
-      ? round2(mean(won, (q) => differenceInDays(new Date(q.lastActivityAt), new Date(q.createdAt))))
-      : 0,
-    highSeverityCount: alerts.filter((a) => a.severity === 'high').length,
-  };
+  return state.dealHealth ?? EMPTY_DEAL_HEALTH;
 }
 
+/**
+ * The alert feed. The server already applied `type` and `severity` when the feed was
+ * fetched; the same filter is re-applied here so a stale list from the previous filter
+ * cannot flash on screen during the request.
+ */
 export function selectAlerts(state, { type = null, severity = null } = {}) {
   return state.alerts.filter((a) => {
     if (type && a.type !== type) return false;
     if (severity && a.severity !== severity) return false;
     return true;
   });
+}
+
+/**
+ * Days-since-last-activity buckets for the dashboard chart.
+ *
+ * Grouping the loaded quotations by a date field is presentation, not governance — no
+ * threshold, ceiling or score is involved — so it stays on this side. It describes the
+ * rows currently loaded, which is what the chart's caption says.
+ */
+export function selectAgingBuckets(state) {
+  const now = new Date();
+  const buckets = [
+    { name: '0–3 days', min: 0, max: 3, count: 0 },
+    { name: '4–7 days', min: 4, max: 7, count: 0 },
+    { name: '8–14 days', min: 8, max: 14, count: 0 },
+    { name: '15+ days', min: 15, max: Infinity, count: 0 },
+  ];
+
+  for (const q of state.quotations) {
+    if (!OPEN_STAGES.includes(q.stage)) continue;
+    const idle = differenceInDays(now, new Date(q.lastActivityAt));
+    const bucket = buckets.find((b) => idle >= b.min && idle <= b.max);
+    if (bucket) bucket.count += 1;
+  }
+  return buckets;
 }
 
 export function selectStageFunnel(state) {
@@ -309,123 +356,33 @@ export function selectStageFunnel(state) {
 }
 
 // ------------------------------------------------------------------ reports
-
-/** Applies the reporting filter bar to the quotation set. */
-export function selectFilteredQuotations(state, filters = {}) {
-  const { from = null, to = null, repIds = [], stages = [], category = null } = filters;
-
-  return state.quotations.filter((q) => {
-    const created = parseISO(q.createdAt);
-    if (from && isBefore(created, parseISO(from))) return false;
-    if (to && isAfter(created, parseISO(`${to.slice(0, 10)}T23:59:59`))) return false;
-    if (repIds.length && !repIds.includes(q.ownerId)) return false;
-    if (stages.length && !stages.includes(q.stage)) return false;
-    if (category && !q.lines.some((l) => l.category === category)) return false;
-    return true;
-  });
-}
-
-export function selectReportData(state, filters = {}) {
-  const rows = selectFilteredQuotations(state, filters).map((q) => decorateQuote(state, q));
-
-  const closed = rows.filter((q) => ['confirmed', 'lost'].includes(q.stage));
-  const won = closed.filter((q) => q.stage === 'confirmed');
-
-  // --- value by rep
-  const byRep = {};
-  for (const q of rows) {
-    if (!byRep[q.ownerId]) byRep[q.ownerId] = { name: q.ownerName, value: 0, count: 0 };
-    byRep[q.ownerId].value += q.totals.grandTotal;
-    byRep[q.ownerId].count += 1;
-  }
-
-  // --- discount distribution
-  const buckets = [
-    { name: '0–5%', min: 0, max: 5, count: 0 },
-    { name: '5–10%', min: 5, max: 10, count: 0 },
-    { name: '10–15%', min: 10, max: 15, count: 0 },
-    { name: '15–20%', min: 15, max: 20, count: 0 },
-    { name: '20%+', min: 20, max: Infinity, count: 0 },
-  ];
-  for (const q of rows) {
-    const pct = q.totals.effectiveDiscountPct;
-    const bucket = buckets.find((b) => pct >= b.min && pct < b.max);
-    if (bucket) bucket.count += 1;
-  }
-
-  // --- revenue mix over time (one-time vs recurring)
-  const byMonth = {};
-  for (const q of rows) {
-    const key = q.createdAt.slice(0, 7);
-    if (!byMonth[key]) byMonth[key] = { month: key, oneTime: 0, recurring: 0 };
-    byMonth[key].oneTime += q.totals.oneTimeTotal;
-    byMonth[key].recurring += q.totals.recurringTotal;
-  }
-
-  // --- product performance
-  const byProduct = {};
-  for (const q of rows) {
-    for (const line of q.lines) {
-      if (!byProduct[line.productId]) {
-        byProduct[line.productId] = {
-          productId: line.productId,
-          productName: line.productName,
-          category: line.category,
-          qty: 0,
-          value: 0,
-          discountSum: 0,
-          lineCount: 0,
-        };
-      }
-      const entry = byProduct[line.productId];
-      entry.qty += line.qty;
-      entry.value += lineTotal(line);
-      entry.discountSum += line.discountPct;
-      entry.lineCount += 1;
-    }
-  }
-
-  const approvalDurations = rows
-    .flatMap((q) => q.approvalSteps.filter((s) => s.at))
-    .map((s) => s.at);
-
-  return {
-    rows,
-    kpis: {
-      totalQuotations: rows.length,
-      totalValue: round2(sum(rows, (q) => q.totals.grandTotal)),
-      winRate: closed.length ? round2((won.length / closed.length) * 100) : 0,
-      avgDiscountPct: round2(mean(rows, (q) => q.totals.effectiveDiscountPct)),
-      avgMarginPct: round2(mean(rows, (q) => q.totals.marginPct)),
-      avgCycleDays: won.length
-        ? round2(mean(won, (q) => differenceInDays(new Date(q.lastActivityAt), new Date(q.createdAt))))
-        : 0,
-      approvalActions: approvalDurations.length,
-    },
-    valueByRep: Object.values(byRep).sort((a, b) => b.value - a.value),
-    discountBuckets: buckets,
-    revenueMix: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)),
-    products: Object.values(byProduct)
-      .map((p) => ({
-        ...p,
-        value: round2(p.value),
-        avgDiscountPct: round2(p.discountSum / Math.max(1, p.lineCount)),
-      }))
-      .sort((a, b) => b.value - a.value),
-    funnel: FUNNEL_ORDER.map((stage) => ({
-      stage,
-      count: rows.filter((q) => q.stage === stage).length,
-    })),
-  };
-}
+//
+// `selectFilteredQuotations` and `selectReportData` USED TO LIVE HERE and have been
+// deleted. They aggregated `state.quotations` into the reporting screen's KPIs, charts
+// and product table.
+//
+// They cannot work against the API. The store holds one page of quotations, so
+// "total value" would quietly mean "total across the rows this browser happens to have
+// loaded", and win rate would be measured against a sample instead of the business.
+// Margin is worse still: `costPrice` is not on any line the client can read, so an
+// average margin computed here would have been an invention.
+//
+// The reporting screen now calls GET /reports/summary and GET /reports/products, which
+// aggregate across every matching row and add the `valueByTeam` rollup the brief asks
+// for. See src/services/reportsService.js.
 
 // ------------------------------------------------------------ notifications
 
+/**
+ * GET /notifications is scoped to the caller's own user id in the WHERE clause, so
+ * `state.notifications` is already mine and nothing is filtered here.
+ *
+ * `unread` comes from `meta.unreadCount` rather than from counting the rows: the fetch
+ * takes a `limit`, so counting locally would under-report the badge the moment there
+ * were more unread rows than the panel shows.
+ */
 export function selectMyNotifications(state) {
-  const me = state.currentUser;
-  if (!me) return { items: [], unread: 0 };
-  const items = state.notifications.filter((n) => n.userId === me.id);
-  return { items, unread: items.filter((n) => !n.read).length };
+  return { items: state.notifications, unread: state.notificationUnreadCount || 0 };
 }
 
 /** Approvals the current user is actually able to action right now. */
@@ -441,6 +398,13 @@ export function selectMyApprovalQueue(state) {
     .map((q) => decorateQuote(state, q));
 }
 
+/**
+ * The immutable trail for one entity, from GET /audit-log?entityId=.
+ *
+ * Reads the per-entity cache rather than filtering `state.auditLog`: that array holds
+ * whichever page the platform-wide audit screen last requested, so filtering it would
+ * show an empty trail on any quotation that happens to be off that page.
+ */
 export function selectAuditForEntity(state, entityId) {
-  return state.auditLog.filter((e) => e.entityId === entityId);
+  return state.auditByEntity[entityId] ?? [];
 }

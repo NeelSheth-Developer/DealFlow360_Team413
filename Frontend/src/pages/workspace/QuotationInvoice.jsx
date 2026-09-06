@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -16,7 +16,8 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import { selectBillingView, selectInvoiceForQuote } from '@/store/selectors';
 import { INVOICE_STEPS, invoiceStepIndex } from '@/lib/billingEngine';
-import { exportInvoiceToPdf } from '@/lib/exporters';
+import { getInvoicePdf } from '@/services/invoicesService';
+import { openPdfResult } from '@/lib/openPdf';
 import { dateShort, invoiceStatusLabel, money, paymentMethodLabel, roleLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
@@ -29,6 +30,8 @@ import { Table, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/Table';
 import { StepProgress } from '@/components/shared/StepProgress';
 import { StageBadge } from '@/components/shared/Indicators';
 import { QuoteNav } from '@/components/quotation/QuoteNav';
+import { QuoteLoading } from '@/components/quotation/QuoteLoading';
+import { useQuotation } from '@/hooks/useQuotation';
 
 const METHODS = ['bank_transfer', 'card', 'upi', 'cheque', 'other'].map((m) => ({
   value: m,
@@ -39,10 +42,11 @@ const METHODS = ['bank_transfer', 'card', 'upi', 'cheque', 'other'].map((m) => (
 export default function QuotationInvoice() {
   const { id } = useParams();
 
-  const quote = useAppStore((s) => s.quotations.find((q) => q.id === id));
+  const { quote, resolving, missing } = useQuotation(id);
   const invoice = useAppStore((s) => (quote ? selectInvoiceForQuote(s, id) : null));
   const billing = useAppStore((s) => (quote ? selectBillingView(s, id) : null));
   const buildBilling = useAppStore((s) => s.buildBilling);
+  const loadBilling = useAppStore((s) => s.loadBilling);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
   const recordPayment = useAppStore((s) => s.recordPayment);
   const createCreditNote = useAppStore((s) => s.createCreditNote);
@@ -61,7 +65,15 @@ export default function QuotationInvoice() {
   const canSettle = useAppStore((s) => s.canRecordPayments());
   const currentUser = useAppStore((s) => s.currentUser);
 
-  if (!quote) return <Navigate to="/404" replace />;
+  // The invoice and its payment ledger are server payloads. `amountPaid`,
+  // `balanceRemaining` and `status` are derived there on every read, so this fetch is
+  // also what keeps the balance honest after a payment.
+  useEffect(() => {
+    loadBilling(id);
+  }, [id, loadBilling]);
+
+  if (resolving && !quote) return <QuoteLoading />;
+  if (missing || !quote) return <Navigate to="/404" replace />;
 
   if (!invoice) {
     return (
@@ -70,7 +82,7 @@ export default function QuotationInvoice() {
           title={`Invoice — ${quote.customerName}`}
           breadcrumbs={[
             { label: 'Quotations', to: '/app/quotations' },
-            { label: quote.id, to: `/app/quotations/${quote.id}` },
+            { label: quote.reference ?? quote.id, to: `/app/quotations/${quote.id}` },
             { label: 'Invoice' },
           ]}
         />
@@ -82,9 +94,10 @@ export default function QuotationInvoice() {
             description="An invoice is generated once the order reaches fulfillment. You can create it now if the order is ready."
             action={
               <Button
-                onClick={() => {
-                  buildBilling(id);
-                  toast.success('Invoice drafted');
+                onClick={async () => {
+                  const result = await buildBilling(id);
+                  if (result.ok) toast.success('Invoice drafted');
+                  else toast.error('Could not draft the invoice', { description: result.error });
                 }}
               >
                 Generate invoice
@@ -115,9 +128,9 @@ export default function QuotationInvoice() {
     state: i < stepIndex ? 'done' : i === stepIndex ? (invoice.status === 'paid' ? 'done' : 'current') : 'todo',
   }));
 
-  const handleRecord = () => {
+  const handleRecord = async () => {
     setBusy(true);
-    const result = recordPayment(invoice.id, {
+    const result = await recordPayment(invoice.id, {
       amount: Number(form.amount),
       method: form.method,
       reference: form.reference,
@@ -131,6 +144,14 @@ export default function QuotationInvoice() {
       return;
     }
 
+    // A replayed idempotency key means the original payment came back unchanged. Say so,
+    // or a retry looks like it silently did nothing.
+    if (result.replayed) {
+      toast.info('That payment was already recorded', {
+        description: 'The original entry is shown — nothing was charged twice.',
+      });
+    }
+
     setError(null);
     setForm((f) => ({ ...f, amount: '', reference: '', notes: '' }));
 
@@ -139,8 +160,13 @@ export default function QuotationInvoice() {
         description: 'The order is now confirmed and the deal closed.',
       });
     } else {
+      // `recordPayment` resolves to { ok, invoice, payment, status, quotationStage,
+      // replayed } — there is no `balances` on it, so `result.balances.balanceRemaining`
+      // threw on every partial payment, right after the money had actually been
+      // recorded. The updated invoice comes back on the result, and its
+      // `balanceRemaining` is derived server-side from the payment rows.
       toast.success('Payment recorded', {
-        description: `${money(result.balances.balanceRemaining, invoice.currency)} still outstanding.`,
+        description: `${money(result.invoice?.balanceRemaining ?? 0, invoice.currency)} still outstanding.`,
       });
     }
   };
@@ -150,11 +176,11 @@ export default function QuotationInvoice() {
   return (
     <div>
       <PageHeader
-        title={`Invoice ${invoice.id}`}
+        title={`Invoice ${invoice.reference ?? invoice.id}`}
         description={`${quote.customerName} · issued ${dateShort(invoice.issueDate)} · due ${dateShort(invoice.dueDate)}`}
         breadcrumbs={[
           { label: 'Quotations', to: '/app/quotations' },
-          { label: quote.id, to: `/app/quotations/${quote.id}` },
+          { label: quote.reference ?? quote.id, to: `/app/quotations/${quote.id}` },
           { label: 'Invoice' },
         ]}
         badge={
@@ -181,8 +207,8 @@ export default function QuotationInvoice() {
               <Button
                 size="sm"
                 icon={Send}
-                onClick={() => {
-                  const result = sendInvoice(invoice.id);
+                onClick={async () => {
+                  const result = await sendInvoice(invoice.id);
                   if (result.ok) toast.success('Invoice sent to the customer');
                   else toast.error(result.error);
                 }}
@@ -195,8 +221,17 @@ export default function QuotationInvoice() {
               variant="secondary"
               icon={Download}
               onClick={async () => {
-                await exportInvoiceToPdf(invoice, { quotation: quote, currency: invoice.currency });
-                toast.success('Invoice PDF downloaded');
+                /*
+                 * The server renders this, not the browser. A locally generated PDF is
+                 * built from whatever this tab happens to have cached, so two people
+                 * could send the customer documents that disagree — and the document the
+                 * customer receives has to be the one the invoice record describes.
+                 */
+                try {
+                  openPdfResult(await getInvoicePdf(invoice.id));
+                } catch (err) {
+                  toast.error('Could not generate the PDF', { description: err.message });
+                }
               }}
             >
               Download PDF
@@ -387,7 +422,10 @@ export default function QuotationInvoice() {
             <div className="mt-3 rounded-xl bg-white/60 p-2.5">
               <p className="text-[11px] text-ink-muted">
                 Bill to <span className="font-semibold text-ink">{invoice.customerName}</span> ·
-                order <span className="num font-semibold text-brand-700">{invoice.quotationId}</span>
+                order{' '}
+                <span className="num font-semibold text-brand-700">
+                  {invoice.quotationReference ?? quote.reference ?? invoice.quotationId}
+                </span>
               </p>
             </div>
           </GlassCard>
@@ -534,8 +572,8 @@ export default function QuotationInvoice() {
                 fullWidth
                 size="sm"
                 icon={ScrollText}
-                onClick={() => {
-                  createCreditNote(id, {
+                onClick={async () => {
+                  await createCreditNote(id, {
                     amount: Math.round(invoice.total * 0.05),
                     type: 'credit_note',
                     reason: 'Goodwill credit issued from the invoice screen.',

@@ -5,7 +5,6 @@ import {
   Award,
   FlaskConical,
   Layers,
-  Loader2,
   Plus,
   Trash2,
   UserCheck,
@@ -22,6 +21,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Table, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/Table';
 import { RiskGauge } from '@/components/shared/RiskGauge';
+import { Spinner } from '@/components/ui/Loading';
 
 const APPROVER_OPTIONS = [
   { value: 'none', label: 'Auto-approve (no reviewer)' },
@@ -59,16 +59,33 @@ export default function DiscountTiers() {
     setScoring(true);
 
     const timer = setTimeout(async () => {
-      const result = await scoreLines({
-        lines: sandboxLines,
-        categoryCeilings,
-        tierCeiling: tierCeilings[sandboxTier] ?? 0,
-        orderDiscountPct: 0,
-        approvalChain,
-      });
-      if (!cancelled) {
-        setScored(result);
-        setScoring(false);
+      try {
+        // The ceiling overrides below are honoured only for admin and sales_manager,
+        // which is exactly who can reach this screen — that is what makes the sandbox
+        // able to preview an unsaved change.
+        const result = await scoreLines({
+          lines: sandboxLines,
+          // The tier is required by the schema, not decorative: the server picks the
+          // stored tier ceiling from it whenever the override below is absent.
+          tier: sandboxTier,
+          categoryCeilings,
+          tierCeiling: tierCeilings[sandboxTier] ?? 0,
+          orderDiscountPct: 0,
+        });
+        if (!cancelled) setScored(result);
+      } catch (error) {
+        // No local fallback: showing an invented score in the tool people use to
+        // reason about the real one would be worse than showing nothing.
+        if (!cancelled) {
+          setScored({
+            ...PENDING_RISK,
+            status: 'error',
+            error: error.message,
+            approvalPath: { approvers: [], ruleId: null, label: 'Score unavailable' },
+          });
+        }
+      } finally {
+        if (!cancelled) setScoring(false);
       }
     }, 220);
 
@@ -343,7 +360,7 @@ export default function DiscountTiers() {
             accent="teal"
             actions={
               scoring ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" aria-hidden="true" />
+                <Spinner size="sm" className="text-brand-500" />
               ) : (
                 <Badge tone={scored.source === 'server' ? 'success' : 'neutral'} size="xs">
                   {scored.source === 'server'

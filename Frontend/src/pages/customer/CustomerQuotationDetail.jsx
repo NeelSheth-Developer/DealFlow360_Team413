@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleDot,
+  Download,
   Info,
   MessageSquare,
   Percent,
@@ -16,12 +17,14 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useCustomerQuote } from '@/hooks/useCustomerQuotes';
-import { CUSTOMER_STATUS_META } from '@/lib/customerView';
+import { statusMeta } from '@/services/customerPortalService';
+import { openPdfResult } from '@/lib/openPdf';
 import { cadenceAdverb, dateShort, money, percent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
+import { Skeleton } from '@/components/ui/Misc';
 import { Badge, RawBadge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/shared/Dialogs';
 import { ChatThread } from '@/components/customer/ChatThread';
@@ -36,18 +39,23 @@ const NOTE_TONE = {
 /**
  * Customer negotiation screen.
  *
- * Everything rendered comes from a `toCustomerView` projection scoped to the
- * signed-in customer — cost prices, margins, risk scores, ceilings, rep notes and
- * approval detail are absent from that object entirely.
+ * Everything rendered is the server's allow-list projection from
+ * GET /customer/quotations/:id. Cost prices, margins, the risk score, ceilings, internal
+ * notes, owner identity and approval detail are not in that payload at all — so there is
+ * nothing to strip here, and no local copy of the rules that could disagree with it.
+ *
+ * The three capabilities are read straight off the payload rather than derived from the
+ * stage, because the server owns that decision and a second implementation would drift.
  */
 export default function CustomerQuotationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const view = useCustomerQuote(id);
+  const { view, resolving, missing } = useCustomerQuote(id);
   const customerAddComment = useAppStore((s) => s.customerAddComment);
   const customerSubmitRequest = useAppStore((s) => s.customerSubmitRequest);
   const customerConfirm = useAppStore((s) => s.customerConfirm);
+  const customerQuotationPdf = useAppStore((s) => s.customerQuotationPdf);
 
   const [openThread, setOpenThread] = useState(null);
   const [counterPct, setCounterPct] = useState('');
@@ -55,13 +63,32 @@ export default function CustomerQuotationDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Not this customer's quotation, or not shared with them yet.
-  if (!view) return <Navigate to="/customer/quotations" replace />;
+  // A portal deep link renders before the fetch resolves, so waiting and not-found are
+  // deliberately different: only the second sends the customer away.
+  if (resolving && !view) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-28" />
+        <Skeleton className="h-72" />
+      </div>
+    );
+  }
+  // 404 covers both "does not exist" and "belongs to another customer" — the server
+  // answers the same way for each on purpose, so this page cannot tell them apart either.
+  if (missing || !view) return <Navigate to="/customer/quotations" replace />;
 
-  const status = CUSTOMER_STATUS_META[view.stage] ?? CUSTOMER_STATUS_META.sent;
+  const status = statusMeta(view);
+
+  /**
+   * True when this quotation was resolved from the list by its reference because the
+   * payload carried no uuid. Everything on the page still renders — the list returns the
+   * full projection — but the routes that need an id cannot be called, so the controls
+   * that would hit them are disabled and the banner below says so.
+   */
+  const actionsUnavailable = Boolean(view.actionsUnavailable);
 
   const handleSend = (lineId) => async (message) => {
-    const result = customerAddComment(id, lineId, message);
+    const result = await customerAddComment(id, lineId, message);
     if (result.ok) {
       toast.success('Message sent', { description: 'Your account manager has been notified.' });
     } else {
@@ -70,13 +97,13 @@ export default function CustomerQuotationDetail() {
     return result;
   };
 
-  const handleSubmitRequest = () => {
+  const handleSubmitRequest = async () => {
     if (!counterPct && !justification.trim()) {
       toast.error('Add a discount request or a note first.');
       return;
     }
     setBusy(true);
-    const result = customerSubmitRequest(id, {
+    const result = await customerSubmitRequest(id, {
       counterDiscountPct: counterPct === '' ? null : Number(counterPct),
       justification: justification.trim(),
     });
@@ -105,6 +132,8 @@ export default function CustomerQuotationDetail() {
     }
 
     if (result.reapproval) {
+      // Deliberately says nothing about the score or who is reviewing — that is internal
+      // governance data and the server does not return it here either.
       toast.info('Sent for internal approval', {
         description: 'Your agreed terms need a further sign-off. We will confirm shortly.',
         duration: 7000,
@@ -112,6 +141,12 @@ export default function CustomerQuotationDetail() {
     } else {
       navigate(`/customer/quotations/${id}/confirmed`);
     }
+  };
+
+  const handleDownload = async () => {
+    const result = await customerQuotationPdf(id);
+    if (result.ok) openPdfResult(result);
+    else toast.error('Could not open the PDF', { description: result.error });
   };
 
   return (
@@ -149,14 +184,46 @@ export default function CustomerQuotationDetail() {
             </div>
           </div>
 
-          <RawBadge
-            className={cn('px-3 py-1.5 text-xs', status.bg, status.tone)}
-            dot
-            dotClass="bg-current"
-          >
-            {status.label}
-          </RawBadge>
+          <div className="flex flex-col items-end gap-2">
+            <RawBadge
+              className={cn('px-3 py-1.5 text-xs', status.bg, status.tone)}
+              dot
+              dotClass="bg-current"
+            >
+              {status.label}
+            </RawBadge>
+            {/* Rendered by the server, with ownership re-checked before anything is
+                drawn — the PDF route does not skip the scoping the others apply. */}
+            <Button
+              size="xs"
+              variant="ghost"
+              icon={Download}
+              disabled={view.actionsUnavailable}
+              onClick={handleDownload}
+            >
+              Download PDF
+            </Button>
+          </div>
         </div>
+
+        {actionsUnavailable && (
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-accent-amber/35 bg-accent-amber/10 p-3">
+            <AlertTriangle
+              className="mt-0.5 h-4 w-4 shrink-0 text-accent-amber"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-accent-amber">
+                Messaging and confirmation are temporarily unavailable
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">
+                You can review every line and total below. Replying, proposing new terms and
+                confirming are not available for this quotation right now — please contact your
+                account manager and they can action it for you.
+              </p>
+            </div>
+          </div>
+        )}
 
         {view.statusNote && (
           <div
@@ -254,7 +321,7 @@ export default function CustomerQuotationDetail() {
                   <div className="mt-3">
                     <ChatThread
                       line={line}
-                      canMessage={view.canMessage}
+                      canMessage={view.canMessage && !actionsUnavailable}
                       onSend={handleSend(line.id)}
                       autoFocus
                     />
@@ -292,7 +359,7 @@ export default function CustomerQuotationDetail() {
       </GlassPanel>
 
       {/* --------------------------------------------- counter discount */}
-      {view.canProposeTerms && (
+      {view.canProposeTerms && !actionsUnavailable && (
         <GlassPanel
           title="Propose different terms"
           description="Tell us what would work and we'll review it internally."
@@ -345,30 +412,43 @@ export default function CustomerQuotationDetail() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-sm font-bold text-ink">
-              {view.canConfirm ? 'Ready to move forward?' : 'Nothing to action right now'}
+              {actionsUnavailable
+                ? 'Review only'
+                : view.canConfirm
+                  ? 'Ready to move forward?'
+                  : 'Nothing to action right now'}
             </p>
             <p className="mt-0.5 max-w-lg text-xs leading-relaxed text-ink-soft">
-              {view.canConfirm
-                ? 'Confirming accepts the terms above. If they need internal sign-off we handle that automatically — you won’t need to do anything else.'
-                : view.isDecided
-                  ? 'Terms are agreed. Your account manager will be in touch with next steps.'
-                  : 'Your request is with our team. You can keep messaging on any line while you wait.'}
+              {actionsUnavailable
+                ? 'Everything above is the current agreed position. To confirm or ask for a change, contact your account manager.'
+                : view.canConfirm
+                  ? 'Confirming accepts the terms above. If they need internal sign-off we handle that automatically — you won’t need to do anything else.'
+                  : view.isDecided
+                    ? 'Terms are agreed. Your account manager will be in touch with next steps.'
+                    : 'Your request is with our team. You can keep messaging on any line while you wait.'}
             </p>
           </div>
 
-          {view.canConfirm && (
+          {/* Three independent capabilities, so the two buttons are gated separately.
+              They happen to move together today, but reading one off the other would
+              break the moment the server's table changes. */}
+          {(view.canProposeTerms || view.canConfirm) && !actionsUnavailable && (
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                icon={Send}
-                disabled={busy}
-                onClick={handleSubmitRequest}
-              >
-                Submit Request
-              </Button>
-              <Button icon={CheckCircle2} disabled={busy} onClick={() => setConfirmOpen(true)}>
-                Confirm Quotation
-              </Button>
+              {view.canProposeTerms && !actionsUnavailable && (
+                <Button
+                  variant="secondary"
+                  icon={Send}
+                  loading={busy}
+                  onClick={handleSubmitRequest}
+                >
+                  Submit Request
+                </Button>
+              )}
+              {view.canConfirm && (
+                <Button icon={CheckCircle2} disabled={busy} onClick={() => setConfirmOpen(true)}>
+                  Confirm Quotation
+                </Button>
+              )}
             </div>
           )}
         </div>

@@ -1,627 +1,426 @@
-import { nextId, nowISO, addDaysISO } from '@/lib/utils';
-import { roleLabel, stageLabel } from '@/lib/format';
-import { tierPrice } from '@/lib/pricing';
-import { buildApprovalSteps, currentPendingStep } from '@/lib/riskEngine';
-import { canTransition } from '@/lib/stageMachine';
-import { defaultPlanForProduct } from '@/data/seed/subscriptionPlans';
+import * as quotationsApi from '@/services/quotationsService';
+import * as approvalsApi from '@/services/approvalsService';
 
 /**
- * Quotation lifecycle: create, edit lines, submit for approval, act on approval
- * steps, move stages. This slice owns the approval routing described in the
- * spec — the rep never asks for approval manually, the risk score decides.
+ * Quotations and approvals — API-REFERENCE §11 and §12.
+ *
+ * EVERY MUTATION IS A SERVER CALL, AND THE SERVER'S RESPONSE IS THE NEW TRUTH. Most
+ * §11 endpoints return the FULL updated quotation, so `absorb()` writes it straight into
+ * the list. Nothing is patched optimistically: the server recomputes totals, may bump
+ * the stage, and may reject the change outright, and guessing at any of that locally is
+ * how a UI ends up disagreeing with the record.
+ *
+ * WHAT THIS SLICE NO LONGER DOES, because the server owns it:
+ *  · resolve unit prices          — POST /lines does it from the tier price list
+ *  · compute totals or margin     — returned in `quotation.totals`
+ *  · score risk or pick approvers — POST /submit-approval re-scores and routes
+ *  · validate stage transitions   — POST /stage enforces the graph and its three gates
+ *  · write audit entries          — the server audits every action in this file
+ *  · generate references          — the server assigns "Q-1042"
+ *
+ * IDS: routes take the uuid `id`. `reference` is display-only.
  */
 export function createQuotationSlice(set, get) {
-  /** Internal helper: patch a quotation and bump its activity timestamp. */
-  function patchQuote(id, patch, { touch = true } = {}) {
-    set((state) => ({
-      quotations: state.quotations.map((q) =>
-        q.id === id ? { ...q, ...patch, ...(touch ? { lastActivityAt: nowISO() } : {}) } : q,
-      ),
-    }));
+  /** Insert or replace a quotation returned by the API. */
+  function absorb(quotation) {
+    if (!quotation?.id) return null;
+    set((state) => {
+      const exists = state.quotations.some((q) => q.id === quotation.id);
+      return {
+        quotations: exists
+          ? state.quotations.map((q) => (q.id === quotation.id ? quotation : q))
+          : [quotation, ...state.quotations],
+      };
+    });
+    // The score depends on lines and ceilings, both of which may have just moved.
+    get().invalidateRisk(quotation.id);
+    return quotation;
   }
 
-  function nextQuoteNumber() {
-    const numbers = get()
-      .quotations.map((q) => Number(String(q.id).replace(/\D/g, '')))
-      .filter((n) => !Number.isNaN(n));
-    const max = numbers.length ? Math.max(...numbers) : 1000;
-    return `Q-${max + 1}`;
+  /** Uniform failure shape. `error.message` is written for a salesperson — show it. */
+  function fail(error) {
+    return { ok: false, error: error.message, code: error.code ?? null };
   }
 
   return {
+    quotationsLoading: false,
+    quotationsMeta: null,
+    quotationsError: null,
+
+    /* --------------------------------------------------------------- reads */
+
+    /**
+     * Load the list. Filters map straight onto the query in §11.1.
+     *
+     * A sales_rep never sees another rep's DRAFTS — the server enforces that and
+     * returns 404 rather than 403 for a direct fetch, so nothing is needed here.
+     */
+    async loadQuotations(filters = {}) {
+      set({ quotationsLoading: true, quotationsError: null });
+      try {
+        // Every page, walked in order. This used to ask for `pageSize: 100` in one
+        // request, which this route answers with a 500 every time — it loads every line,
+        // comment and approval step per row — so the store was left empty and every
+        // board, list and pipeline total rendered as if there were no deals at all.
+        //
+        // Each page is written as it lands. The walk takes a few seconds end to end, and
+        // holding the whole thing back would trade one blank screen for a shorter one;
+        // painting incrementally means the first rows are usable while the rest arrive.
+        const { items, meta } = await quotationsApi.listAllQuotations(filters, {
+          onPage: (soFar) => set({ quotations: soFar }),
+        });
+        set({ quotations: items, quotationsMeta: meta });
+        return { ok: true, items };
+      } catch (error) {
+        set({ quotationsError: error.message });
+        return fail(error);
+      } finally {
+        set({ quotationsLoading: false });
+      }
+    },
+
+    /** Synchronous cache read. Call `fetchQuotation` when it may be missing. */
     getQuotation(id) {
       return get().quotations.find((q) => q.id === id) ?? null;
     },
 
-    // -------------------------------------------------------------- creation
+    /** Fetch one quotation and merge it in. Needed on a deep link or hard refresh. */
+    async fetchQuotation(id) {
+      try {
+        const quotation = await quotationsApi.getQuotation(id);
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /* ------------------------------------------------------------ creation */
+
     /**
-     * Creates a quotation assigned to a registered customer.
+     * The customer must already exist — there is no create-customer-inline path.
      *
-     * A rep always owns what they create. Admin and Sales Manager may assign the
-     * quotation to a specific rep at creation time.
+     * A sales_rep may only own it themselves; admin and sales_manager may assign to any
+     * rep or manager, never to finance. Omit `ownerId` to own it.
      */
-    createQuotation(customerId, ownerId = null) {
-      const customer = get().customers.find((c) => c.id === customerId);
-      const me = get().currentUser;
-      if (!customer || !me) return null;
-
-      let owner = me;
-      if (ownerId && ownerId !== me.id) {
-        if (!get().canAssignQuotations()) return null;
-        const candidate = get().users.find((u) => u.id === ownerId);
-        if (candidate && ['sales_rep', 'sales_manager'].includes(candidate.role)) {
-          owner = candidate;
-        }
+    async createQuotation(customerId, ownerId = null) {
+      try {
+        const quotation = await quotationsApi.createQuotation({ customerId, ownerId });
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
       }
-
-      const quotation = {
-        id: nextQuoteNumber(),
-        customerId: customer.id,
-        customerName: customer.name,
-        tier: customer.tier,
-        currency: customer.currency,
-        ownerId: owner.id,
-        ownerName: owner.name,
-        createdById: me.id,
-        createdByName: me.name,
-        stage: 'draft',
-        lines: [],
-        orderDiscountPct: 0,
-        approvalSteps: [],
-        negotiationStatus: 'none',
-        awaitingSeller: false,
-        sharedAt: null,
-        counterDiscountPct: null,
-        counterJustification: null,
-        dismissedSuggestions: [],
-        createdAt: nowISO(),
-        lastActivityAt: nowISO(),
-        promisedDeliveryDate: addDaysISO(new Date(), 14),
-        validUntil: addDaysISO(new Date(), 21),
-        internalNotes: '',
-        customerTerms:
-          'Prices valid until the date shown above. Delivery within 10 business days of confirmation. Payment due 15 days from invoice.',
-      };
-
-      set((state) => ({ quotations: [quotation, ...state.quotations] }));
-
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quotation.id,
-        action: `Quotation created for ${customer.name} and assigned to ${owner.name}`,
-        meta: { customerId: customer.id, tier: customer.tier, ownerId: owner.id },
-      });
-
-      if (owner.id !== me.id) {
-        get().notify({
-          userId: owner.id,
-          type: 'system',
-          title: `${quotation.id} assigned to you`,
-          body: `${customer.name} · created by ${me.name}.`,
-          link: `/app/quotations/${quotation.id}`,
-        });
-      }
-
-      return quotation;
     },
 
-    // ----------------------------------------------------------------- lines
-    addLine(quoteId, productId, qty = 1, planId = null) {
-      const quote = get().getQuotation(quoteId);
-      const product = get().products.find((p) => p.id === productId);
-      if (!quote || !product) return null;
+    /* --------------------------------------------------------------- lines */
 
-      const unitPrice = tierPrice(product, quote.tier, get().priceLists, quote.currency);
-      const isSubscription = product.category === 'subscription';
-      const resolvedPlan = isSubscription
-        ? (planId
-            ? get().subscriptionPlans.find((p) => p.id === planId)
-            : defaultPlanForProduct(productId, get().subscriptionPlans))
-        : null;
-
-      // Adding an existing product bumps its quantity instead of duplicating.
-      const existing = quote.lines.find(
-        (l) => l.productId === productId && l.planId === (resolvedPlan?.id ?? null),
-      );
-
-      if (existing) {
-        get().updateLine(quoteId, existing.id, { qty: existing.qty + qty });
-        return existing;
-      }
-
-      const line = {
-        id: nextId('l'),
-        productId: product.id,
-        productName: product.name,
-        category: product.category,
-        qty,
-        unitPrice,
-        costPrice: product.costPrice,
-        discountPct: 0,
-        taxPct: product.taxPct,
-        isSubscription,
-        planId: resolvedPlan?.id ?? null,
-        subscriptionStartDate: isSubscription ? addDaysISO(new Date(), 7) : null,
-        subscriptionStatus: 'active',
-        comments: [],
-      };
-
-      patchQuote(quoteId, { lines: [...quote.lines, line] });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Line added: ${product.name} × ${qty}`,
-        meta: { unitPrice, category: product.category },
-      });
-      get().recomputeAlerts();
-      return line;
-    },
-
-    updateLine(quoteId, lineId, patch) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return;
-      const before = quote.lines.find((l) => l.id === lineId);
-      if (!before) return;
-
-      const lines = quote.lines.map((l) => (l.id === lineId ? { ...l, ...patch } : l));
-      patchQuote(quoteId, { lines });
-
-      // Only audit the changes worth an entry — not every keystroke on qty.
-      if (patch.discountPct != null && patch.discountPct !== before.discountPct) {
-        const ceiling = Math.min(
-          get().categoryCeilings[before.category] ?? 100,
-          get().tierCeilings[quote.tier] ?? 100,
-        );
-        get().logAudit({
-          entityType: 'quotation',
-          entityId: quoteId,
-          action: `Discount changed on ${before.productName}: ${before.discountPct}% → ${patch.discountPct}%`,
-          meta: { ceilingPct: ceiling, overBy: Math.max(0, patch.discountPct - ceiling) },
-        });
-      }
-      get().recomputeAlerts();
-    },
-
-    removeLine(quoteId, lineId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return;
-      const line = quote.lines.find((l) => l.id === lineId);
-      patchQuote(quoteId, { lines: quote.lines.filter((l) => l.id !== lineId) });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Line removed: ${line?.productName ?? lineId}`,
-      });
-      get().recomputeAlerts();
-    },
-
-    setOrderDiscount(quoteId, pct) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return;
-      const value = Math.max(0, Math.min(100, Number(pct) || 0));
-      if (value === quote.orderDiscountPct) return;
-      patchQuote(quoteId, { orderDiscountPct: value });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Order-level discount set to ${value}%`,
-      });
-      get().recomputeAlerts();
-    },
-
-    setQuoteMeta(quoteId, patch) {
-      patchQuote(quoteId, patch);
-    },
-
-    // ------------------------------------------------------- risk & approval
     /**
-     * Routes the quotation using a freshly-fetched, server-authoritative score.
-     * Empty approver list means it auto-approves — the rep never has to request
-     * approval, and never gets to skip it either.
+     * Add a line. No price is sent — the server resolves it from the tier price list.
+     *
+     * Adding a product already present with the same plan increments the quantity
+     * server-side rather than creating a second row.
+     */
+    async addLine(quoteId, productId, qty = 1, planId = null) {
+      try {
+        const quotation = await quotationsApi.addLine(quoteId, { productId, qty, planId });
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /**
+     * Patch qty, discountPct or unitPrice.
+     *
+     * Only permitted while draft or under_negotiation — anything else is
+     * 409 STAGE_LOCKED, which would let a rep move the terms out from under an approval
+     * already given.
+     */
+    async updateLine(quoteId, lineId, patch) {
+      try {
+        const quotation = await quotationsApi.updateLine(quoteId, lineId, patch);
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    async removeLine(quoteId, lineId) {
+      try {
+        const quotation = await quotationsApi.removeLine(quoteId, lineId);
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /**
+     * Order-level discount. Moves every line's effective discount at once, so the
+     * server audits it as the governance event it is.
+     */
+    async setOrderDiscount(quoteId, pct) {
+      try {
+        const quotation = await quotationsApi.updateQuotation(quoteId, {
+          orderDiscountPct: Number(pct) || 0,
+        });
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /** Notes, terms and dates. Any subset of the §11.4 fields. */
+    async setQuoteMeta(quoteId, patch) {
+      try {
+        const quotation = await quotationsApi.updateQuotation(quoteId, patch);
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /* ------------------------------------------------------------ approval */
+
+    /**
+     * Submit. The server re-scores from live line data and resolves the chain from
+     * stored config — the request body is empty precisely so the client cannot
+     * influence the route.
+     *
+     * @returns {{ok, autoApproved, risk, approvers, label}} `autoApproved` means every
+     *   line sat inside its ceiling and the stage went straight to `approved`.
      */
     async submitForApproval(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return { ok: false, error: 'Quotation not found.' };
-      if (!quote.lines.length) return { ok: false, error: 'Add at least one line first.' };
-
-      // Never route on a cached number — re-score before deciding.
-      const scored = await get().ensureRisk(quoteId);
-      const risk = scored.risk;
-      const path = scored.approvalPath;
-
-      if (path.approvers.length === 0) {
-        const check = canTransition(quote.stage, 'approved', quote);
-        if (!check.ok) return { ok: false, error: check.reason };
-
-        patchQuote(quoteId, { stage: 'approved', approvalSteps: [] });
-        get().logAudit({
-          entityType: 'quotation',
-          entityId: quoteId,
-          action: 'Auto-approved (every line inside its ceiling)',
-          meta: { blendedScore: risk.score },
-        });
-        get().notify({
-          userId: quote.ownerId,
-          type: 'approval_result',
-          title: `${quote.id} auto-approved`,
-          body: 'Every line was inside its ceiling. Fulfillment split is ready.',
-          link: `/app/quotations/${quoteId}/fulfillment`,
-        });
-        get().computeFulfillment(quoteId);
-        get().recomputeAlerts();
-        return { ok: true, autoApproved: true, risk, path };
-      }
-
-      const check = canTransition(quote.stage, 'pending_approval', quote);
-      if (!check.ok) return { ok: false, error: check.reason };
-
-      patchQuote(quoteId, {
-        stage: 'pending_approval',
-        approvalSteps: buildApprovalSteps(path.approvers),
-      });
-
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Submitted for approval — ${path.label}`,
-        meta: {
-          blendedScore: risk.score,
-          worstSingleOverage: risk.worstSingleOverage,
-          approvers: path.approvers,
-        },
-      });
-
-      // Only the first approver is actioned, but everyone in the chain is told.
-      get().notifyRole({
-        role: path.approvers[0],
-        type: 'approval_request',
-        title: `${quote.id} needs your approval`,
-        body: `${quote.customerName} · blended risk ${risk.score.toFixed(2)} pts · ${risk.violationCount} line(s) over ceiling`,
-        link: `/app/quotations/${quoteId}/approval`,
-      });
-
-      get().recomputeAlerts();
-      return { ok: true, autoApproved: false, risk, path };
-    },
-
-    approveStep(quoteId, comment = null) {
-      const quote = get().getQuotation(quoteId);
-      const me = get().currentUser;
-      if (!quote || !me) return { ok: false, error: 'Not available.' };
-
-      const step = currentPendingStep(quote);
-      if (!step) return { ok: false, error: 'Nothing is pending approval on this quotation.' };
-      if (step.role !== me.role && me.role !== 'admin') {
-        return { ok: false, error: `This step needs ${roleLabel(step.role)} approval.` };
-      }
-
-      let advanced = false;
-      const steps = quote.approvalSteps.map((s) => {
-        if (advanced || s.status !== 'pending') return s;
-        advanced = true;
+      try {
+        const result = await approvalsApi.submitForApproval(quoteId);
+        absorb(result.quotation);
         return {
-          ...s,
-          status: 'approved',
-          reviewerId: me.id,
-          reviewerName: me.name,
-          at: nowISO(),
-          reason: comment,
+          ok: true,
+          autoApproved: Boolean(result.autoApproved),
+          risk: result.risk,
+          approvers: result.approvers ?? [],
+          label: result.label,
         };
-      });
-
-      const remaining = steps.find((s) => s.status === 'pending');
-
-      if (remaining) {
-        patchQuote(quoteId, { approvalSteps: steps });
-        get().logAudit({
-          entityType: 'quotation',
-          entityId: quoteId,
-          action: `Approved by ${roleLabel(step.role)}`,
-          reason: comment,
-          meta: { nextApprover: remaining.role },
-        });
-        get().notifyRole({
-          role: remaining.role,
-          type: 'approval_request',
-          title: `${quote.id} now needs your approval`,
-          body: `${roleLabel(step.role)} has signed off. ${quote.customerName}.`,
-          link: `/app/quotations/${quoteId}/approval`,
-        });
-        get().recomputeAlerts();
-        return { ok: true, complete: false, nextRole: remaining.role };
+      } catch (error) {
+        return fail(error);
       }
-
-      patchQuote(quoteId, { stage: 'approved', approvalSteps: steps });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Approved by ${roleLabel(step.role)} — approval chain complete`,
-        reason: comment,
-      });
-      get().notify({
-        userId: quote.ownerId,
-        type: 'approval_result',
-        title: `${quote.id} fully approved`,
-        body: 'Fulfillment split is ready to review.',
-        link: `/app/quotations/${quoteId}/fulfillment`,
-      });
-      get().computeFulfillment(quoteId);
-      get().recomputeAlerts();
-      return { ok: true, complete: true };
-    },
-
-    rejectQuote(quoteId, reason) {
-      const quote = get().getQuotation(quoteId);
-      const me = get().currentUser;
-      if (!quote || !me) return { ok: false, error: 'Not available.' };
-      if (!reason || reason.trim().length < 10) {
-        return { ok: false, error: 'A reason of at least 10 characters is required to reject.' };
-      }
-
-      const step = currentPendingStep(quote);
-      let handled = false;
-      const steps = quote.approvalSteps.map((s) => {
-        if (s.status !== 'pending') return s;
-        if (!handled) {
-          handled = true;
-          return {
-            ...s,
-            status: 'rejected',
-            reviewerId: me.id,
-            reviewerName: me.name,
-            at: nowISO(),
-            reason,
-          };
-        }
-        return { ...s, status: 'skipped' };
-      });
-
-      patchQuote(quoteId, { stage: 'lost', approvalSteps: steps });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Rejected by ${roleLabel(step?.role ?? me.role)}`,
-        reason,
-      });
-      get().notify({
-        userId: quote.ownerId,
-        type: 'approval_result',
-        title: `${quote.id} was rejected`,
-        body: reason,
-        link: `/app/quotations/${quoteId}/approval`,
-      });
-      get().recomputeAlerts();
-      return { ok: true };
-    },
-
-    returnForRevision(quoteId, reason) {
-      const quote = get().getQuotation(quoteId);
-      const me = get().currentUser;
-      if (!quote || !me) return { ok: false, error: 'Not available.' };
-      if (!reason || reason.trim().length < 10) {
-        return { ok: false, error: 'A reason of at least 10 characters is required to return.' };
-      }
-
-      const step = currentPendingStep(quote);
-      patchQuote(quoteId, { stage: 'draft', approvalSteps: [] });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Returned for revision by ${roleLabel(step?.role ?? me.role)}`,
-        reason,
-      });
-      get().notify({
-        userId: quote.ownerId,
-        type: 'approval_result',
-        title: `${quote.id} returned for revision`,
-        body: reason,
-        link: `/app/quotations/${quoteId}`,
-      });
-      get().recomputeAlerts();
-      return { ok: true };
-    },
-
-    // ---------------------------------------------------------- stage moves
-    moveStage(quoteId, toStage) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return { ok: false, error: 'Quotation not found.' };
-
-      const check = canTransition(quote.stage, toStage, quote);
-      if (!check.ok) return { ok: false, error: check.reason };
-
-      const from = quote.stage;
-      patchQuote(quoteId, { stage: toStage });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Stage moved ${stageLabel(from)} → ${stageLabel(toStage)}`,
-      });
-
-      if (toStage === 'fulfillment') get().computeFulfillment(quoteId);
-      if (toStage === 'billed') get().buildBilling(quoteId);
-
-      get().recomputeAlerts();
-      return { ok: true };
-    },
-
-    markLost(quoteId, reason) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return { ok: false, error: 'Quotation not found.' };
-      if (!reason || reason.trim().length < 5) {
-        return { ok: false, error: 'Give a short reason so the pipeline data stays useful.' };
-      }
-      patchQuote(quoteId, { stage: 'lost' });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: 'Marked as lost',
-        reason,
-      });
-      get().recomputeAlerts();
-      return { ok: true };
     },
 
     /**
-     * Shares the quotation with the assigned customer. It then appears in that
-     * customer's own signed-in quotation list — there is no link to send.
+     * Approve the current step. Only the first pending step is actionable, so Finance
+     * cannot sign off before the Manager. An admin may unblock any step.
+     *
+     * @returns {{ok, complete, nextRole}}
      */
-    sendToCustomer(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return { ok: false, error: 'Quotation not found.' };
-      if (!quote.lines.length) return { ok: false, error: 'Add at least one line first.' };
+    async approveStep(quoteId, comment = null) {
+      try {
+        const result = await approvalsApi.approveStep(quoteId, comment);
+        absorb(result.quotation);
+        return {
+          ok: true,
+          complete: Boolean(result.complete),
+          nextRole: result.nextRole ?? null,
+        };
+      } catch (error) {
+        return fail(error);
+      }
+    },
 
-      const customer = get().customers.find((c) => c.id === quote.customerId);
-      if (!customer) return { ok: false, error: 'This quotation has no assigned customer.' };
+    /** Reason required, min 10 chars. stage → lost, later steps → skipped. */
+    async rejectQuote(quoteId, reason) {
+      try {
+        const result = await approvalsApi.rejectQuotation(quoteId, reason);
+        absorb(result.quotation ?? result);
+        return { ok: true };
+      } catch (error) {
+        return fail(error);
+      }
+    },
 
-      patchQuote(quoteId, {
-        stage: quote.stage === 'draft' ? 'sent' : quote.stage,
-        negotiationStatus: 'sent',
-        awaitingSeller: false,
-        sharedAt: nowISO(),
-      });
+    /**
+     * Return for revision. Reason required, min 10 chars.
+     *
+     * stage → draft and the chain is DELETED, not marked returned — so a resubmission
+     * re-scores from scratch and a worse quotation cannot ride an approval given for a
+     * better one.
+     */
+    async returnForRevision(quoteId, reason) {
+      try {
+        const result = await approvalsApi.returnQuotation(quoteId, reason);
+        absorb(result.quotation ?? result);
+        return { ok: true };
+      } catch (error) {
+        return fail(error);
+      }
+    },
 
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Shared with ${customer.name} for review`,
-        meta: { customerId: customer.id, hasAccount: Boolean(customer.password) },
-      });
+    /**
+     * My queue — only quotations whose CURRENT step matches my role.
+     *
+     * `approvalQueue` starts as an empty array rather than undefined so the screen can
+     * distinguish "loaded, nothing waiting" from "not fetched yet" using
+     * `approvalQueueLoading`, and never renders `undefined.length`.
+     */
+    approvalQueue: [],
+    approvalQueueLoading: false,
+    approvalQueueError: null,
 
+    async loadApprovalQueue() {
+      set({ approvalQueueLoading: true, approvalQueueError: null });
+      try {
+        const queue = await approvalsApi.fetchApprovalQueue();
+        set({ approvalQueue: queue });
+        return { ok: true, queue };
+      } catch (error) {
+        set({ approvalQueueError: error.message });
+        return fail(error);
+      } finally {
+        set({ approvalQueueLoading: false });
+      }
+    },
+
+    /* --------------------------------------------------------------- stage */
+
+    /**
+     * Move stage. The server enforces the transition graph plus three extra gates
+     * (`→ approved` needs no pending step, `→ fulfillment` needs a shippable line,
+     * `billed → confirmed` is driven by full payment).
+     *
+     * On refusal it returns 409 with a message written for a salesperson, so pass
+     * `error` through to the toast unchanged rather than composing your own.
+     */
+    async moveStage(quoteId, toStage) {
+      try {
+        const quotation = await quotationsApi.setStage(quoteId, toStage);
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /** Reason required, min 5 chars. A confirmed order cannot be marked lost. */
+    async markLost(quoteId, reason) {
+      try {
+        const quotation = await quotationsApi.markLost(quoteId, reason);
+        absorb(quotation);
+        return { ok: true };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /* -------------------------------------------------- sharing, ownership */
+
+    /**
+     * Send to the customer.
+     *
+     * THERE IS NO LINK AND NO TOKEN — the server emails them and access is by
+     * authenticated account only. `needsRegistration` means the email asked them to
+     * sign up with that address, so the UI should say so rather than offering a link.
+     *
+     * @returns {{ok, quotation, customer, needsRegistration}}
+     */
+    async sendToCustomer(quoteId) {
+      try {
+        const result = await quotationsApi.shareQuotation(quoteId);
+        absorb(result.quotation);
+        return {
+          ok: true,
+          quotation: result.quotation,
+          customer: result.customer,
+          needsRegistration: Boolean(result.needsRegistration),
+        };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /** Admin / sales_manager only. The target must be a rep or manager, never finance. */
+    async assignOwner(quoteId, ownerId) {
+      try {
+        const quotation = await quotationsApi.setOwner(quoteId, ownerId);
+        absorb(quotation);
+        return { ok: true, owner: { id: quotation.ownerId, name: quotation.ownerName } };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /* --------------------------------------------------------- negotiation */
+
+    /** Reply on a line thread. Clears `awaitingSeller` and emails the customer. */
+    async replyToComment(quoteId, lineId, message) {
+      try {
+        const quotation = await quotationsApi.addLineComment(quoteId, lineId, message);
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /**
+     * Accept the customer's counter on every line, then re-score.
+     *
+     * Returns the new risk alongside the quotation so the rep sees immediately what
+     * accepting would cost them in approvals — which is the decision they are making.
+     * 409 NO_COUNTER_PROPOSED when the customer has not proposed one.
+     */
+    async applyCounterDiscount(quoteId) {
+      try {
+        const result = await quotationsApi.applyCounter(quoteId);
+        absorb(result.quotation);
+        return { ok: true, risk: result.risk };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /* --------------------------------------------------------------- upsell */
+
+    /** Add a suggested product. The server resolves its price and any default plan. */
+    async acceptSuggestion(quoteId, productId) {
+      try {
+        const quotation = await quotationsApi.addLine(quoteId, { productId, qty: 1 });
+        absorb(quotation);
+        return { ok: true, quotation };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /** Stops the suggestion resurfacing on this quotation. Idempotent server-side. */
+    async dismissSuggestion(quoteId, productId) {
+      try {
+        const quotation = await quotationsApi.dismissSuggestion(quoteId, productId);
+        absorb(quotation);
+        return { ok: true };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+
+    /**
+     * Undo a dismissal.
+     *
+     * NOT SUPPORTED BY THE API. `POST /dismiss-suggestion` only adds to
+     * `dismissedSuggestions`; there is no route that removes an entry. Reported so the
+     * UI can disable the control rather than silently doing nothing.
+     *
+     * See the missing-endpoint list: DELETE /quotations/:id/dismiss-suggestion.
+     */
+    async undoDismiss() {
       return {
-        ok: true,
-        customer,
-        // Flags the case where the company exists but nobody has claimed the
-        // login yet, so the rep knows to ask them to register.
-        needsRegistration: !customer.password,
+        ok: false,
+        error: 'Restoring a dismissed suggestion is not supported by the API yet.',
+        code: 'NOT_IMPLEMENTED',
       };
     },
-
-    /**
-     * Reassigns the owning rep. Only Admin and Sales Manager may do this — a rep
-     * cannot hand their own deal to someone else.
-     */
-    assignOwner(quoteId, ownerId) {
-      if (!get().canAssignQuotations()) {
-        return { ok: false, error: 'Only an Admin or Sales Manager can reassign a quotation.' };
-      }
-      const quote = get().getQuotation(quoteId);
-      const owner = get().users.find((u) => u.id === ownerId);
-      if (!quote || !owner) return { ok: false, error: 'Unknown quotation or user.' };
-      if (owner.role !== 'sales_rep' && owner.role !== 'sales_manager') {
-        return { ok: false, error: 'Quotations can only be owned by a Sales Rep or Sales Manager.' };
-      }
-
-      const previous = quote.ownerName;
-      patchQuote(quoteId, { ownerId: owner.id, ownerName: owner.name });
-
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Reassigned from ${previous} to ${owner.name}`,
-        meta: { fromId: quote.ownerId, toId: owner.id },
-      });
-
-      get().notify({
-        userId: owner.id,
-        type: 'system',
-        title: `${quote.id} assigned to you`,
-        body: `${quote.customerName} · reassigned by ${get().currentUser?.name}.`,
-        link: `/app/quotations/${quoteId}`,
-      });
-
-      get().recomputeAlerts();
-      return { ok: true, owner };
-    },
-
-    // ------------------------------------------------------- rep-side replies
-    replyToComment(quoteId, lineId, message) {
-      const quote = get().getQuotation(quoteId);
-      const me = get().currentUser;
-      if (!quote || !me || !message?.trim()) return { ok: false };
-
-      const lines = quote.lines.map((l) =>
-        l.id === lineId
-          ? {
-              ...l,
-              comments: [
-                ...(l.comments ?? []),
-                {
-                  id: nextId('cm'),
-                  author: me.name,
-                  role: me.role,
-                  message: message.trim(),
-                  at: nowISO(),
-                },
-              ],
-            }
-          : l,
-      );
-
-      patchQuote(quoteId, { lines, awaitingSeller: false });
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Replied to customer on ${quote.lines.find((l) => l.id === lineId)?.productName ?? 'a line'}`,
-      });
-      return { ok: true };
-    },
-
-    /** Applies the customer's counter-discount across all lines, then re-scores. */
-    async applyCounterDiscount(quoteId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote || quote.counterDiscountPct == null) {
-        return { ok: false, error: 'No counter-discount to apply.' };
-      }
-
-      const pct = quote.counterDiscountPct;
-      const lines = quote.lines.map((l) => ({ ...l, discountPct: pct }));
-      patchQuote(quoteId, { lines, awaitingSeller: false });
-
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Applied customer's counter-discount of ${pct}% to all lines`,
-        meta: { counterDiscountPct: pct },
-      });
-
-      const scored = await get().ensureRisk(quoteId);
-      get().recomputeAlerts();
-      return { ok: true, risk: scored.risk, path: scored.approvalPath };
-    },
-
-    // ------------------------------------------------------------- upsell
-    acceptSuggestion(quoteId, productId) {
-      const line = get().addLine(quoteId, productId, 1);
-      if (!line) return { ok: false };
-      get().logAudit({
-        entityType: 'quotation',
-        entityId: quoteId,
-        action: `Upsell accepted: ${line.productName}`,
-        meta: { source: 'upsell_panel' },
-      });
-      return { ok: true, line };
-    },
-
-    dismissSuggestion(quoteId, productId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return;
-      if (quote.dismissedSuggestions.includes(productId)) return;
-      patchQuote(
-        quoteId,
-        { dismissedSuggestions: [...quote.dismissedSuggestions, productId] },
-        { touch: false },
-      );
-    },
-
-    undoDismiss(quoteId, productId) {
-      const quote = get().getQuotation(quoteId);
-      if (!quote) return;
-      patchQuote(
-        quoteId,
-        { dismissedSuggestions: quote.dismissedSuggestions.filter((id) => id !== productId) },
-        { touch: false },
-      );
-    },
-
   };
 }

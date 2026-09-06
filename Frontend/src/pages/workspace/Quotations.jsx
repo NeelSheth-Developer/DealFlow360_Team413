@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FileText, Kanban, List, Plus, Search } from 'lucide-react';
+import { FileText, Kanban, List, Plus, RefreshCw, Search } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { selectQuotationRows } from '@/store/selectors';
 import { useAllRisks } from '@/hooks/useRisk';
@@ -13,6 +13,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { SegmentedControl } from '@/components/ui/Tabs';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { EmptyState, Avatar } from '@/components/ui/Misc';
+import { SkeletonTable } from '@/components/ui/Loading';
 import { RiskBadge } from '@/components/shared/RiskGauge';
 import { RelativeTime, StageBadge, StaleBadge, TierBadge } from '@/components/shared/Indicators';
 
@@ -21,6 +22,9 @@ export default function Quotations() {
   const navigate = useNavigate();
   const users = useAppStore((s) => s.users);
   const stallThreshold = useAppStore((s) => s.dashboardConfig.stallThresholdDays);
+  const isLoading = useAppStore((s) => s.quotationsLoading);
+  const loadError = useAppStore((s) => s.quotationsError);
+  const loadQuotations = useAppStore((s) => s.loadQuotations);
 
   // One batched scoring request keeps every row's risk chip accurate.
   useAllRisks();
@@ -43,7 +47,13 @@ export default function Quotations() {
     <div>
       <PageHeader
         title="Quotations"
-        description={`${rows.length} quotation(s) · ${money(totalValue)} total pipeline value`}
+        // "0 quotation(s) · ₹0" is an answer, and the wrong one while the fetch is
+        // still open. Say what is actually happening until there is something to count.
+        description={
+          isLoading && rows.length === 0
+            ? 'Loading quotations…'
+            : `${rows.length} quotation(s) · ${money(totalValue)} total pipeline value`
+        }
         actions={
           <>
             <SegmentedControl
@@ -104,7 +114,26 @@ export default function Quotations() {
 
       {/* --------------------------------------------------------- table */}
       <GlassPanel title="All quotations" icon={FileText} bodyClassName="px-0 py-0 sm:px-0">
-        {rows.length === 0 ? (
+        {/*
+          A pending fetch and a genuinely empty pipeline are different facts. Without
+          this branch an in-flight GET /quotations rendered "No quotations match these
+          filters", which reads as an answer rather than a request still running.
+        */}
+        {/* Shaped like the table it is replacing, so the panel keeps its height. */}
+        {isLoading && rows.length === 0 ? (
+          <SkeletonTable rows={8} columns={6} />
+        ) : loadError && rows.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title="Couldn't load quotations"
+            description={loadError}
+            action={
+              <Button icon={RefreshCw} size="sm" onClick={() => loadQuotations()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : rows.length === 0 ? (
           <EmptyState
             icon={FileText}
             title="No quotations match these filters"
@@ -140,7 +169,7 @@ export default function Quotations() {
                   onClick={() => navigate(`/app/quotations/${row.id}`)}
                 >
                   <TD>
-                    <span className="num font-bold text-brand-700">{row.id}</span>
+                    <span className="num font-bold text-brand-700">{row.reference}</span>
                   </TD>
                   <TD>
                     <div className="flex items-center gap-2">

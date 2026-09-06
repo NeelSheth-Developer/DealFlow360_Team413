@@ -66,13 +66,14 @@ const FEATURES = [
   },
 ];
 
+/** `hands` says what each step passes to the next — that is the section's point. */
 const FLOW = [
-  { icon: ClipboardCheck, label: 'Quote' },
-  { icon: UserCheck, label: 'Approve' },
-  { icon: Boxes, label: 'Fulfil' },
-  { icon: CreditCard, label: 'Bill' },
-  { icon: MessageSquareQuote, label: 'Negotiate' },
-  { icon: BarChart3, label: 'Report' },
+  { icon: ClipboardCheck, label: 'Quote', hands: 'Lines, tier pricing, a live risk score' },
+  { icon: UserCheck, label: 'Approve', hands: 'A route the score picked, not a person' },
+  { icon: Boxes, label: 'Fulfil', hands: 'A warehouse split already computed' },
+  { icon: CreditCard, label: 'Bill', hands: 'One-time and recurring, kept apart' },
+  { icon: MessageSquareQuote, label: 'Negotiate', hands: 'Counter-offers that re-trigger approval' },
+  { icon: BarChart3, label: 'Report', hands: 'Every stage change, already logged' },
 ];
 
 const ROLES = [
@@ -332,32 +333,41 @@ function HowItWorks() {
         description="Each step hands real state to the next. Approve a quote and the warehouse split is already computed."
       />
 
-      <div className="mt-10">
-        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+      {/*
+        One continuous rail with the steps sitting on it, rather than six
+        separate pills joined by short dashes. The section claims the flow is
+        continuous, so the graphic should not look like six disconnected chips.
+        The rail is a single element behind the row; each step carries its own
+        number and a one-line description of what it hands to the next step.
+      */}
+      <div className="relative mt-12">
+        <span
+          aria-hidden="true"
+          className="absolute left-0 right-0 top-5 hidden h-1 rounded-full bg-gradient-to-r from-brand-500/25 via-accent-indigo/30 to-accent-pink/25 lg:block"
+        />
+
+        <ol className="relative grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-6 lg:gap-x-2">
           {FLOW.map((step, i) => (
-            <motion.div
+            <motion.li
               key={step.label}
-              initial={{ opacity: 0, scale: 0.9 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.35, delay: i * 0.08 }}
-              className="flex items-center gap-2 sm:gap-3"
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-40px' }}
+              transition={{ duration: 0.35, delay: i * 0.09 }}
+              className="flex flex-col items-center text-center"
             >
-              <GlassCard className="flex items-center gap-2 px-3 py-2.5 sm:px-4">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-indigo text-white">
-                  <step.icon className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-accent-indigo text-white shadow-glass ring-4 ring-surface-base">
+                <step.icon className="h-4 w-4" aria-hidden="true" />
+                <span className="num absolute -bottom-1.5 -right-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-extrabold text-brand-700 shadow-sm">
+                  {i + 1}
                 </span>
-                <span className="text-xs font-bold text-ink">{step.label}</span>
-              </GlassCard>
-              {i < FLOW.length - 1 && (
-                <span
-                  aria-hidden="true"
-                  className="hidden h-0.5 w-4 rounded-full bg-gradient-to-r from-brand-500/50 to-accent-pink/50 sm:block sm:w-6"
-                />
-              )}
-            </motion.div>
+              </span>
+
+              <p className="mt-3 text-xs font-bold text-ink">{step.label}</p>
+              <p className="mt-1 text-[11px] leading-snug text-ink-muted">{step.hands}</p>
+            </motion.li>
           ))}
-        </div>
+        </ol>
       </div>
     </section>
   );

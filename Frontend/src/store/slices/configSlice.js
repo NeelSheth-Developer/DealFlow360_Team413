@@ -1,291 +1,374 @@
-import { nextId } from '@/lib/utils';
-import { categoryLabel, roleLabel, tierLabel } from '@/lib/format';
+import * as configApi from '@/services/configService';
+import * as warehousesApi from '@/services/warehousesService';
+import * as plansApi from '@/services/subscriptionPlansService';
+import * as upsellApi from '@/services/upsellService';
 
 /**
- * Discount governance, warehouses, subscription plans and upsell rules
- * (spec A3–A6). Every change is audited because these settings decide who has
- * to approve what.
+ * Governance configuration, warehouses, subscription plans and upsell rules —
+ * API-REFERENCE §5, §7, §8, §9.
+ *
+ * A SALES_REP CAN READ NONE OF §5. Knowing the exact trip points makes it trivial to
+ * price a quotation to sit one basis point under one, which is the behaviour these rules
+ * exist to prevent. `loadDiscountConfig` therefore no-ops for a rep rather than firing a
+ * request that will 403 on every boot.
+ *
+ * CEILINGS SAVE AS A WHOLE MAP, NOT ONE AT A TIME. The risk engine reads the three tiers
+ * together, and a UI that saved bronze alone could leave bronze above gold between two
+ * requests. `setTierCeiling` and `setCategoryCeiling` keep their single-value signatures
+ * for the inline steppers but merge into the full map before sending.
+ *
+ * NO CLIENT-SIDE AUDIT WRITES — the server records every config change with its before
+ * and after values (§17.7).
  */
 export function createConfigSlice(set, get) {
   return {
-    // ------------------------------------------------ discount ceilings (A3)
-    setTierCeiling(tier, pct) {
-      const from = get().tierCeilings[tier];
-      set((state) => ({ tierCeilings: { ...state.tierCeilings, [tier]: Number(pct) || 0 } }));
-      get().logAudit({
-        entityType: 'config',
-        entityId: `tier_ceiling:${tier}`,
-        action: `${tierLabel(tier)} tier ceiling set to ${pct}%`,
-        meta: { from, to: Number(pct) },
-      });
-      get().recomputeAlerts();
-    },
+    configLoading: false,
+    configError: null,
+    /** Gaps and overlaps the server reports. Warnings, never rejections. */
+    chainWarnings: [],
 
-    setCategoryCeiling(category, pct) {
-      const from = get().categoryCeilings[category];
-      set((state) => ({
-        categoryCeilings: { ...state.categoryCeilings, [category]: Number(pct) || 0 },
-      }));
-      get().logAudit({
-        entityType: 'config',
-        entityId: `category_ceiling:${category}`,
-        action: `${categoryLabel(category)} category ceiling set to ${pct}%`,
-        meta: { from, to: Number(pct) },
-      });
-      get().recomputeAlerts();
-    },
+    /* --------------------------------------------------------------- loads */
 
-    upsertApprovalRule(payload) {
-      const isNew = !payload.id;
-      const rule = {
-        id: payload.id ?? nextId('ar'),
-        minScore: Number(payload.minScore) || 0,
-        maxScore: payload.maxScore === null || payload.maxScore === '' ? null : Number(payload.maxScore),
-        approvers: payload.approvers ?? [],
-        singleLineTrip:
-          payload.singleLineTrip === null || payload.singleLineTrip === ''
-            ? null
-            : Number(payload.singleLineTrip),
-        note: payload.note ?? '',
-      };
-
-      set((state) => ({
-        approvalChain: isNew
-          ? [...state.approvalChain, rule]
-          : state.approvalChain.map((r) => (r.id === rule.id ? rule : r)),
-      }));
-
-      get().logAudit({
-        entityType: 'config',
-        entityId: `approval_rule:${rule.id}`,
-        action: `Approval rule ${isNew ? 'added' : 'updated'} — score ${rule.minScore}–${rule.maxScore ?? '∞'} requires ${
-          rule.approvers.length ? rule.approvers.map(roleLabel).join(' then ') : 'no approval'
-        }`,
-        meta: rule,
-      });
-    },
-
-    deleteApprovalRule(id) {
-      set((state) => ({ approvalChain: state.approvalChain.filter((r) => r.id !== id) }));
-      get().logAudit({
-        entityType: 'config',
-        entityId: `approval_rule:${id}`,
-        action: 'Approval rule removed',
-      });
-    },
-
-    reorderApprovalRules(ids) {
-      set((state) => ({
-        approvalChain: ids
-          .map((id) => state.approvalChain.find((r) => r.id === id))
-          .filter(Boolean),
-      }));
-    },
-
-    /** Flags gaps or overlaps in the configured score ranges. */
-    validateApprovalChain() {
-      const rules = [...get().approvalChain].sort((a, b) => a.minScore - b.minScore);
-      const issues = [];
-      for (let i = 0; i < rules.length - 1; i += 1) {
-        const current = rules[i];
-        const next = rules[i + 1];
-        if (current.maxScore === null) {
-          issues.push(`"${current.id}" is unbounded but another rule starts after it.`);
-          continue;
-        }
-        if (current.maxScore > next.minScore) {
-          issues.push(
-            `Rules overlap between ${current.maxScore} and ${next.minScore} — the stricter rule will win.`,
-          );
-        } else if (current.maxScore < next.minScore) {
-          issues.push(`Gap in coverage between ${current.maxScore} and ${next.minScore}.`);
-        }
+    /**
+     * Discount ceilings + approval chain in one read. Returns `{ok:false, skipped:true}`
+     * for a sales_rep, whose role cannot see governance config at all.
+     */
+    async loadDiscountConfig() {
+      if (!get().hasRole('admin', 'sales_manager', 'finance')) {
+        return { ok: false, skipped: true };
       }
-      if (!rules.some((r) => r.maxScore === null)) {
-        issues.push('No unbounded rule — very high scores would fall through with no approver.');
+
+      set({ configLoading: true, configError: null });
+      try {
+        const data = await configApi.fetchDiscountConfig();
+        set({
+          tierCeilings: data.tierCeilings ?? {},
+          categoryCeilings: data.categoryCeilings ?? {},
+          approvalChain: data.approvalChain ?? [],
+          chainWarnings: data.warnings ?? [],
+        });
+        return { ok: true, data };
+      } catch (error) {
+        set({ configError: error.message });
+        return { ok: false, error: error.message };
+      } finally {
+        set({ configLoading: false });
       }
-      return issues;
     },
 
-    // ----------------------------------------------------- warehouses (A4)
-    upsertWarehouse(payload) {
-      const isNew = !payload.id;
-      const warehouse = {
-        id: payload.id ?? nextId('w'),
-        name: payload.name,
-        location: payload.location ?? '',
-        stock: payload.stock ?? {},
-        shippingCostWeight: Number(payload.shippingCostWeight) || 1,
-        baseShipCost: Number(payload.baseShipCost) || 400,
-        replenishThreshold: Number(payload.replenishThreshold) || 0,
-        replenishQty: Number(payload.replenishQty) || 0,
-        replenishLeadDays: Number(payload.replenishLeadDays) || 7,
-      };
-
-      set((state) => ({
-        warehouses: isNew
-          ? [...state.warehouses, warehouse]
-          : state.warehouses.map((w) => (w.id === warehouse.id ? warehouse : w)),
-      }));
-
-      get().logAudit({
-        entityType: 'warehouse',
-        entityId: warehouse.id,
-        action: `${isNew ? 'Warehouse created' : 'Warehouse updated'}: ${warehouse.name}`,
-        meta: { shippingCostWeight: warehouse.shippingCostWeight },
-      });
-
-      get().refreshFulfillmentPlans();
-      return warehouse;
+    async loadWarehouses() {
+      try {
+        const warehouses = await warehousesApi.listWarehouses();
+        set({ warehouses });
+        return { ok: true, warehouses };
+      } catch (error) {
+        return { ok: false, error: error.message };
+      }
     },
 
-    setWarehouseStock(warehouseId, productId, qty) {
-      set((state) => ({
-        warehouses: state.warehouses.map((w) =>
-          w.id === warehouseId
-            ? { ...w, stock: { ...w.stock, [productId]: Math.max(0, Number(qty) || 0) } }
-            : w,
-        ),
-      }));
-      get().afterStockChange();
+    async loadSubscriptionPlans() {
+      try {
+        const subscriptionPlans = await plansApi.listSubscriptionPlans();
+        set({ subscriptionPlans });
+        return { ok: true, subscriptionPlans };
+      } catch (error) {
+        return { ok: false, error: error.message };
+      }
     },
 
-    /** Bulk stock save from the "Manage stock" dialog. */
-    setWarehouseStockBulk(warehouseId, stockMap) {
-      const warehouse = get().warehouses.find((w) => w.id === warehouseId);
-      set((state) => ({
-        warehouses: state.warehouses.map((w) =>
-          w.id === warehouseId ? { ...w, stock: { ...w.stock, ...stockMap } } : w,
-        ),
-      }));
-      get().logAudit({
-        entityType: 'warehouse',
-        entityId: warehouseId,
-        action: `Stock levels updated at ${warehouse?.name ?? warehouseId}`,
-        meta: { changed: Object.keys(stockMap).length },
-      });
-      get().afterStockChange();
+    async loadUpsellRules() {
+      try {
+        const upsellRules = await upsellApi.listUpsellRules();
+        set({ upsellRules });
+        return { ok: true, upsellRules };
+      } catch (error) {
+        return { ok: false, error: error.message };
+      }
+    },
+
+    async loadDashboardConfig() {
+      if (!get().hasRole('admin', 'sales_manager', 'finance')) {
+        return { ok: false, skipped: true };
+      }
+      try {
+        const dashboardConfig = await configApi.fetchDashboardConfig();
+        set({ dashboardConfig });
+        return { ok: true, dashboardConfig };
+      } catch (error) {
+        return { ok: false, error: error.message };
+      }
+    },
+
+    /* ------------------------------------------------- discount ceilings */
+
+    /** Merges into the full three-tier map before saving — see the note above. */
+    async setTierCeiling(tier, pct) {
+      const next = { ...get().tierCeilings, [tier]: Number(pct) || 0 };
+      return get().saveTierCeilings(next);
+    },
+
+    async saveTierCeilings(map) {
+      try {
+        const data = await configApi.saveTierCeilings(map);
+        applyDiscountConfig(set, data, map, get);
+        get().invalidateRisk();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /** Merges into the full four-category map before saving. */
+    async setCategoryCeiling(category, pct) {
+      const next = { ...get().categoryCeilings, [category]: Number(pct) || 0 };
+      return get().saveCategoryCeilings(next);
+    },
+
+    async saveCategoryCeilings(map) {
+      try {
+        const data = await configApi.saveCategoryCeilings(map);
+        applyDiscountConfig(set, data, null, get, map);
+        get().invalidateRisk();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /* --------------------------------------------------- approval chain */
+
+    /** Create or replace. A rule is replaced wholesale so a band cannot be half-edited. */
+    async upsertApprovalRule(payload) {
+      try {
+        const data = payload.id
+          ? await configApi.updateApprovalRule(payload.id, stripId(payload))
+          : await configApi.createApprovalRule(payload);
+
+        applyChain(set, data);
+        get().invalidateRisk();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
     },
 
     /**
-     * Adds the configured replenishment quantity to every low line. This is the
-     * deterministic trigger for the backorder-consolidation prompt — real
-     * inventory events can't be waited on during a demo.
+     * Deleting the LAST rule is refused with 409 CHAIN_NOT_CONFIGURED — an empty chain
+     * leaves every quotation unroutable. Surface `error` rather than swallowing it.
      */
-    simulateRestock(warehouseId) {
-      const warehouse = get().warehouses.find((w) => w.id === warehouseId);
-      if (!warehouse) return { restocked: 0 };
-
-      let restocked = 0;
-      const nextStock = { ...warehouse.stock };
-      for (const [productId, qty] of Object.entries(nextStock)) {
-        if (qty <= warehouse.replenishThreshold) {
-          nextStock[productId] = qty + warehouse.replenishQty;
-          restocked += 1;
-        }
+    async deleteApprovalRule(id) {
+      try {
+        const data = await configApi.deleteApprovalRule(id);
+        applyChain(set, data);
+        get().invalidateRisk();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
       }
-
-      set((state) => ({
-        warehouses: state.warehouses.map((w) =>
-          w.id === warehouseId ? { ...w, stock: nextStock } : w,
-        ),
-      }));
-
-      get().logAudit({
-        entityType: 'warehouse',
-        entityId: warehouseId,
-        action: `Restock simulated at ${warehouse.name} — ${restocked} product(s) replenished`,
-        meta: { restocked, qtyEach: warehouse.replenishQty },
-      });
-
-      get().afterStockChange();
-      return { restocked, warehouseName: warehouse.name };
     },
 
-    // ---------------------------------------------- subscription plans (A5)
-    upsertSubscriptionPlan(payload) {
-      const isNew = !payload.id;
-      const plan = {
-        id: payload.id ?? nextId('sp'),
-        name: payload.name,
-        cadence: payload.cadence ?? 'monthly',
-        productIds: payload.productIds ?? [],
-        prorationRule: payload.prorationRule ?? 'daily_prorate',
-        cancellationRule: payload.cancellationRule ?? 'refund_unused',
-        minCommitmentMonths: Number(payload.minCommitmentMonths) || 0,
-        trialDays: Number(payload.trialDays) || 0,
-        billingDayOfCycle: Number(payload.billingDayOfCycle) || 1,
-        active: payload.active ?? true,
-      };
-
-      set((state) => ({
-        subscriptionPlans: isNew
-          ? [...state.subscriptionPlans, plan]
-          : state.subscriptionPlans.map((p) => (p.id === plan.id ? plan : p)),
-      }));
-
-      get().logAudit({
-        entityType: 'subscription_plan',
-        entityId: plan.id,
-        action: `${isNew ? 'Plan created' : 'Plan updated'}: ${plan.name} (${plan.cadence}, ${plan.prorationRule})`,
-        meta: { cancellationRule: plan.cancellationRule },
-      });
-
-      return plan;
+    /** `ids` must list EVERY rule; a partial list is rejected with 400. */
+    async reorderApprovalRules(ids) {
+      try {
+        const data = await configApi.reorderApprovalChain(ids);
+        applyChain(set, data);
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
     },
 
-    // ------------------------------------------------- upsell rules (A6)
-    upsertUpsellRule(payload) {
-      const isNew = !payload.id;
-      const rule = {
-        id: payload.id ?? nextId('ur'),
-        triggerProductId: payload.triggerProductId,
-        suggestedProductId: payload.suggestedProductId,
-        coPurchaseScore: Number(payload.coPurchaseScore) || 0,
-        promoted: Boolean(payload.promoted),
-        minMarginPct: Number(payload.minMarginPct) || 0,
-        active: payload.active ?? true,
-      };
-
-      set((state) => ({
-        upsellRules: isNew
-          ? [...state.upsellRules, rule]
-          : state.upsellRules.map((r) => (r.id === rule.id ? rule : r)),
-      }));
-
-      const products = get().products;
-      const triggerName = products.find((p) => p.id === rule.triggerProductId)?.name ?? '?';
-      const suggestedName = products.find((p) => p.id === rule.suggestedProductId)?.name ?? '?';
-
-      get().logAudit({
-        entityType: 'upsell_rule',
-        entityId: rule.id,
-        action: `${isNew ? 'Upsell rule added' : 'Upsell rule updated'}: ${triggerName} → ${suggestedName}${rule.promoted ? ' (promoted)' : ''}`,
-        meta: { coPurchaseScore: rule.coPurchaseScore, minMarginPct: rule.minMarginPct },
-      });
-
-      return rule;
+    /**
+     * The server's chain warnings.
+     *
+     * Previously computed locally. The server already reports gaps and overlaps on every
+     * chain read and write, and duplicating that logic here would let the two disagree —
+     * so this now just reads what the server said.
+     */
+    validateApprovalChain() {
+      return get().chainWarnings ?? [];
     },
 
-    deleteUpsellRule(id) {
-      set((state) => ({ upsellRules: state.upsellRules.filter((r) => r.id !== id) }));
-      get().logAudit({
-        entityType: 'upsell_rule',
-        entityId: id,
-        action: 'Upsell rule removed',
+    /* ------------------------------------------------------- warehouses */
+
+    async upsertWarehouse(payload) {
+      try {
+        const saved = payload.id
+          ? await warehousesApi.updateWarehouse(payload.id, stripId(payload))
+          : await warehousesApi.createWarehouse(payload);
+
+        set((state) => ({
+          warehouses: payload.id
+            ? state.warehouses.map((w) => (w.id === saved.id ? saved : w))
+            : [...state.warehouses, saved],
+        }));
+        return { ok: true, warehouse: saved };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /** One product. The server takes a partial map, so absent keys are left alone. */
+    async setWarehouseStock(warehouseId, productId, qty) {
+      return get().setWarehouseStockBulk(warehouseId, {
+        [productId]: Math.max(0, Number(qty) || 0),
       });
     },
 
-    // ----------------------------------------------- dashboard config (B9)
-    setDashboardConfig(patch) {
-      set((state) => ({ dashboardConfig: { ...state.dashboardConfig, ...patch } }));
-      get().logAudit({
-        entityType: 'config',
-        entityId: 'dashboard',
-        action: `Deal health thresholds updated`,
-        meta: patch,
-      });
-      get().recomputeAlerts();
+    /**
+     * Bulk save from the "Manage stock" dialog.
+     *
+     * `affectedQuotationIds` in the response lists open backorders this stock increase
+     * could now fill — that is what the consolidation prompt fires on, so it is handed
+     * to the fulfillment slice rather than discarded.
+     */
+    async setWarehouseStockBulk(warehouseId, stockMap) {
+      try {
+        const result = await warehousesApi.setStock(warehouseId, stockMap);
+        if (result?.warehouse) {
+          set((state) => ({
+            warehouses: state.warehouses.map((w) =>
+              w.id === warehouseId ? result.warehouse : w,
+            ),
+          }));
+        }
+        get().afterStockChange?.(result?.affectedQuotationIds ?? []);
+        return { ok: true, affectedQuotationIds: result?.affectedQuotationIds ?? [] };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /**
+     * Applies `replenishQty` to every product at or below `replenishThreshold`.
+     *
+     * An ops convenience that makes the backorder-consolidation path reproducible on
+     * demand rather than only when real stock happens to arrive.
+     */
+    async simulateRestock(warehouseId) {
+      try {
+        const result = await warehousesApi.restock(warehouseId);
+        // The response reports counts, not the warehouse, so re-read to pick up stock.
+        await get().loadWarehouses();
+        get().afterStockChange?.(result?.affectedQuotationIds ?? []);
+        return {
+          ok: true,
+          restocked: result?.restocked ?? 0,
+          warehouseName: result?.warehouseName,
+          affectedQuotationIds: result?.affectedQuotationIds ?? [],
+        };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /* ------------------------------------------------ subscription plans */
+
+    async upsertSubscriptionPlan(payload) {
+      try {
+        const saved = payload.id
+          ? await plansApi.updateSubscriptionPlan(payload.id, stripId(payload))
+          : await plansApi.createSubscriptionPlan(payload);
+
+        set((state) => ({
+          subscriptionPlans: payload.id
+            ? state.subscriptionPlans.map((p) => (p.id === saved.id ? saved : p))
+            : [...state.subscriptionPlans, saved],
+        }));
+        return { ok: true, plan: saved };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /* ----------------------------------------------------- upsell rules */
+
+    async upsertUpsellRule(payload) {
+      try {
+        const saved = payload.id
+          ? await upsellApi.updateUpsellRule(payload.id, stripId(payload))
+          : await upsellApi.createUpsellRule(payload);
+
+        // PUT returns the rule; POST may return the rule or the whole set.
+        if (Array.isArray(saved)) {
+          set({ upsellRules: saved });
+        } else {
+          set((state) => ({
+            upsellRules: payload.id
+              ? state.upsellRules.map((r) => (r.id === saved.id ? saved : r))
+              : [...state.upsellRules, saved],
+          }));
+        }
+        return { ok: true, rule: saved };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /** A real delete — a pairing is configuration, not history. Returns the remainder. */
+    async deleteUpsellRule(id) {
+      try {
+        const remaining = await upsellApi.deleteUpsellRule(id);
+        if (Array.isArray(remaining)) {
+          set({ upsellRules: remaining });
+        } else {
+          set((state) => ({ upsellRules: state.upsellRules.filter((r) => r.id !== id) }));
+        }
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
+    },
+
+    /* -------------------------------------------------- dashboard config */
+
+    /**
+     * All three thresholds are required by the server, so a partial patch is merged
+     * over the current values before sending.
+     */
+    async setDashboardConfig(patch) {
+      const next = { ...get().dashboardConfig, ...patch };
+      try {
+        const dashboardConfig = await configApi.saveDashboardConfig(next);
+        set({ dashboardConfig: dashboardConfig ?? next });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
     },
   };
+}
+
+/* ------------------------------------------------------------------ helpers */
+
+/** `id` is in the path on a PUT; sending it in the body would trip the strict schema. */
+function stripId(payload) {
+  const body = { ...payload };
+  delete body.id;
+  return body;
+}
+
+/**
+ * Both ceiling endpoints return the full §5.1 payload. Fall back to the map we sent if a
+ * deployment answers with something narrower, so the UI still reflects the save.
+ */
+function applyDiscountConfig(set, data, tierMap, get, categoryMap) {
+  set({
+    tierCeilings: data?.tierCeilings ?? tierMap ?? get().tierCeilings,
+    categoryCeilings: data?.categoryCeilings ?? categoryMap ?? get().categoryCeilings,
+    approvalChain: data?.approvalChain ?? get().approvalChain,
+    chainWarnings: data?.warnings ?? [],
+  });
+}
+
+/** Chain endpoints return `{ approvalChain, warnings }`, or sometimes a bare array. */
+function applyChain(set, data) {
+  if (Array.isArray(data)) {
+    set({ approvalChain: data, chainWarnings: [] });
+    return;
+  }
+  set({
+    approvalChain: data?.approvalChain ?? [],
+    chainWarnings: data?.warnings ?? [],
+  });
 }

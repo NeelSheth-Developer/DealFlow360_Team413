@@ -51,6 +51,9 @@ const SAMPLE_LINE = { unitPrice: 1200, discountPct: 0, qty: 10 };
 /** Subscription plan setup (spec A5). */
 export default function Subscriptions() {
   const plans = useAppStore((s) => s.subscriptionPlans);
+  // `isBooted` flips once loadReferenceData has run, so an empty list before that is
+  // 'not fetched yet' rather than 'no plans configured'.
+  const isBooted = useAppStore((s) => s.isBooted);
   const products = useAppStore((s) => s.products);
   const upsertSubscriptionPlan = useAppStore((s) => s.upsertSubscriptionPlan);
 
@@ -107,7 +110,7 @@ export default function Subscriptions() {
       />
 
       <GlassPanel
-        title={`${plans.length} plan(s)`}
+        title={plans.length === 0 && !isBooted ? 'Loading plans…' : `${plans.length} plan(s)`}
         icon={Repeat}
         accent="indigo"
         bodyClassName="px-0 py-0 sm:px-0"

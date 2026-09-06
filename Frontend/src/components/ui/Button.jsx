@@ -1,6 +1,6 @@
 import { forwardRef } from 'react';
-import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Spinner } from '@/components/ui/Loading';
 
 const VARIANTS = {
   primary: 'btn-gradient shadow-glass hover:shadow-glass-hover',
@@ -55,7 +55,7 @@ export const Button = forwardRef(function Button(
       {...props}
     >
       {loading ? (
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+        <Spinner size="md" />
       ) : (
         Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       )}

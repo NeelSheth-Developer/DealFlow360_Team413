@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { toast } from 'sonner';
@@ -6,14 +6,14 @@ import {
   Bell,
   ChevronDown,
   Kanban,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   PieChart,
   RefreshCw,
-  RotateCcw,
   Settings,
   Sparkles,
-  UserCog,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
@@ -23,49 +23,85 @@ import { relativeTime, roleLabel } from '@/lib/format';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Avatar, Popover } from '@/components/ui/Misc';
 import { ConfirmDialog } from '@/components/shared/Dialogs';
+import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { GradientBlobBackground } from '@/components/glass/Glass';
 import { ConsolidationWatcher } from '@/components/quotation/ConsolidationWatcher';
 
+/**
+ * `roles: null` means everyone. Approvals is gated to the roles that can act on a step
+ * (§12.5 answers a sales_rep with 403), so linking it for a rep would offer them a
+ * screen the router bounces to /403.
+ */
 const NAV = [
-  { to: '/app/quotations', label: 'Quotations', icon: LayoutDashboard },
-  { to: '/app/pipeline', label: 'Pipeline', icon: Kanban },
-  { to: '/app/dashboard', label: 'Deal Health', icon: PieChart },
-  { to: '/app/reports', label: 'Reports', icon: PieChart },
+  { to: '/app/quotations', label: 'Quotations', icon: LayoutDashboard, roles: null },
+  { to: '/app/pipeline', label: 'Pipeline', icon: Kanban, roles: null },
+  {
+    to: '/app/approvals',
+    label: 'Approvals',
+    icon: UserCheck,
+    roles: ['admin', 'sales_manager', 'finance'],
+    badge: 'approvals',
+  },
+  { to: '/app/dashboard', label: 'Deal Health', icon: PieChart, roles: null },
+  { to: '/app/reports', label: 'Reports', icon: PieChart, roles: null },
 ];
-
-const SWITCHABLE_ROLES = ['sales_rep', 'sales_manager', 'finance', 'admin'];
 
 export default function WorkspaceLayout() {
   const navigate = useNavigate();
   const currentUser = useAppStore((s) => s.currentUser);
   const isReloading = useAppStore((s) => s.isReloading);
   const reloadData = useAppStore((s) => s.reloadData);
-  const switchRole = useAppStore((s) => s.switchRole);
+
   const logout = useAppStore((s) => s.logout);
-  const resetDemoData = useAppStore((s) => s.resetDemoData);
+
   const canAccessBackend = useAppStore((s) => s.canAccessBackend);
 
+  /**
+   * The queue is polled alongside notifications so the count in the nav is close to the
+   * truth. A step arrives here because somebody else submitted a quotation, so nothing
+   * on this side knows when one lands.
+   */
+  const approvalQueue = useAppStore((s) => s.approvalQueue);
+  const loadApprovalQueue = useAppStore((s) => s.loadApprovalQueue);
+  const hasRole = useAppStore((s) => s.hasRole);
+  const canApprove = hasRole('admin', 'sales_manager', 'finance');
+  const badgeCounts = { approvals: approvalQueue?.length ?? 0 };
+
+  const visibleNav = NAV.filter((item) => !item.roles || hasRole(...item.roles));
+
   const notifications = useAppStore(selectMyNotifications);
+  const loadNotifications = useAppStore((s) => s.loadNotifications);
   const markNotificationRead = useAppStore((s) => s.markNotificationRead);
   const markAllNotificationsRead = useAppStore((s) => s.markAllNotificationsRead);
+  const notificationRoute = useAppStore((s) => s.notificationRoute);
 
   const [closeOpen, setCloseOpen] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+
+  /**
+   * Notifications are raised by the server as a side effect of someone else's action —
+   * an approval request, a customer comment, an escalation — so nothing on this side
+   * knows when one arrives. A 60-second poll is the honest way to keep the badge close
+   * to the truth without a socket; `boot()` does the first fetch.
+   */
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    const timer = setInterval(() => loadNotifications(), 60_000);
+    return () => clearInterval(timer);
+  }, [currentUser, loadNotifications]);
+
+  useEffect(() => {
+    if (!currentUser || !canApprove) return undefined;
+    loadApprovalQueue();
+    const timer = setInterval(() => loadApprovalQueue(), 60_000);
+    return () => clearInterval(timer);
+  }, [currentUser, canApprove, loadApprovalQueue]);
 
   const handleReload = async () => {
     const result = await reloadData();
     toast.success('Data reloaded', {
-      description: `Risk scores, stock and alerts recomputed. ${result.alerts} active alert(s).`,
+      description: `Re-read from the server. ${result.alerts} active alert(s).`,
     });
-  };
-
-  const handleSwitchRole = (role) => {
-    const result = switchRole(role);
-    if (result.ok) {
-      toast.success(`Now viewing as ${result.user.name}`, { description: roleLabel(role) });
-    } else {
-      toast.error(result.error);
-    }
   };
 
   return (
@@ -85,7 +121,7 @@ export default function WorkspaceLayout() {
           </Link>
 
           <nav aria-label="Workspace" className="ml-2 hidden items-center gap-1 lg:flex">
-            {NAV.map((item) => (
+            {visibleNav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -99,6 +135,11 @@ export default function WorkspaceLayout() {
                 {({ isActive }) => (
                   <>
                     {item.label}
+                    {item.badge && badgeCounts[item.badge] > 0 && (
+                      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-pink px-1 text-[10px] font-bold text-white">
+                        {badgeCounts[item.badge] > 9 ? '9+' : badgeCounts[item.badge]}
+                      </span>
+                    )}
                     {isActive && (
                       <span className="absolute inset-x-2 -bottom-0.5 h-0.5 rounded-full bg-gradient-to-r from-brand-500 to-accent-pink" />
                     )}
@@ -176,7 +217,9 @@ export default function WorkspaceLayout() {
                           type="button"
                           onClick={() => {
                             markNotificationRead(n.id);
-                            if (n.link) navigate(n.link);
+                            // The row carries `view` + `entityId`, never a URL, so the
+                            // route is resolved on this side.
+                            navigate(notificationRoute(n));
                           }}
                           className={cn(
                             'flex w-full flex-col items-start gap-0.5 px-4 py-3 text-left transition-colors hover:bg-brand-500/6',
@@ -241,41 +284,24 @@ export default function WorkspaceLayout() {
 
                   <DropdownMenu.Separator className="my-1 h-px bg-brand-500/12" />
 
-                  <DropdownMenu.Label className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted">
-                    Demo: switch role
-                  </DropdownMenu.Label>
-
-                  {SWITCHABLE_ROLES.map((role) => (
-                    <DropdownMenu.Item
-                      key={role}
-                      onSelect={() => handleSwitchRole(role)}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none transition-colors',
-                        'data-[highlighted]:bg-brand-500/12 data-[highlighted]:text-brand-700',
-                        currentUser?.role === role ? 'text-brand-700' : 'text-ink-soft',
-                      )}
-                    >
-                      <UserCog className="h-3.5 w-3.5" aria-hidden="true" />
-                      {roleLabel(role)}
-                      {currentUser?.role === role && (
-                        <span className="ml-auto text-[10px] font-bold">current</span>
-                      )}
-                    </DropdownMenu.Item>
-                  ))}
-
-                  <DropdownMenu.Separator className="my-1 h-px bg-brand-500/12" />
-
+                  {/*
+                    The "Demo: switch role" list and "Reset demo data" both used
+                    to live here. Neither can exist against a real backend: a
+                    user cannot elevate their own role, and there is no seeded
+                    data to reset. Roles are changed by an admin from
+                    Users & roles (PATCH /users/:id).
+                  */}
                   <DropdownMenu.Item
-                    onSelect={() => setResetOpen(true)}
+                    onSelect={() => setPasswordOpen(true)}
                     className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-soft outline-none transition-colors data-[highlighted]:bg-brand-500/12 data-[highlighted]:text-brand-700"
                   >
-                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                    Reset demo data
+                    <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
+                    Change password
                   </DropdownMenu.Item>
 
                   <DropdownMenu.Item
-                    onSelect={() => {
-                      logout();
+                    onSelect={async () => {
+                      await logout();
                       navigate('/');
                     }}
                     className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-state-danger outline-none transition-colors data-[highlighted]:bg-state-danger/10"
@@ -301,7 +327,7 @@ export default function WorkspaceLayout() {
           aria-label="Workspace mobile"
           className="flex items-center gap-1 overflow-x-auto border-t border-brand-500/10 px-4 py-1.5 lg:hidden"
         >
-          {NAV.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -313,6 +339,7 @@ export default function WorkspaceLayout() {
               }
             >
               {item.label}
+              {item.badge && badgeCounts[item.badge] > 0 && ` (${badgeCounts[item.badge]})`}
             </NavLink>
           ))}
           {canAccessBackend() && (
@@ -345,39 +372,19 @@ export default function WorkspaceLayout() {
         description="You'll be signed out of this working session and returned to the home page."
         confirmLabel="Close workspace"
         variant="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
           setCloseOpen(false);
-          logout();
+          await logout();
           navigate('/');
         }}
       >
         <p className="text-sm leading-relaxed text-ink-soft">
-          Your data stays in this browser session. Signing back in picks up exactly where you left
-          off.
+          You&apos;ll be signed out and your session revoked. Signing back in picks up exactly where
+          you left off.
         </p>
       </ConfirmDialog>
 
-      <ConfirmDialog
-        open={resetOpen}
-        onOpenChange={setResetOpen}
-        title="Reset demo data?"
-        description="Every quotation, invoice and configuration change goes back to the seeded state."
-        confirmLabel="Reset everything"
-        variant="danger"
-        onConfirm={async () => {
-          setResetOpen(false);
-          await resetDemoData();
-          toast.success('Demo data reset', {
-            description: 'All quotations, invoices and config are back to their seeded values.',
-          });
-          navigate('/app/dashboard');
-        }}
-      >
-        <p className="text-sm leading-relaxed text-ink-soft">
-          This is useful between demo runs. It cannot be undone, but nothing real is lost — the seed
-          data is rebuilt from source.
-        </p>
-      </ConfirmDialog>
+      <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
     </div>
   );
 }

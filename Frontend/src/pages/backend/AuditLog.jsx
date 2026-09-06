@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { ClipboardList, Download, Search } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight, ClipboardList, Download, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import { exportToXlsx } from '@/lib/exporters';
@@ -24,29 +24,67 @@ const ENTITY_TYPES = [
   { value: 'price_list', label: 'Price lists' },
 ];
 
-/** Full platform audit trail. */
+const ACTOR_ROLES = [
+  { value: 'sales_rep', label: 'Sales Rep' },
+  { value: 'sales_manager', label: 'Sales Manager' },
+  { value: 'finance', label: 'Finance / Operations' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'customer', label: 'Customer (portal)' },
+  { value: 'system', label: 'System (auto-approve)' },
+];
+
+const PAGE_SIZE = 100;
+
+/**
+ * Full platform audit trail.
+ *
+ * EVERY FILTER IS SERVER-SIDE. The log runs to hundreds of thousands of rows and the
+ * client only ever holds one page, so searching a local array would search the page
+ * rather than the log — and would quietly report "3 entries" when the real answer was
+ * three thousand.
+ *
+ * `actorRole` is a filter here as well as `actorId`, because the interesting question is
+ * usually "what did finance do" rather than "what did this one person do", and because
+ * `customer` and `system` are real actor roles that no user picker would contain.
+ */
 export default function AuditLog() {
-  const auditLog = useAppStore((s) => s.auditLog);
+  const entries = useAppStore((s) => s.auditLog);
+  const meta = useAppStore((s) => s.auditMeta);
+  const loading = useAppStore((s) => s.auditLoading);
   const users = useAppStore((s) => s.users);
+  const loadAuditLog = useAppStore((s) => s.loadAuditLog);
+  const loadUsers = useAppStore((s) => s.loadUsers);
 
   const [search, setSearch] = useState('');
   const [entityType, setEntityType] = useState('');
   const [actorId, setActorId] = useState('');
+  const [actorRole, setActorRole] = useState('');
+  const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return auditLog.filter((e) => {
-      if (entityType && e.entityType !== entityType) return false;
-      if (actorId && e.actorId !== actorId) return false;
-      if (term && !`${e.action} ${e.entityId} ${e.actorName} ${e.reason ?? ''}`.toLowerCase().includes(term)) {
-        return false;
-      }
-      return true;
-    });
-  }, [auditLog, search, entityType, actorId]);
+  useEffect(() => {
+    if (users.length === 0) loadUsers();
+  }, [users.length, loadUsers]);
 
-  const withReasons = filtered.filter((e) => e.reason).length;
-  const uniqueActors = new Set(filtered.map((e) => e.actorId)).size;
+  // Typing is debounced so each keystroke does not become a request against a very
+  // large table. 350ms is long enough to finish a word and short enough to feel live.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadAuditLog({ search, entityType, actorId, actorRole, page, pageSize: PAGE_SIZE });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [loadAuditLog, search, entityType, actorId, actorRole, page]);
+
+  // Any filter change invalidates the page number — page 4 of the old result set is not
+  // page 4 of the new one.
+  const changeFilter = (setter) => (value) => {
+    setter(value);
+    setPage(1);
+  };
+
+  const total = meta?.total ?? entries.length;
+  const totalPages = meta?.totalPages ?? 1;
+  const withReasons = entries.filter((e) => e.reason).length;
+  const uniqueActors = new Set(entries.map((e) => e.actorId)).size;
 
   const handleExport = async () => {
     await exportToXlsx({
@@ -54,10 +92,10 @@ export default function AuditLog() {
       sheets: [
         {
           name: 'Audit log',
-          rows: filtered.map((e) => ({
+          rows: entries.map((e) => ({
             Timestamp: dateMedium(e.at),
             Entity_Type: e.entityType,
-            Entity_Id: e.entityId,
+            Entity_Ref: e.entityRef ?? e.entityId,
             Action: e.action,
             Actor: e.actorName,
             Role: roleLabel(e.actorRole),
@@ -66,7 +104,9 @@ export default function AuditLog() {
         },
       ],
     });
-    toast.success('Audit log exported');
+    toast.success('Audit log exported', {
+      description: `${entries.length} row(s) from the current page.`,
+    });
   };
 
   return (
@@ -75,7 +115,13 @@ export default function AuditLog() {
         title="Audit log"
         description="Append-only. Every approval, rejection, edit and configuration change is recorded with who, when and why."
         actions={
-          <Button variant="secondary" size="sm" icon={Download} onClick={handleExport}>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
+            onClick={handleExport}
+            disabled={entries.length === 0}
+          >
             Export XLS
           </Button>
         }
@@ -83,53 +129,61 @@ export default function AuditLog() {
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
-          label="Entries"
-          value={filtered.length}
+          label="Matching entries"
+          value={total}
           format={(v) => Math.round(v)}
+          hint="across every page"
           icon={ClipboardList}
         />
         <StatTile
           label="With a reason"
           value={withReasons}
           format={(v) => Math.round(v)}
-          hint="rejections, returns, credits"
+          hint="on this page"
           tone="amber"
         />
         <StatTile
           label="Distinct actors"
           value={uniqueActors}
           format={(v) => Math.round(v)}
+          hint="on this page"
           tone="indigo"
         />
         <StatTile
-          label="Total logged"
-          value={auditLog.length}
-          format={(v) => Math.round(v)}
-          hint="before filtering"
+          label="Page"
+          value={page}
+          format={(v) => `${Math.round(v)} of ${totalPages}`}
           tone="teal"
         />
       </div>
 
       <GlassCard className="mb-4 p-3">
-        <div className="grid gap-2.5 sm:grid-cols-3">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
           <Input
-            placeholder="Search actions, entities, reasons…"
+            placeholder="Search actions, references, reasons…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => changeFilter(setSearch)(e.target.value)}
             prefix={<Search className="h-3.5 w-3.5" />}
             className="pl-9"
             aria-label="Search audit log"
           />
           <Select
             value={entityType}
-            onChange={(e) => setEntityType(e.target.value)}
+            onChange={(e) => changeFilter(setEntityType)(e.target.value)}
             placeholder="All entity types"
             aria-label="Filter by entity type"
             options={ENTITY_TYPES}
           />
           <Select
+            value={actorRole}
+            onChange={(e) => changeFilter(setActorRole)(e.target.value)}
+            placeholder="All actor roles"
+            aria-label="Filter by actor role"
+            options={ACTOR_ROLES}
+          />
+          <Select
             value={actorId}
-            onChange={(e) => setActorId(e.target.value)}
+            onChange={(e) => changeFilter(setActorId)(e.target.value)}
             placeholder="All actors"
             aria-label="Filter by actor"
             options={users.map((u) => ({ value: u.id, label: u.name }))}
@@ -138,13 +192,36 @@ export default function AuditLog() {
       </GlassCard>
 
       <GlassPanel title="Activity" icon={ClipboardList}>
-        <AuditTrailList entries={filtered} showEntity limit={120} />
+        {loading && entries.length === 0 ? (
+          <p className="py-10 text-center text-xs text-ink-muted">Reading the trail…</p>
+        ) : (
+          <AuditTrailList entries={entries} showEntity limit={PAGE_SIZE} />
+        )}
 
-        {filtered.length > 120 && (
-          <p className="mt-3 text-center text-[11px] text-ink-muted">
-            Showing the most recent 120 of {filtered.length} entries. Narrow the filters or export to
-            see everything.
-          </p>
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between border-t border-brand-500/12 pt-3">
+            <Button
+              size="xs"
+              variant="ghost"
+              icon={ChevronLeft}
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Newer
+            </Button>
+            <span className="text-[11px] text-ink-muted">
+              Page {page} of {totalPages} · {total} entr{total === 1 ? 'y' : 'ies'}
+            </span>
+            <Button
+              size="xs"
+              variant="ghost"
+              icon={ChevronRight}
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Older
+            </Button>
+          </div>
         )}
       </GlassPanel>
     </div>

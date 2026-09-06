@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { Building2, Info, Lock, ShieldCheck, Users as UsersIcon } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
@@ -12,27 +13,80 @@ import { TierBadge } from '@/components/shared/Indicators';
 
 const TIERS = ['bronze', 'silver', 'gold'].map((t) => ({ value: t, label: tierLabel(t) }));
 
+const ACTIVE_OPTIONS = [
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Disabled' },
+];
+
 /**
- * Read-only account directory.
+ * Account directory.
  *
- * Accounts are created ONLY by self-signup — staff at /signup, customers at
- * /customer/signup. No role, including Admin, can create or edit an account for
- * someone else. The single exception is a customer's pricing tier, which is a
- * commercial setting rather than account data, and is restricted to Sales
- * Manager and Admin.
+ * ACCOUNTS ARE CREATED ONLY BY SELF-SIGNUP — staff at /signup, customers at
+ * /customer/signup. There is no POST /users and no DELETE, so nobody provisions or
+ * removes an account for somebody else and every account traces to a person who proved
+ * their own email address.
+ *
+ * What CAN be changed is narrow and split by who it affects:
+ *   · role and active     admin only — they change what a person can do
+ *   · teamId              admin or sales manager — territory, grants nothing
+ *   · customer tier       admin or sales manager — commercial, not account data
+ *
+ * The role picker is fed by GET /roles rather than a local list, so it cannot offer a
+ * role that PATCH /users/:id would reject. `admin` is absent from that list because it
+ * is not assignable through the API at all.
  */
 export default function Directory() {
   const users = useAppStore((s) => s.users);
+  const teams = useAppStore((s) => s.teams);
+  const roles = useAppStore((s) => s.roles);
   const customers = useAppStore((s) => s.customers);
-  const quotations = useAppStore((s) => s.quotations);
-  const setCustomerTier = useAppStore((s) => s.setCustomerTier);
-  const canEditTier = useAppStore((s) => s.hasRole('admin', 'sales_manager'));
+  const directoryLoading = useAppStore((s) => s.directoryLoading);
+  const customersLoading = useAppStore((s) => s.customersLoading);
+  const currentUser = useAppStore((s) => s.currentUser);
 
-  const handleTierChange = (customerId, tier) => {
-    const result = setCustomerTier(customerId, tier);
+  const loadUsers = useAppStore((s) => s.loadUsers);
+  const loadTeams = useAppStore((s) => s.loadTeams);
+  const loadRoles = useAppStore((s) => s.loadRoles);
+  const loadCustomers = useAppStore((s) => s.loadCustomers);
+  const updateUser = useAppStore((s) => s.updateUser);
+  const setCustomerTier = useAppStore((s) => s.setCustomerTier);
+
+  const isAdmin = useAppStore((s) => s.hasRole('admin'));
+  const canEditTier = useAppStore((s) => s.hasRole('admin', 'sales_manager'));
+  const canEditTeam = canEditTier;
+
+  useEffect(() => {
+    loadUsers();
+    loadTeams();
+    loadRoles();
+    loadCustomers();
+  }, [loadUsers, loadTeams, loadRoles, loadCustomers]);
+
+  const roleOptions = roles
+    .filter((r) => r.assignable)
+    .map((r) => ({ value: r.key, label: r.label }));
+
+  const teamOptions = [
+    { value: '', label: 'Unassigned' },
+    ...teams.map((t) => ({ value: t.id, label: t.name })),
+  ];
+
+  const handleUserPatch = async (user, patch, describe) => {
+    const result = await updateUser(user.id, patch);
     if (result.ok) {
-      toast.success(`${result.customer.name} moved to ${tierLabel(tier)}`, {
-        description: 'Future quotations will use that price list and discount ceiling.',
+      toast.success(describe(result.user));
+    } else {
+      // LAST_ADMIN and the two self-edit guards arrive here. The server's message
+      // explains which one, so it is shown verbatim rather than re-worded.
+      toast.error(result.error);
+    }
+  };
+
+  const handleTierChange = async (customer, tier) => {
+    const result = await setCustomerTier(customer.id, tier);
+    if (result.ok) {
+      toast.success(`${customer.name} moved to ${tierLabel(tier)}`, {
+        description: 'Future quotations start from that price list and ceiling.',
       });
     } else {
       toast.error(result.error);
@@ -53,16 +107,16 @@ export default function Directory() {
             <Lock className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-bold text-ink">Accounts are self-registered only</p>
+            <p className="text-sm font-bold text-ink">Accounts are self-registered</p>
             <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-              This directory is read-only by design. Nobody — including an Admin — can create,
-              rename or delete another person&apos;s account. Staff register at{' '}
+              Nobody creates or deletes an account here. Staff register at{' '}
               <code className="rounded bg-white/70 px-1 py-0.5 text-[11px]">/signup</code> and
               customers at{' '}
               <code className="rounded bg-white/70 px-1 py-0.5 text-[11px]">/customer/signup</code>,
-              each in its own identity space. That keeps every account traceable to a real person who
-              consented to it, and removes the whole class of privilege-escalation problems that comes
-              with admin-provisioned users.
+              each in its own identity space, so every account traces to someone who proved their
+              own email address and chose their own password. An Admin can change a role, disable an
+              account or move somebody between teams; a Sales Manager can do the team part only.
+              The Admin role itself cannot be granted through the app.
             </p>
           </div>
         </div>
@@ -70,7 +124,7 @@ export default function Directory() {
 
       {/* --------------------------------------------------------- staff */}
       <GlassPanel
-        title={`Internal staff (${users.length})`}
+        title={directoryLoading && users.length === 0 ? 'Loading staff…' : `Internal staff (${users.length})`}
         description="Roles decide which screens and approval steps a person can act on."
         icon={UsersIcon}
         bodyClassName="px-0 py-0 sm:px-0"
@@ -83,12 +137,18 @@ export default function Directory() {
               <TH>Role</TH>
               <TH>Team</TH>
               <TH align="center">Owned quotes</TH>
+              <TH align="center">Status</TH>
               <TH align="center">Can settle payments</TH>
             </TR>
           </THead>
           <TBody>
             {users.map((user) => {
               const settles = ['finance', 'admin'].includes(user.role);
+              const isSelf = currentUser?.id === user.id;
+              // An admin cannot change their own role or disable themselves — the server
+              // rejects both, so the controls are not offered.
+              const roleEditable = isAdmin && !isSelf && user.role !== 'admin';
+
               return (
                 <TR key={user.id}>
                   <TD>
@@ -99,24 +159,83 @@ export default function Directory() {
                   </TD>
                   <TD className="text-xs text-ink-soft">{user.email}</TD>
                   <TD>
-                    <Badge
-                      tone={
-                        user.role === 'admin'
-                          ? 'brand'
-                          : user.role === 'sales_manager'
-                            ? 'pink'
-                            : user.role === 'finance'
-                              ? 'warning'
-                              : 'indigo'
-                      }
-                      size="xs"
-                    >
-                      {roleLabel(user.role)}
-                    </Badge>
+                    {roleEditable && roleOptions.length > 0 ? (
+                      <Select
+                        className="h-8 w-36 text-[11px]"
+                        aria-label={`Role for ${user.name}`}
+                        value={user.role}
+                        onChange={(e) =>
+                          handleUserPatch(user, { role: e.target.value }, (u) =>
+                            `${u.name} is now ${roleLabel(u.role)}`,
+                          )
+                        }
+                        options={roleOptions}
+                      />
+                    ) : (
+                      <Badge
+                        tone={
+                          user.role === 'admin'
+                            ? 'brand'
+                            : user.role === 'sales_manager'
+                              ? 'pink'
+                              : user.role === 'finance'
+                                ? 'warning'
+                                : 'indigo'
+                        }
+                        size="xs"
+                      >
+                        {roleLabel(user.role)}
+                      </Badge>
+                    )}
                   </TD>
-                  <TD className="text-xs text-ink-soft">{user.team}</TD>
+                  <TD>
+                    {canEditTeam ? (
+                      <Select
+                        className="h-8 w-40 text-[11px]"
+                        aria-label={`Team for ${user.name}`}
+                        value={user.teamId ?? ''}
+                        onChange={(e) =>
+                          handleUserPatch(
+                            user,
+                            { teamId: e.target.value || null },
+                            (u) => `${u.name} moved to ${u.team ?? 'Unassigned'}`,
+                          )
+                        }
+                        options={teamOptions}
+                      />
+                    ) : (
+                      <span className="text-xs text-ink-soft">{user.team ?? 'Unassigned'}</span>
+                    )}
+                  </TD>
+                  {/* The server's own count across every quotation, not a count of the
+                      page this browser happens to have loaded. */}
                   <TD align="center" num className="text-ink-soft">
-                    {quotations.filter((q) => q.ownerId === user.id).length}
+                    {user.ownedQuotationCount ?? 0}
+                  </TD>
+                  <TD align="center">
+                    {isAdmin && !isSelf ? (
+                      <Select
+                        className="h-8 w-28 text-[11px]"
+                        aria-label={`Status for ${user.name}`}
+                        value={String(user.active !== false)}
+                        onChange={(e) =>
+                          handleUserPatch(
+                            user,
+                            { active: e.target.value === 'true' },
+                            (u) => `${u.name} ${u.active ? 'reactivated' : 'disabled'}`,
+                          )
+                        }
+                        options={ACTIVE_OPTIONS}
+                      />
+                    ) : user.active === false ? (
+                      <Badge tone="danger" size="xs">
+                        Disabled
+                      </Badge>
+                    ) : (
+                      <Badge tone="success" size="xs">
+                        Active
+                      </Badge>
+                    )}
                   </TD>
                   <TD align="center">
                     {settles ? (
@@ -132,11 +251,17 @@ export default function Directory() {
             })}
           </TBody>
         </Table>
+
+        {users.length === 0 && (
+          <p className="px-4 py-8 text-center text-xs text-ink-muted sm:px-5">
+            No staff accounts loaded yet.
+          </p>
+        )}
       </GlassPanel>
 
       {/* ----------------------------------------------------- customers */}
       <GlassPanel
-        title={`Customers (${customers.length})`}
+        title={customersLoading && customers.length === 0 ? 'Loading customers…' : `Customers (${customers.length})`}
         description="Registered customer organisations and the price list applied to each."
         icon={Building2}
         accent="teal"
@@ -146,6 +271,7 @@ export default function Directory() {
           <THead>
             <TR>
               <TH>Company</TH>
+              <TH>Reference</TH>
               <TH>Primary contact</TH>
               <TH>Pricing tier</TH>
               <TH align="center">Currency</TH>
@@ -160,6 +286,13 @@ export default function Directory() {
                   <p className="text-xs font-bold text-ink">{customer.name}</p>
                   <p className="text-[10px] text-ink-muted">{customer.industry || '—'}</p>
                 </TD>
+                {/* The single public identifier: short enough to read down a phone and
+                    revealing no sequence, count or tier. */}
+                <TD>
+                  <span className="num text-[11px] font-semibold text-accent-teal">
+                    {customer.customerId ?? '—'}
+                  </span>
+                </TD>
                 <TD>
                   <p className="text-xs text-ink-soft">{customer.contactName}</p>
                   <p className="text-[10px] text-ink-muted">{customer.email}</p>
@@ -170,7 +303,7 @@ export default function Directory() {
                       className="h-8 w-28 text-[11px]"
                       aria-label={`Pricing tier for ${customer.name}`}
                       value={customer.tier}
-                      onChange={(e) => handleTierChange(customer.id, e.target.value)}
+                      onChange={(e) => handleTierChange(customer, e.target.value)}
                       options={TIERS}
                     />
                   ) : (
@@ -183,7 +316,9 @@ export default function Directory() {
                   </Badge>
                 </TD>
                 <TD align="center">
-                  {customer.password ? (
+                  {/* `hasAccount` is a boolean derived from whether the address was
+                      verified. No endpoint ever returns credential material. */}
+                  {customer.hasAccount ? (
                     <Badge tone="success" size="xs">
                       Registered
                     </Badge>
@@ -199,20 +334,26 @@ export default function Directory() {
                   )}
                 </TD>
                 <TD align="center" num className="text-ink-soft">
-                  {quotations.filter((q) => q.customerId === customer.id).length}
+                  {customer.quotationCount ?? 0}
                 </TD>
               </TR>
             ))}
           </TBody>
         </Table>
 
+        {customers.length === 0 && (
+          <p className="px-4 py-8 text-center text-xs text-ink-muted sm:px-5">
+            No customer organisations loaded yet.
+          </p>
+        )}
+
         <div className="flex items-start gap-2.5 px-4 pb-4 pt-3 sm:px-5">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-muted" aria-hidden="true" />
           <p className="text-[11px] leading-relaxed text-ink-muted">
             <span className="font-semibold text-ink">Not claimed</span> means the organisation exists
             commercially and can be quoted, but nobody has registered a login yet. They claim it by
-            signing up with that email address. Pricing tier is the one commercial setting a Sales
-            Manager or Admin controls, because it decides the price list and the discount ceiling
+            signing up with that email address. Pricing tier is the one mutation allowed on a
+            customer record, because it decides the price list and one half of the discount ceiling
             every line is measured against — it is never self-selected at signup.
           </p>
         </div>

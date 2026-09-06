@@ -1,4 +1,4 @@
-import { users, roleQuickPick } from './seed/users';
+import { users } from './seed/users';
 import { customers } from './seed/customers';
 import { products } from './seed/products';
 import { priceLists } from './seed/priceLists';
@@ -54,5 +54,3 @@ export function buildInitialState() {
     notifications: [],
   };
 }
-
-export { roleQuickPick };

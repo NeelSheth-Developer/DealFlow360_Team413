@@ -88,7 +88,7 @@ export function QuoteNav({ quote, hasInvoice }) {
 
       <span className="ml-auto hidden shrink-0 items-center gap-1.5 pr-2 text-[11px] text-ink-muted sm:flex">
         <FileText className="h-3 w-3" aria-hidden="true" />
-        {quote.id}
+        {quote.reference ?? quote.id}
       </span>
     </nav>
   );

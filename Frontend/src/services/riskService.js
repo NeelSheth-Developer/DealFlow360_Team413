@@ -1,29 +1,31 @@
-import { api, isBackendConfigured } from './apiClient';
-import {
-  approvalPathLabel,
-  computeBlendedRisk,
-  resolveApprovalPath,
-  riskBand,
-} from '@/lib/riskEngine';
+import { api } from './apiClient';
 
 /**
- * Discount risk scoring is SERVER-AUTHORITATIVE.
+ * Discount risk scoring — API-REFERENCE §10 (3 endpoints).
  *
- * The UI never decides a score or an approval route. It asks the backend and
- * renders the answer. `src/lib/riskEngine.js` is kept only as a local fallback
- * mirror so the app remains demoable with no API configured — it is never used
- * when `VITE_API_BASE_URL` is set.
+ *   POST /risk/score        any staff
+ *   POST /risk/score-batch  any staff · max 50 per call
+ *   GET  /risk/config       manager, finance, admin
  *
- * Expected backend contract:
- *   POST /risk/score
- *   body: { lines, categoryCeilings, tierCeiling, orderDiscountPct }
- *   200:  { score, worstSingleOverage, violationCount, totalValue,
- *           weightedOverage, lineBreakdown[], approvers[], ruleId }
+ * SCORING IS SERVER-AUTHORITATIVE, WITH NO LOCAL FALLBACK.
+ *
+ * There used to be a mirror of the scoring algorithm here that ran when the API was
+ * unreachable, marked `source: 'fallback'`. It is gone. A risk score decides who has to
+ * approve a discount, and a number the client invented is worse than no number: the
+ * approval chain resolved from it would not match what the server would have demanded,
+ * so a quotation could route to one approver on screen and another in the database.
+ * Failing loudly is the honest behaviour, and the UI shows the error instead of a score.
+ *
+ * `src/lib/riskEngine.js` is still imported for BAND and LABEL helpers only — those are
+ * presentation, not arithmetic. The score, the overage, the breakdown and the approver
+ * list all come from the response.
  */
 
+import { approvalPathLabel, riskBand } from '@/lib/riskEngine';
+
 /**
- * Stable fingerprint of everything that can change a score. Used to avoid
- * re-requesting an answer we already hold.
+ * Stable fingerprint of everything that can change a score. Used to avoid re-requesting
+ * an answer we already hold.
  */
 export function riskInputKey(quotation, categoryCeilings, tierCeilings) {
   if (!quotation) return 'none';
@@ -42,16 +44,34 @@ export function riskInputKey(quotation, categoryCeilings, tierCeilings) {
   });
 }
 
-function buildPayload(quotation, categoryCeilings, tierCeilings) {
+/**
+ * Build the §10.1 payload for scoring a REAL quotation.
+ *
+ * NO CEILING OVERRIDES ARE SENT. `tierCeiling` and `categoryCeilings` are optional
+ * overrides that the server honours for admin and sales_manager — the two roles that own
+ * the configuration and use the sandbox to preview a change before saving it. Sending
+ * them on the routing path was actively wrong for exactly those two roles:
+ *
+ *   · The store starts with `tierCeilings: {}`, and `loadDiscountConfig()` has not
+ *     resolved on the first render. So the first score of every quotation went out as
+ *     `tierCeiling: 0` — a ceiling of zero makes every line a violation. A gold order
+ *     at 20% off scored 24 points and resolved to "Manager + Finance" when the real
+ *     answer against stored config is 9 points and "Manager approval".
+ *   · A sales_rep never sees the difference, because the server ignores overrides from
+ *     them. That is what kept this hidden: it is wrong only for the roles that approve.
+ *
+ * Omitting them makes the server use stored config, which is the same config
+ * `submit-approval` re-scores against — so the chain shown on screen is the chain the
+ * quotation will actually route to. The sandbox still previews an unsaved ceiling
+ * through `scoreLines`, which is the one caller that should be sending them.
+ */
+function buildPayload(quotation) {
   return {
-    quotationId: quotation.id,
+    quotationId: quotation.id ?? null,
     tier: quotation.tier,
     orderDiscountPct: Number(quotation.orderDiscountPct) || 0,
-    tierCeiling: tierCeilings?.[quotation.tier] ?? 0,
-    categoryCeilings,
     lines: (quotation.lines ?? []).map((l) => ({
       id: l.id,
-      productId: l.productId,
       productName: l.productName,
       category: l.category,
       qty: Number(l.qty) || 0,
@@ -61,8 +81,13 @@ function buildPayload(quotation, categoryCeilings, tierCeilings) {
   };
 }
 
-/** Normalises whatever the server returns into the shape the UI expects. */
-function normalise(raw, approvalChain) {
+/**
+ * Normalise a §10.1 response.
+ *
+ * `band` and `label` are derived here because they are purely how the number is
+ * presented. Everything numeric is taken from the server as-is.
+ */
+function normalise(raw) {
   const risk = {
     score: Number(raw.score) || 0,
     worstSingleOverage: Number(raw.worstSingleOverage) || 0,
@@ -72,11 +97,7 @@ function normalise(raw, approvalChain) {
     lineBreakdown: raw.lineBreakdown ?? [],
   };
 
-  // A backend may resolve the route itself. If it does, trust it. If it only
-  // returns the score, resolve locally from the configured chain.
-  const approvers = Array.isArray(raw.approvers)
-    ? raw.approvers
-    : resolveApprovalPath(risk, approvalChain).approvers;
+  const approvers = Array.isArray(raw.approvers) ? raw.approvers : [];
 
   return {
     risk: { ...risk, band: riskBand(risk.score) },
@@ -91,119 +112,96 @@ function normalise(raw, approvalChain) {
 
 /**
  * Score one quotation.
- * @returns {Promise<{risk: Object, approvalPath: Object, source: 'server'|'local'}>}
+ *
+ * Throws on failure. Callers must handle it — see `riskSlice`, which stores the error on
+ * the cache entry so the gauge can say "score unavailable" rather than showing a zero
+ * that reads like "no violations".
  */
-export async function scoreQuotation({ quotation, categoryCeilings, tierCeilings, approvalChain }) {
-  if (isBackendConfigured()) {
-    try {
-      const raw = await api.post('/risk/score', buildPayload(quotation, categoryCeilings, tierCeilings));
-      return normalise(raw, approvalChain);
-    } catch (error) {
-      // A scoring outage must not block a rep from working. Fall back to the
-      // mirror and mark the result so the UI can say the number is provisional.
-      const local = scoreLocally({ quotation, categoryCeilings, tierCeilings, approvalChain });
-      return { ...local, source: 'fallback', error: error.message };
-    }
-  }
-
-  return scoreLocally({ quotation, categoryCeilings, tierCeilings, approvalChain });
+export async function scoreQuotation({ quotation }) {
+  const raw = await api.post('/risk/score', buildPayload(quotation));
+  return normalise(raw);
 }
 
-/** Score several quotations. Uses a batch endpoint when the backend offers one. */
-export async function scoreQuotations({ quotations, categoryCeilings, tierCeilings, approvalChain }) {
-  if (isBackendConfigured()) {
-    try {
-      const raw = await api.post('/risk/score-batch', {
-        quotations: quotations.map((q) => buildPayload(q, categoryCeilings, tierCeilings)),
-      });
-      const byId = {};
-      for (const entry of raw.results ?? []) {
-        byId[entry.quotationId] = normalise(entry, approvalChain);
-      }
-      // Anything the batch omitted falls back so the list is never blank.
-      for (const q of quotations) {
-        if (!byId[q.id]) {
-          byId[q.id] = scoreLocally({ quotation: q, categoryCeilings, tierCeilings, approvalChain });
-        }
-      }
-      return byId;
-    } catch {
-      // fall through to per-quotation local scoring
-    }
-  }
-
+/**
+ * Score several quotations in one request — the list and the Kanban board would
+ * otherwise fire one per row.
+ *
+ * Config is loaded once server-side for the whole batch, which also guarantees every row
+ * in a response was scored against the same ceilings. Max 50 per call, so this chunks.
+ *
+ * @returns {Promise<Object>} keyed by quotation id. A quotation the server omitted is
+ *   simply absent rather than filled in with a guess.
+ */
+export async function scoreQuotations({ quotations }) {
   const byId = {};
-  for (const q of quotations) {
-    byId[q.id] = scoreLocally({ quotation: q, categoryCeilings, tierCeilings, approvalChain });
+  const CHUNK = 50;
+
+  for (let i = 0; i < quotations.length; i += CHUNK) {
+    const slice = quotations.slice(i, i + CHUNK);
+    const raw = await api.post('/risk/score-batch', {
+      quotations: slice.map((q) => buildPayload(q)),
+    });
+
+    for (const entry of raw?.results ?? []) {
+      if (entry?.quotationId) byId[entry.quotationId] = normalise(entry);
+    }
   }
   return byId;
 }
 
 /**
- * Score an ad-hoc set of lines that isn't a saved quotation. Used by the backend
- * risk sandbox, so that tool exercises the real scoring path rather than a
- * separate local copy of it.
+ * Score an ad-hoc set of lines that is not a saved quotation.
+ *
+ * Used by the admin risk sandbox, so that tool exercises the real scoring path rather
+ * than a separate copy of it. `quotationId: null` is expected by the server here and
+ * must not 404.
  */
 export async function scoreLines({
   lines,
+  tier,
   categoryCeilings,
   tierCeiling,
   orderDiscountPct = 0,
-  approvalChain,
 }) {
-  if (isBackendConfigured()) {
-    try {
-      const raw = await api.post('/risk/score', {
-        quotationId: null,
-        tierCeiling,
-        categoryCeilings,
-        orderDiscountPct,
-        lines: lines.map((l) => ({
-          id: l.id,
-          productName: l.productName,
-          category: l.category,
-          qty: Number(l.qty) || 0,
-          unitPrice: Number(l.unitPrice) || 0,
-          discountPct: Number(l.discountPct) || 0,
-        })),
-      });
-      return normalise(raw, approvalChain);
-    } catch (error) {
-      const local = scoreLocally({
-        quotation: { lines, orderDiscountPct, tier: '_adhoc' },
-        categoryCeilings,
-        tierCeilings: { _adhoc: tierCeiling },
-        approvalChain,
-      });
-      return { ...local, source: 'fallback', error: error.message };
-    }
-  }
-
-  return scoreLocally({
-    quotation: { lines, orderDiscountPct, tier: '_adhoc' },
+  const raw = await api.post('/risk/score', {
+    quotationId: null,
+    // REQUIRED, and it was missing. `scoreSchema` has no default for `tier`, and every
+    // request body is `.strict()`, so omitting it meant the sandbox answered
+    // 400 VALIDATION_FAILED on every keystroke and never rendered a score at all.
+    tier,
+    tierCeiling,
     categoryCeilings,
-    tierCeilings: { _adhoc: tierCeiling },
-    approvalChain,
+    orderDiscountPct,
+    lines: lines.map((l) => ({
+      id: l.id,
+      productName: l.productName,
+      category: l.category,
+      qty: Number(l.qty) || 0,
+      unitPrice: Number(l.unitPrice) || 0,
+      discountPct: Number(l.discountPct) || 0,
+    })),
   });
+  return normalise(raw);
 }
 
-/** The local mirror. Only reached when no backend is configured, or one errored. */
-function scoreLocally({ quotation, categoryCeilings, tierCeilings, approvalChain }) {
-  const risk = computeBlendedRisk(
-    quotation.lines ?? [],
-    categoryCeilings,
-    tierCeilings?.[quotation.tier] ?? 0,
-    quotation.orderDiscountPct,
-  );
-  const approvalPath = resolveApprovalPath(risk, approvalChain);
-  return {
-    risk: { ...risk, band: riskBand(risk.score) },
-    approvalPath,
-    source: 'local',
-  };
+/**
+ * The starting state for the admin risk sandbox.
+ *
+ * Restricted to the roles that may read governance config (§5), so a sales_rep must not
+ * call it.
+ *
+ * @returns {Promise<{tierCeilings, categoryCeilings, approvalChain}>}
+ */
+export function fetchRiskConfig() {
+  return api.get('/risk/config');
 }
 
-/** Placeholder used while a score is in flight so the UI never renders undefined. */
+/**
+ * Placeholder used while a score is in flight, so the UI never renders undefined.
+ *
+ * `status` is what callers should branch on: 'loading' while a request is open, 'error'
+ * when one failed. A zero score with `status: 'ready'` means genuinely no violations.
+ */
 export const PENDING_RISK = {
   risk: {
     score: 0,

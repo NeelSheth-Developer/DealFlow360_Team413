@@ -1,15 +1,15 @@
 /**
- * Seeded customers. These have their own accounts, entirely separate from staff
- * accounts, and sign in under /customer/*.
+ * Customer directory records, used for quotation ownership, tier pricing and
+ * reporting until GET /customers/:id and a customer list endpoint exist.
  *
- * `password: null` means the company exists commercially but nobody has claimed
- * the login yet — Forge Analytics and Gemini Healthcare are left that way so the
- * "claim your existing account" signup path is demonstrable.
+ * THESE ARE NOT CREDENTIALS. Customers authenticate server-side through
+ * POST /auth/login with type:'customer'. The plaintext `password` fields are
+ * gone, and with them the "claim your existing unclaimed account" signup path —
+ * that flow was a frontend invention with no API behind it.
  *
  * Tier is never self-selected at signup. New registrations start at Bronze and
  * only a Sales Manager or Admin can promote them, because tier sets pricing.
  */
-const DEMO_PASSWORD = 'demo1234';
 
 export const customers = [
   {
@@ -18,7 +18,6 @@ export const customers = [
     tier: 'gold',
     contactName: 'Sundar Iyer',
     email: 'sundar.iyer@acmecorp.example',
-    password: DEMO_PASSWORD,
     currency: 'INR',
     industry: 'Manufacturing',
   },
@@ -28,7 +27,6 @@ export const customers = [
     tier: 'silver',
     contactName: 'Meera Kapoor',
     email: 'meera.kapoor@betaind.example',
-    password: DEMO_PASSWORD,
     currency: 'INR',
     industry: 'Industrial Equipment',
   },
@@ -38,7 +36,6 @@ export const customers = [
     tier: 'bronze',
     contactName: 'Arjun Bose',
     email: 'arjun.bose@cygnusretail.example',
-    password: DEMO_PASSWORD,
     currency: 'INR',
     industry: 'Retail',
   },
@@ -48,7 +45,6 @@ export const customers = [
     tier: 'gold',
     contactName: 'Fatima Sheikh',
     email: 'fatima.sheikh@deltalog.example',
-    password: DEMO_PASSWORD,
     currency: 'INR',
     industry: 'Logistics',
   },
@@ -58,18 +54,15 @@ export const customers = [
     tier: 'silver',
     contactName: 'Daniel Weber',
     email: 'daniel.weber@everestlabs.example',
-    password: DEMO_PASSWORD,
     currency: 'USD',
     industry: 'Life Sciences',
   },
   {
-    // No password yet — demonstrates the "claim your account" signup path.
     id: 'c-forge',
     name: 'Forge Analytics',
     tier: 'bronze',
     contactName: 'Ritu Malhotra',
     email: 'ritu.malhotra@forgeanalytics.example',
-    password: null,
     currency: 'INR',
     industry: 'Software',
   },
@@ -79,7 +72,6 @@ export const customers = [
     tier: 'gold',
     contactName: 'Dr. Ashok Pillai',
     email: 'ashok.pillai@geminihc.example',
-    password: null,
     currency: 'INR',
     industry: 'Healthcare',
   },
@@ -89,10 +81,7 @@ export const customers = [
     tier: 'silver',
     contactName: 'Lakshmi Menon',
     email: 'lakshmi.menon@horizonedu.example',
-    password: DEMO_PASSWORD,
     currency: 'INR',
     industry: 'Education',
   },
 ];
-
-export { DEMO_PASSWORD };

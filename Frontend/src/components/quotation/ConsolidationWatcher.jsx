@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PackageCheck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,9 +10,16 @@ import { Button } from '@/components/ui/Button';
 /**
  * Raises the "Consolidate Remaining Backorder" prompt.
  *
- * Lives in the workspace shell rather than the fulfillment screen because stock
- * can arrive while the user is anywhere in the app — for example right after
- * hitting "Simulate Restock" in the warehouse config screen.
+ * Lives in the workspace shell rather than the fulfillment screen because stock can
+ * arrive while the user is anywhere in the app — for instance right after a restock in
+ * the warehouse screen, which is what puts a quotation id in `consolidationCandidates`.
+ *
+ * THERE IS NO BEFORE/AFTER PREVIEW ANY MORE. It used to compare the saved plan against a
+ * locally recomputed one and claim "2 fewer shipments, saves ₹1,200". Both halves of that
+ * comparison are now the same server payload, and only the server can produce the second
+ * one: it excludes units already promised to other quotations, which the browser cannot
+ * see. So the dialog states what is true before the call — the backorder exists and can
+ * now be filled — and reports the real numbers from the response afterwards.
  */
 export function ConsolidationWatcher() {
   const navigate = useNavigate();
@@ -21,30 +29,49 @@ export function ConsolidationWatcher() {
   const warehouses = useAppStore((s) => s.warehouses);
   const consolidateBackorder = useAppStore((s) => s.consolidateBackorder);
   const dismissConsolidationPrompt = useAppStore((s) => s.dismissConsolidationPrompt);
-  const suggestionFor = useAppStore((s) => s.suggestionFor);
+
+  const [busy, setBusy] = useState(false);
 
   const quoteId = candidates[0] ?? null;
   const quote = quoteId ? quotations.find((q) => q.id === quoteId) : null;
-  const current = quoteId ? plans[quoteId] : null;
+  const plan = quoteId ? plans[quoteId] : null;
 
-  if (!quote || !current) return null;
+  if (!quote || !plan) return null;
 
-  const fresh = suggestionFor(quoteId);
-  const shipmentsSaved = current.shipmentCount - (fresh?.shipmentCount ?? current.shipmentCount);
-  const costSaved = current.estimatedCost - (fresh?.estimatedCost ?? current.estimatedCost);
-  const backorderQty = current.backorders.reduce((s, b) => s + b.qty, 0);
+  const backorders = plan.backorders ?? [];
+  const backorderQty = backorders.reduce((sum, b) => sum + (b.qty ?? 0), 0);
+  const warehouseNames = (plan.warehousesUsed ?? [])
+    .map((id) => warehouses.find((w) => w.id === id)?.name ?? id)
+    .join(', ');
 
-  const handleConsolidate = () => {
-    const result = consolidateBackorder(quoteId);
+  const handleConsolidate = async () => {
+    setBusy(true);
+    const result = await consolidateBackorder(quoteId);
+    setBusy(false);
     dismissConsolidationPrompt(quoteId);
-    if (result.ok) {
-      toast.success('Backorder consolidated', {
-        description: `${quote.id} now ships in ${result.plan.shipmentCount} shipment(s).`,
-      });
-      navigate(`/app/quotations/${quoteId}/fulfillment`);
-    } else {
+
+    if (!result.ok) {
       toast.error(result.error ?? 'Could not consolidate.');
+      return;
     }
+
+    // `saving` is the server's own figure for what merging actually avoided, and it is
+    // an OBJECT — { shipmentsSaved, costSaved } — not a number. Passing it straight to
+    // `money()` rendered the amount from an object rather than the figure inside it.
+    const shipments = result.plan?.shipmentCount;
+    const costSaved = Number(result.saving?.costSaved) || 0;
+    const shipmentsSaved = Number(result.saving?.shipmentsSaved) || 0;
+
+    toast.success('Backorder consolidated', {
+      description: [
+        shipments ? `${quote.reference} now ships in ${shipments} shipment(s).` : null,
+        shipmentsSaved > 0 ? `${shipmentsSaved} fewer shipment(s).` : null,
+        costSaved > 0 ? `Saves ${money(costSaved, quote.currency)} in shipping.` : null,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    });
+    navigate(`/app/quotations/${quoteId}/fulfillment`);
   };
 
   return (
@@ -52,14 +79,18 @@ export function ConsolidationWatcher() {
       open
       onOpenChange={() => dismissConsolidationPrompt(quoteId)}
       title="Consolidate remaining backorder?"
-      description={`Stock just arrived that covers the open backorder on ${quote.id}.`}
+      description={`Stock just arrived that covers the open backorder on ${quote.reference}.`}
       size="sm"
       footer={
         <>
-          <Button variant="secondary" onClick={() => dismissConsolidationPrompt(quoteId)}>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => dismissConsolidationPrompt(quoteId)}
+          >
             Keep as is
           </Button>
-          <Button icon={PackageCheck} onClick={handleConsolidate}>
+          <Button icon={PackageCheck} loading={busy} onClick={handleConsolidate}>
             Consolidate shipments
           </Button>
         </>
@@ -76,37 +107,25 @@ export function ConsolidationWatcher() {
         <dl className="grid grid-cols-2 gap-2">
           <div className="glass-inset p-3">
             <dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-              Shipments
+              Shipments today
             </dt>
-            <dd className="num mt-1 text-lg font-extrabold text-ink">
-              {current.shipmentCount} → {fresh?.shipmentCount ?? current.shipmentCount}
-            </dd>
-            {shipmentsSaved > 0 && (
-              <p className="mt-0.5 text-[11px] font-semibold text-state-success">
-                {shipmentsSaved} fewer
-              </p>
-            )}
+            <dd className="num mt-1 text-lg font-extrabold text-ink">{plan.shipmentCount}</dd>
+            <p className="mt-0.5 text-[11px] text-ink-muted">plus the backorder</p>
           </div>
           <div className="glass-inset p-3">
             <dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
               Shipping cost
             </dt>
             <dd className="num mt-1 text-lg font-extrabold text-ink">
-              {money(fresh?.estimatedCost ?? current.estimatedCost, quote.currency)}
+              {money(plan.estimatedCost, quote.currency)}
             </dd>
-            {costSaved > 0 && (
-              <p className="mt-0.5 text-[11px] font-semibold text-state-success">
-                saves {money(costSaved, quote.currency)}
-              </p>
-            )}
+            <p className="mt-0.5 text-[11px] text-ink-muted">re-priced on confirm</p>
           </div>
         </dl>
 
         <p className="text-[11px] leading-relaxed text-ink-muted">
-          Warehouses in the new plan:{' '}
-          {(fresh?.warehousesUsed ?? [])
-            .map((id) => warehouses.find((w) => w.id === id)?.name ?? id)
-            .join(', ') || '—'}
+          Currently shipping from: {warehouseNames || '—'}. The merged plan is worked out
+          server-side, against stock that has not been promised to another order.
         </p>
       </div>
     </Dialog>

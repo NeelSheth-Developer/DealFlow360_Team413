@@ -92,8 +92,8 @@ export default function CustomerLayout() {
                   <DropdownMenu.Separator className="my-1 h-px bg-brand-500/12" />
 
                   <DropdownMenu.Item
-                    onSelect={() => {
-                      customerLogout();
+                    onSelect={async () => {
+                      await customerLogout();
                       navigate('/customer/login');
                     }}
                     className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-state-danger outline-none transition-colors data-[highlighted]:bg-state-danger/10"
