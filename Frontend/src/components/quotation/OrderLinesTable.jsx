@@ -8,6 +8,7 @@ import { QtyStepper } from '@/components/ui/Misc';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/Misc';
 import { ShoppingCart } from 'lucide-react';
+import { NumberField } from '@/components/ui/NumberField';
 
 /**
  * Editable order lines. The discount input shows its binding ceiling inline and
@@ -48,12 +49,18 @@ export function OrderLinesTable({
     <Table>
       <THead>
         <TR>
-          <TH>Product</TH>
-          <TH align="center">Qty</TH>
-          <TH align="right">Unit price</TH>
-          <TH align="center">Discount</TH>
-          <TH align="right">Line total</TH>
-          <TH align="right">Margin</TH>
+          {/*
+            The product column was left to share width evenly with five numeric ones, so
+            "Performance Review Enterprise" wrapped onto three lines while the figures sat
+            in columns twice as wide as they needed. Giving it a floor and letting the
+            numeric columns size to their content keeps every name on one or two lines.
+          */}
+          <TH className="min-w-[13rem]">Product</TH>
+          <TH align="center" className="w-16 whitespace-nowrap">Qty</TH>
+          <TH align="right" className="w-28 whitespace-nowrap">Unit price</TH>
+          <TH align="center" className="w-24 whitespace-nowrap">Discount</TH>
+          <TH align="right" className="w-32 whitespace-nowrap">Line total</TH>
+          <TH align="right" className="w-24 whitespace-nowrap">Margin</TH>
           {editable && <TH align="center" className="w-10" />}
         </TR>
       </THead>
@@ -130,14 +137,19 @@ export function OrderLinesTable({
 
               <TD align="right">
                 {editable ? (
-                  <input
-                    type="number"
+                  /*
+                    Commits on blur. Bound to `onChange` this PATCHed the line on every
+                    keystroke — typing 50850 sent five requests, and the price that stuck
+                    was whichever reply landed last. `min={0}` is now enforced on commit
+                    too; a negotiated price can be low, never negative.
+                  */
+                  <NumberField
                     min={0}
                     step={50}
+                    className="h-8 w-24"
                     value={line.unitPrice}
                     aria-label={`Unit price for ${line.productName}`}
-                    onChange={(e) => onPriceChange(line.id, Number(e.target.value))}
-                    className="num h-8 w-24 rounded-lg border border-brand-500/20 bg-white/70 px-2 text-right text-xs font-semibold text-ink focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
+                    onCommit={(v) => onPriceChange(line.id, v)}
                   />
                 ) : (
                   <span className="num">{money(line.unitPrice, quote.currency)}</span>
@@ -148,18 +160,17 @@ export function OrderLinesTable({
                 <div className="flex flex-col items-center gap-0.5">
                   {editable ? (
                     <div className="relative">
-                      <input
-                        type="number"
+                      <NumberField
                         min={0}
                         max={100}
                         value={line.discountPct}
                         aria-label={`Discount percent for ${line.productName}`}
-                        onChange={(e) => onDiscountChange(line.id, Number(e.target.value))}
+                        onCommit={(v) => onDiscountChange(line.id, v)}
                         className={cn(
-                          'num h-8 w-16 rounded-lg border bg-white/70 pl-2 pr-5 text-right text-xs font-bold focus:outline-none focus:ring-2',
+                          'h-8 w-16 pl-2 pr-5 font-bold',
                           over
                             ? 'border-state-danger/60 text-state-danger focus:ring-state-danger/25'
-                            : 'border-brand-500/20 text-ink focus:border-brand-500/50 focus:ring-brand-500/25',
+                            : 'text-ink',
                         )}
                       />
                       <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-muted">

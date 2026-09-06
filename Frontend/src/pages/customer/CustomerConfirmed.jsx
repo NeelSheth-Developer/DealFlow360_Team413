@@ -101,7 +101,7 @@ export default function CustomerConfirmed() {
 function NextStep({ index, icon: Icon, title, body }) {
   return (
     <li className="flex gap-3">
-      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent-teal/12 text-accent-teal">
+      <span className="bg-accent-teal/12 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-accent-teal">
         <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
       <div className="min-w-0">

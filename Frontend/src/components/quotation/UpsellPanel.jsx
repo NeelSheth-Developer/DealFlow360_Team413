@@ -28,7 +28,7 @@ export function UpsellPanel({
   const [trayOpen, setTrayOpen] = useState(false);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/*
         Three different facts, three different panels. Ranking is a request now, so
         "still asking" and "the request failed" both used to collapse into "there are
@@ -105,10 +105,17 @@ export function UpsellPanel({
                     variant="ghost"
                     disabled={disabled}
                     onClick={() => onDismiss(s.productId)}
+                    className="whitespace-nowrap"
                   >
                     Dismiss
                   </Button>
-                  <Button size="xs" disabled={disabled} onClick={() => onAccept(s.productId)}>
+                  {/* nowrap: "Add to Quote" broke onto two lines in the narrow rail. */}
+                  <Button
+                    size="xs"
+                    className="whitespace-nowrap"
+                    disabled={disabled}
+                    onClick={() => onAccept(s.productId)}
+                  >
                     Add to Quote
                   </Button>
                 </div>

@@ -261,7 +261,7 @@ export default function CustomerQuotationDetail() {
                 className={cn(
                   'rounded-xl border bg-white/55 p-3.5 transition-colors',
                   line.isRecurring ? 'border-l-4 border-l-accent-indigo' : 'border-brand-500/12',
-                  threadOpen && 'border-accent-teal/45 bg-white/70',
+                  threadOpen && 'border-accent-pink/45 bg-white/70',
                 )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -332,7 +332,7 @@ export default function CustomerQuotationDetail() {
           })}
         </ul>
 
-        <dl className="mt-4 space-y-1.5 border-t border-brand-500/12 pt-4">
+        <dl className="border-brand-500/12 mt-4 space-y-1.5 border-t pt-4">
           <Row label="Subtotal" value={money(view.totals.subtotal, view.currency)} />
           {view.totals.savings > 0 && (
             <Row
@@ -342,7 +342,7 @@ export default function CustomerQuotationDetail() {
             />
           )}
           <Row label="Tax" value={money(view.totals.tax, view.currency)} />
-          <div className="flex items-baseline justify-between border-t border-brand-500/12 pt-2.5">
+          <div className="border-brand-500/12 flex items-baseline justify-between border-t pt-2.5">
             <dt className="text-sm font-bold text-ink">Total</dt>
             <dd className="num text-xl font-extrabold text-ink">
               {money(view.totals.grandTotal, view.currency)}
@@ -350,9 +350,9 @@ export default function CustomerQuotationDetail() {
           </div>
           {view.totals.recurringTotal > 0 && (
             <p className="pt-1 text-[11px] leading-relaxed text-ink-muted">
-              Includes {money(view.totals.recurringTotal, view.currency)} of recurring charges billed
-              on their own schedule, plus {money(view.totals.oneTimeTotal, view.currency)} charged
-              once.
+              Includes {money(view.totals.recurringTotal, view.currency)} of recurring charges
+              billed on their own schedule, plus {money(view.totals.oneTimeTotal, view.currency)}{' '}
+              charged once.
             </p>
           )}
         </dl>
@@ -467,7 +467,7 @@ export default function CustomerQuotationDetail() {
           <p className="text-sm leading-relaxed text-ink-soft">
             You&apos;re accepting the pricing and terms shown on this page.
           </p>
-          <div className="flex items-start gap-2.5 rounded-xl bg-brand-500/8 p-3">
+          <div className="bg-brand-500/8 flex items-start gap-2.5 rounded-xl p-3">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
             <p className="text-xs leading-relaxed text-ink-soft">
               If the agreed terms need an additional internal approval, this moves to review

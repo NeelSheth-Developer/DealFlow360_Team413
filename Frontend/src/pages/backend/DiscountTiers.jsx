@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import {
   AlertTriangle,
   Award,
@@ -18,10 +18,43 @@ import { GlassCard, GlassPanel } from '@/components/glass/Glass';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
+import { NumberField } from '@/components/ui/NumberField';
 import { Badge } from '@/components/ui/Badge';
 import { Table, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/Table';
 import { RiskGauge } from '@/components/shared/RiskGauge';
 import { Spinner } from '@/components/ui/Loading';
+
+/**
+ * The first score band not already covered by the chain.
+ *
+ * The server REJECTS an overlapping rule outright (409 INVALID_RANGE), so "Add rule"
+ * cannot just ask for a fixed range. It used to hardcode 0–∞, which overlaps essentially
+ * any chain that already exists: with a single 25–∞ rule in place the button failed every
+ * time with "Score range 0–∞ overlaps existing rule 25–∞", and there was no way to build
+ * 0–5 / 5–25 / 25–∞ by adding rules one at a time.
+ *
+ * Walking the sorted bands and returning the first gap means each click adds a rule that
+ * is guaranteed to be accepted — and building that three-band chain is just three clicks.
+ *
+ * @returns {{minScore, maxScore}|null} null when the chain already covers 0→∞.
+ */
+function nextFreeBand(chain = []) {
+  const sorted = [...chain].sort((a, b) => a.minScore - b.minScore);
+
+  let cursor = 0;
+  for (const rule of sorted) {
+    // A gap below this rule: take it.
+    if (rule.minScore > cursor) return { minScore: cursor, maxScore: rule.minScore };
+    cursor = Math.max(cursor, rule.maxScore ?? Infinity);
+    if (cursor === Infinity) break;
+  }
+
+  // No gap, but the chain stops somewhere finite — extend it to unbounded.
+  if (Number.isFinite(cursor)) return { minScore: cursor, maxScore: null };
+
+  // 0→∞ is already covered; every possible band would overlap.
+  return null;
+}
 
 const APPROVER_OPTIONS = [
   { value: 'none', label: 'Auto-approve (no reviewer)' },
@@ -137,14 +170,23 @@ export default function DiscountTiers() {
                       </Badge>
                     </TD>
                     <TD align="right">
-                      <input
-                        type="number"
+                      {/* One PUT per edit, on blur. This used to fire a request per
+                          keystroke, so "18" sent 1 then 18 and whichever reply landed
+                          last won — which is why a ceiling could read back as 1. */}
+                      <NumberField
                         min={0}
                         max={100}
+                        className="w-20"
                         aria-label={`${tierLabel(tier)} ceiling`}
                         value={pct}
-                        onChange={(e) => setTierCeiling(tier, Number(e.target.value))}
-                        className="num h-8 w-20 rounded-lg border border-brand-500/20 bg-white/70 px-2 text-right text-xs font-bold text-ink focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
+                        onCommit={async (v) => {
+                          const r = await setTierCeiling(tier, v);
+                          notify.report(
+                            r,
+                            { title: `${tierLabel(tier)} ceiling set to ${v}%` },
+                            'Could not save the ceiling',
+                          );
+                        }}
                       />
                     </TD>
                     <TD className="text-[11px] text-ink-muted">
@@ -181,14 +223,20 @@ export default function DiscountTiers() {
                     <TR key={category}>
                       <TD className="font-semibold">{categoryLabel(category)}</TD>
                       <TD align="right">
-                        <input
-                          type="number"
+                        <NumberField
                           min={0}
                           max={100}
+                          className="w-20"
                           aria-label={`${categoryLabel(category)} ceiling`}
                           value={pct}
-                          onChange={(e) => setCategoryCeiling(category, Number(e.target.value))}
-                          className="num h-8 w-20 rounded-lg border border-brand-500/20 bg-white/70 px-2 text-right text-xs font-bold text-ink focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
+                          onCommit={async (v) => {
+                            const r = await setCategoryCeiling(category, v);
+                            notify.report(
+                              r,
+                              { title: `${categoryLabel(category)} ceiling set to ${v}%` },
+                              'Could not save the ceiling',
+                            );
+                          }}
                         />
                       </TD>
                       <TD align="right" num className="text-ink-soft">
@@ -221,16 +269,34 @@ export default function DiscountTiers() {
                 size="sm"
                 variant="secondary"
                 icon={Plus}
-                onClick={() =>
-                  upsertApprovalRule({
-                    id: nextId('ar'),
-                    minScore: 0,
-                    maxScore: null,
+                onClick={async () => {
+                  const band = nextFreeBand(approvalChain);
+                  if (!band) {
+                    notify.info(
+                      'The chain already covers every score',
+                      'Narrow an existing band first — the server rejects a rule that overlaps one.',
+                    );
+                    return;
+                  }
+
+                  // NO `id`. `upsertApprovalRule` branches on it: with one it PUTs to
+                  // /config/approval-chain/:id, so a fabricated id addressed a rule that
+                  // does not exist. Omitting it takes the POST/create branch.
+                  const r = await upsertApprovalRule({
+                    ...band,
                     approvers: ['sales_manager'],
                     singleLineTrip: null,
                     note: '',
-                  })
-                }
+                  });
+                  notify.report(
+                    r,
+                    {
+                      title: 'Rule added',
+                      description: `Covers ${band.minScore}–${band.maxScore ?? '∞'}. Set its approvers below.`,
+                    },
+                    'Could not add the rule',
+                  );
+                }}
               >
                 Add rule
               </Button>
@@ -267,15 +333,16 @@ export default function DiscountTiers() {
                 {approvalChain.map((rule) => (
                   <TR key={rule.id}>
                     <TD align="right">
-                      <input
-                        type="number"
+                      <NumberField
                         step="0.5"
+                        min={0}
+                        className="w-16"
                         aria-label="Minimum score"
-                        value={rule.minScore}
-                        onChange={(e) =>
-                          upsertApprovalRule({ ...rule, minScore: Number(e.target.value) })
-                        }
-                        className="num h-8 w-16 rounded-lg border border-brand-500/20 bg-white/70 px-2 text-right text-xs font-semibold focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
+                        value={rule.minScore ?? ''}
+                        onCommit={async (v) => {
+                          const r = await upsertApprovalRule({ ...rule, minScore: v });
+                          if (!r?.ok) notify.report(r, null, 'Could not update the rule');
+                        }}
                       />
                     </TD>
                     <TD align="right">
@@ -284,13 +351,15 @@ export default function DiscountTiers() {
                         step="0.5"
                         aria-label="Maximum score, blank for unbounded"
                         placeholder="∞"
-                        value={rule.maxScore ?? ''}
-                        onChange={(e) =>
-                          upsertApprovalRule({
-                            ...rule,
-                            maxScore: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
+                        onBlur={async (e) => {
+                          // Blank is meaningful here — it means unbounded — so this keeps
+                          // a raw input and commits on blur rather than using NumberField.
+                          const next = e.target.value === '' ? null : Number(e.target.value);
+                          if (next === (rule.maxScore ?? null)) return;
+                          const r = await upsertApprovalRule({ ...rule, maxScore: next });
+                          if (!r?.ok) notify.report(r, null, 'Could not update the rule');
+                        }}
+                        defaultValue={rule.maxScore ?? ''}
                         className="num h-8 w-16 rounded-lg border border-brand-500/20 bg-white/70 px-2 text-right text-xs font-semibold focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
                       />
                     </TD>
@@ -299,28 +368,34 @@ export default function DiscountTiers() {
                         className="h-8 text-[11px]"
                         aria-label="Approvers"
                         value={rule.approvers.length === 0 ? 'none' : rule.approvers.join(',')}
-                        onChange={(e) =>
-                          upsertApprovalRule({
+                        onChange={async (e) => {
+                          const r = await upsertApprovalRule({
                             ...rule,
                             approvers: e.target.value === 'none' ? [] : e.target.value.split(','),
-                          })
-                        }
+                          });
+                          notify.report(
+                            r,
+                            { title: 'Approval rule updated' },
+                            'Could not update the rule',
+                          );
+                        }}
                         options={APPROVER_OPTIONS}
                       />
                     </TD>
                     <TD align="right">
                       <input
                         type="number"
+                        min={0}
                         step="0.5"
                         aria-label="Single line trip point"
                         placeholder="—"
-                        value={rule.singleLineTrip ?? ''}
-                        onChange={(e) =>
-                          upsertApprovalRule({
-                            ...rule,
-                            singleLineTrip: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
+                        onBlur={async (e) => {
+                          const next = e.target.value === '' ? null : Number(e.target.value);
+                          if (next === (rule.singleLineTrip ?? null)) return;
+                          const r = await upsertApprovalRule({ ...rule, singleLineTrip: next });
+                          if (!r?.ok) notify.report(r, null, 'Could not update the rule');
+                        }}
+                        defaultValue={rule.singleLineTrip ?? ''}
                         className="num h-8 w-16 rounded-lg border border-brand-500/20 bg-white/70 px-2 text-right text-xs font-semibold focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
                       />
                     </TD>
@@ -331,9 +406,15 @@ export default function DiscountTiers() {
                         size="xs"
                         variant="ghost"
                         className="text-state-danger hover:bg-state-danger/10"
-                        onClick={() => {
-                          deleteApprovalRule(rule.id);
-                          toast.success('Rule removed');
+                        onClick={async () => {
+                          // 409 CHAIN_NOT_CONFIGURED when this is the last rule — the
+                          // server refuses, and that has to reach the screen.
+                          const r = await deleteApprovalRule(rule.id);
+                          notify.report(
+                            r,
+                            { title: 'Rule removed' },
+                            'Could not remove the rule',
+                          );
                         }}
                       />
                     </TD>
@@ -415,21 +496,32 @@ export default function DiscountTiers() {
                         label: categoryLabel(c),
                       }))}
                     />
+                    {/* Clamped to the risk schema's own bounds (unitPrice >= 0), so the
+                        sandbox cannot send a body the scorer will reject. */}
                     <Input
                       aria-label="Line value"
                       type="number"
+                      min={0}
                       className="h-8 text-[11px]"
                       value={line.unitPrice}
-                      onChange={(e) => updateSandboxLine(line.id, { unitPrice: Number(e.target.value) })}
+                      onChange={(e) =>
+                        updateSandboxLine(line.id, {
+                          unitPrice: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
                     />
                     <Input
                       aria-label="Discount percent"
                       type="number"
+                      min={0}
+                      max={100}
                       className="h-8 text-[11px]"
                       suffix="%"
                       value={line.discountPct}
                       onChange={(e) =>
-                        updateSandboxLine(line.id, { discountPct: Number(e.target.value) })
+                        updateSandboxLine(line.id, {
+                          discountPct: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                        })
                       }
                     />
                   </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { notify, toast } from '@/lib/notify';
 import { Percent, Send, Sparkles } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { percent, relativeTime } from '@/lib/format';
@@ -17,12 +17,19 @@ export function CustomerRequestsDrawer({ open, onOpenChange, quote, requests, ed
 
   const [drafts, setDrafts] = useState({});
 
-  const handleReply = (lineId) => {
+  const handleReply = async (lineId) => {
     const message = drafts[lineId];
     if (!message?.trim()) return;
-    replyToComment(quote.id, lineId, message);
+
+    // Awaited, and the draft is only cleared once the server has it — losing a typed
+    // reply to a failed request is worse than leaving it on screen to retry.
+    const result = await replyToComment(quote.id, lineId, message);
+    if (!result.ok) {
+      notify.report(result, null, 'Could not send the reply');
+      return;
+    }
     setDrafts((d) => ({ ...d, [lineId]: '' }));
-    toast.success('Reply sent to the customer portal');
+    notify.success('Reply sent', 'It is visible in the customer portal now.');
   };
 
   const handleApplyCounter = async () => {
@@ -31,8 +38,10 @@ export function CustomerRequestsDrawer({ open, onOpenChange, quote, requests, ed
       toast.error(result.error);
       return;
     }
+    // `applyCounterDiscount` resolves to { ok, risk } — there is no `path` on it, so
+    // `result.path.label` threw exactly where the rep needed to see the new routing.
     toast.success(`Applied ${quote.counterDiscountPct}% to every line`, {
-      description: `Blended risk is now ${result.risk.score.toFixed(2)} pts — ${result.path.label}.`,
+      description: `Blended risk is now ${Number(result.risk?.score ?? 0).toFixed(2)} pts.`,
     });
     onOpenChange(false);
   };

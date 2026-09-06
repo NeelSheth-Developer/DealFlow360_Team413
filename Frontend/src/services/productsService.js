@@ -21,6 +21,40 @@ import { api, buildQuery } from './apiClient';
 
 export const CATEGORIES = ['hardware', 'service', 'subscription', 'accessories'];
 
+/**
+ * The exact keys `createProductSchema` / `updateProductSchema` accept.
+ *
+ * WHITELISTED, NOT BLACKLISTED. The editor seeds its form from the server's own product
+ * object — `{ ...product }` — so the payload carried `id`, `active` and `createdAt`
+ * straight back. Every request body is `.strict()`, so the server answered
+ * `400 FIELD_NOT_ALLOWED: Unrecognized keys: "id", "active", "createdAt"` and the save
+ * failed. Deleting known-bad keys one at a time fails open: the next field the API adds
+ * to its response silently breaks saving again. Naming what MAY be sent cannot.
+ *
+ * `active` is not here either — it is owned by PATCH /products/:id/active (§6.5).
+ */
+const CREATE_KEYS = [
+  'name',
+  'sku',
+  'category',
+  'basePrice',
+  'costPrice',
+  'unit',
+  'taxPct',
+  'description',
+  'variants',
+];
+const UPDATE_KEYS = CREATE_KEYS.filter((k) => k !== 'sku');
+
+/** Copy only the named keys, and only when they are actually present. */
+function pick(source = {}, keys) {
+  const out = {};
+  for (const key of keys) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  return out;
+}
+
 /** @returns {Promise<{items: Array, meta: Object|null}>} */
 export function listProducts({ category, active, search, page = 1, pageSize = 50 } = {}) {
   return api.list(`/products${buildQuery({ category, active, search, page, pageSize })}`);
@@ -53,7 +87,7 @@ export function getProduct(productId) {
  * quotable. `409 SKU_TAKEN` when the SKU exists.
  */
 export function createProduct(payload) {
-  return api.post('/products', payload);
+  return api.post('/products', pick(payload, CREATE_KEYS));
 }
 
 /**
@@ -61,11 +95,9 @@ export function createProduct(payload) {
  * reference it. Variants are replaced wholesale, not diffed.
  */
 export function updateProduct(productId, payload) {
-  const body = { ...payload };
-  // Sending it would earn a 400 rather than being ignored, so drop it here where
-  // the reason can be explained once.
-  delete body.sku;
-  return api.put(`/products/${encodeURIComponent(productId)}`, body);
+  // `sku` is absent from UPDATE_KEYS on purpose: `updateProductSchema` omits it, because
+  // quotations already reference it.
+  return api.put(`/products/${encodeURIComponent(productId)}`, pick(payload, UPDATE_KEYS));
 }
 
 /** Archive or restore. There is no DELETE: historical lines must keep resolving. */

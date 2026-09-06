@@ -114,7 +114,21 @@ export function createQuotation({ customerId, ownerId } = {}) {
  * is audited as the governance event it is.
  */
 export function updateQuotation(quotationId, patch = {}) {
-  return api.patch(`/quotations/${encodeURIComponent(quotationId)}`, patch);
+  // Whitelisted against `updateQuotationSchema`. Callers pass small explicit patches
+  // today, but this is the one §11 write that forwards a caller's object verbatim — and
+  // a single `setQuoteMeta(id, quote)` anywhere would send `id`, `reference`, `totals`
+  // and the rest into a `.strict()` body and earn 400 FIELD_NOT_ALLOWED.
+  const body = {};
+  for (const key of [
+    'orderDiscountPct',
+    'promisedDeliveryDate',
+    'validUntil',
+    'internalNotes',
+    'customerTerms',
+  ]) {
+    if (patch[key] !== undefined) body[key] = patch[key];
+  }
+  return api.patch(`/quotations/${encodeURIComponent(quotationId)}`, body);
 }
 
 /* ------------------------------------------------------------------- lines */

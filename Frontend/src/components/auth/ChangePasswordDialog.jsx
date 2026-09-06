@@ -4,7 +4,8 @@ import { KeyRound } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import { PasswordChecklist, PasswordField } from '@/components/auth/PasswordField';
+import { requiredText } from '@/lib/validate';
 
 /**
  * Change password for a signed-in user. POST /auth/change-password.
@@ -35,6 +36,14 @@ export function ChangePasswordDialog({ open, onOpenChange }) {
   };
 
   const submit = async () => {
+    // The endpoint requires the current password even for a signed-in user, and an empty
+    // box previously reached it and came back as a credential failure — which reads as
+    // "your password is wrong" rather than "you left this blank".
+    const missing = requiredText(form.current, 'Enter your current password.');
+    if (missing) {
+      setError(missing);
+      return;
+    }
     if (form.next.length < 8) {
       setError('Use at least 8 characters.');
       return;
@@ -88,26 +97,24 @@ export function ChangePasswordDialog({ open, onOpenChange }) {
       }
     >
       <div className="space-y-3.5">
-        <Input
+        <PasswordField
           label="Current password"
-          type="password"
           required
           autoComplete="current-password"
           value={form.current}
           onChange={setField('current')}
         />
-        <Input
+        <PasswordField
           label="New password"
-          type="password"
           required
           autoComplete="new-password"
           placeholder="At least 8 characters"
           value={form.next}
           onChange={setField('next')}
         />
-        <Input
+        <PasswordChecklist value={form.next} />
+        <PasswordField
           label="Confirm new password"
-          type="password"
           required
           autoComplete="new-password"
           value={form.confirm}

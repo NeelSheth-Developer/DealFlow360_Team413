@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { GlassCard } from '@/components/glass/Glass';
+import { Logo } from '@/components/shared/Logo';
 
 /**
  * Shared two-column layout for every auth screen.
@@ -27,12 +28,8 @@ export function AuthShell({ backTo = '/', backLabel = 'Back to home', aside, chi
           {backLabel}
         </Link>
 
-        <div
-          className={
-            hasAside ? 'grid items-stretch gap-4 lg:grid-cols-[1fr_0.9fr]' : ''
-          }
-        >
-          <GlassCard strong className="p-6">
+        <div className={hasAside ? 'grid items-stretch gap-4 lg:grid-cols-[1fr_0.9fr]' : ''}>
+          <GlassCard strong className="p-7">
             {children}
           </GlassCard>
 
@@ -47,9 +44,19 @@ export function AuthShell({ backTo = '/', backLabel = 'Back to home', aside, chi
   );
 }
 
+/**
+ * Two gradients, both inside the brand palette.
+ *
+ * The customer surface used to run teal -> blue (#14b8a6 -> #3b82f6), which shares no hue
+ * with the violet/indigo/pink the rest of the product is built from — it read as a
+ * different app rather than a different audience. Keeping the two spaces visually
+ * distinct is right; doing it by leaving the palette is not. `customer` now leans on the
+ * warm end of the same ramp, so the two are unmistakably related and still tell apart at
+ * a glance.
+ */
 const TONES = {
-  brand: 'from-brand-600 via-brand-500 to-accent-indigo',
-  teal: 'from-accent-teal via-state-info to-brand-500',
+  brand: 'from-brand-700 via-brand-500 to-accent-indigo',
+  customer: 'from-accent-indigo via-brand-500 to-accent-pink',
 };
 
 /**
@@ -78,45 +85,74 @@ export function AuthAside({
     <section
       className={`relative flex h-full flex-col overflow-hidden rounded-glass bg-gradient-to-br ${
         TONES[tone] ?? TONES.brand
-      } p-6 shadow-glass-strong`}
+      } p-7 shadow-glass-strong`}
     >
-      {/* Soft depth, matching the blob language used across the app. */}
+      {/*
+        Depth, in three layers: two soft blooms and a fine grid.
+
+        The panel was a flat gradient behind a bullet list, which is why it read as
+        basic — there was nothing between the background and the text. The blooms give
+        it dimension and the grid gives the eye a surface to sit on, both at low enough
+        opacity that the type still clears AA on every stop of the gradient.
+      */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/15 blur-2xl"
+        className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-white/20 blur-3xl"
       />
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -bottom-24 -left-12 h-56 w-56 rounded-full bg-white/10 blur-2xl"
+        className="pointer-events-none absolute -bottom-28 -left-16 h-64 w-64 rounded-full bg-white/12 blur-3xl"
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-[0.14]"
+        style={{
+          backgroundImage:
+            'linear-gradient(rgba(255,255,255,.55) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.55) 1px, transparent 1px)',
+          backgroundSize: '34px 34px',
+          maskImage: 'radial-gradient(ellipse at 30% 0%, #000 35%, transparent 78%)',
+          WebkitMaskImage: 'radial-gradient(ellipse at 30% 0%, #000 35%, transparent 78%)',
+        }}
       />
 
       <div className="relative flex h-full flex-col">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-white">
-            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
+        <div className="flex items-center gap-2.5">
+          {/* On the gradient aside the mark carries a soft ring so its own violet does
+              not disappear into the panel behind it. */}
+          <Logo size="sm" className="ring-1 ring-white/40" />
           <span className="text-xs font-extrabold tracking-tight text-white">{eyebrow}</span>
         </div>
 
-        <h2 className="mt-4 text-lg font-extrabold leading-snug tracking-tight text-white">
+        <h2 className="mt-6 text-[22px] font-extrabold leading-[1.15] tracking-tight text-white">
           {title}
         </h2>
         {description && (
-          <p className="mt-2 text-xs leading-relaxed text-white/80">{description}</p>
+          <p className="mt-3 max-w-[34ch] text-[13px] leading-relaxed text-white/85">
+            {description}
+          </p>
         )}
 
+        {/*
+          Each capability is its own translucent card rather than a bullet.
+          A row of text against a gradient has no edges, so the list ran together; a
+          surface per item gives each one a boundary and lets the icon sit in a tile of
+          its own without inventing a second colour.
+        */}
         {items.length > 0 && (
-          <ul className="mt-5 space-y-3">
+          <ul className="mt-7 space-y-2.5">
             {items.map((item) => (
-              <li key={item.title} className="flex items-start gap-2.5">
-                <span className="mt-px inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white">
-                  <item.icon className="h-3 w-3" aria-hidden="true" />
+              <li
+                key={item.title}
+                className="flex items-start gap-3 rounded-xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm transition-colors hover:border-white/25 hover:bg-white/15"
+              >
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/22 text-white ring-1 ring-white/25">
+                  <item.icon className="h-4 w-4" aria-hidden="true" />
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-[11px] font-bold leading-snug text-white">
+                <span className="min-w-0 pt-0.5">
+                  <span className="block text-[12.5px] font-bold leading-snug text-white">
                     {item.title}
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-white/70">
+                  <span className="mt-1 block text-[11.5px] leading-relaxed text-white/75">
                     {item.blurb}
                   </span>
                 </span>
@@ -125,11 +161,12 @@ export function AuthAside({
           </ul>
         )}
 
-        {/* `mt-auto` pins this to the bottom so the panel reads as full-height
-            rather than top-weighted with dead space underneath. */}
+        {/* `mt-auto` pins this to the bottom so the panel reads as full-height rather
+            than top-weighted with dead space underneath. */}
         {note && (
-          <p className="mt-auto border-t border-white/20 pt-4 text-[11px] leading-relaxed text-white/75">
-            {note}
+          <p className="mt-auto flex items-start gap-2 border-t border-white/20 pt-5 text-[11px] leading-relaxed text-white/70">
+            <ShieldCheck className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>{note}</span>
           </p>
         )}
       </div>

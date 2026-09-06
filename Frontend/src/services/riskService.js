@@ -184,6 +184,58 @@ export async function scoreLines({
   return normalise(raw);
 }
 
+/* ------------------------------------------------------- live blended preview */
+
+/**
+ * `POST /risk/blended-score` — the lightweight, stateless score for a LIVE preview.
+ *
+ * HOW IT DIFFERS FROM `/risk/score`, and why both exist:
+ *
+ *   · IT NEEDS NO SAVED QUOTATION. It takes `lineTotal` directly rather than deriving it
+ *     from qty × unitPrice, so the builder can score what is currently ON SCREEN —
+ *     including a discount the rep has typed but not yet committed. `/risk/score` scores
+ *     what the server already holds.
+ *   · IT IS A PREVIEW, NOT A ROUTING DECISION. `approval_level` is matched against the
+ *     chain's score bands ONLY — `singleLineTrip` is deliberately not considered. So a
+ *     quotation with one badly-over line can preview as "Manager" here and still route to
+ *     "Manager + Finance" on submit. That is not a bug to paper over, but it does mean
+ *     this number must never be presented as the binding one: `POST /submit-approval`
+ *     re-scores with the full rule and its answer is the one that counts.
+ *
+ * The response is snake_case, unlike every other payload in the API, so it is normalised
+ * here — exactly once — rather than leaking two naming conventions into the components.
+ *
+ * @returns {Promise<{score, requiresApproval, approvers, label, flagged: Array<{lineId, ceilingPct, overBy}>}>}
+ */
+export async function scoreBlended({ customerTier, lines }) {
+  const raw = await api.post('/risk/blended-score', {
+    customerTier,
+    lines: lines.map((l) => ({
+      lineId: String(l.lineId ?? l.id),
+      category: l.category,
+      discountPct: Number(l.discountPct) || 0,
+      // The server weights by line value, so this has to be the NET line total the rep
+      // is looking at, not the gross — see `blendedLinesFromQuote` in the hook.
+      lineTotal: Number(l.lineTotal) || 0,
+    })),
+  });
+
+  const approvers = Array.isArray(raw?.approval_level) ? raw.approval_level : [];
+
+  return {
+    score: Number(raw?.blended_score) || 0,
+    requiresApproval: Boolean(raw?.requires_approval),
+    approvers,
+    label: approvalPathLabel(approvers),
+    band: riskBand(Number(raw?.blended_score) || 0),
+    flagged: (raw?.flagged_lines ?? []).map((f) => ({
+      lineId: f.line_id,
+      ceilingPct: Number(f.effective_ceiling) || 0,
+      overBy: Number(f.overage) || 0,
+    })),
+  };
+}
+
 /**
  * The starting state for the admin risk sandbox.
  *

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import { Ban, Eye, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { explainFilteredSuggestions, rankSuggestions } from '@/lib/upsellEngine';
@@ -34,6 +34,7 @@ export default function UpsellRules() {
 
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
+  const [saving, setSaving] = useState(false);
 
   // ------------------------------------------------------------ previewer
   const [previewProducts, setPreviewProducts] = useState(['p-laptop14']);
@@ -66,18 +67,26 @@ export default function UpsellRules() {
     setForm(rule ? { ...rule } : EMPTY);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.triggerProductId || !form.suggestedProductId) {
-      toast.error('Pick both a trigger and a suggested product.');
+      notify.error('Pick both a trigger and a suggested product.');
       return;
     }
     if (form.triggerProductId === form.suggestedProductId) {
-      toast.error('A product cannot suggest itself.');
+      notify.error('A product cannot suggest itself.');
       return;
     }
-    upsertUpsellRule(editing === 'new' ? { ...form, id: undefined } : form);
+    setSaving(true);
+    const isNew = editing === 'new';
+    const result = await upsertUpsellRule(isNew ? { ...form, id: undefined } : form);
+    setSaving(false);
+
+    if (!result.ok) {
+      notify.report(result, null, isNew ? 'Could not add the rule' : 'Could not save');
+      return;
+    }
     setEditing(null);
-    toast.success(editing === 'new' ? 'Rule added' : 'Rule updated');
+    notify.success(isNew ? 'Rule added' : 'Rule updated');
   };
 
   const togglePreviewProduct = (id) =>
@@ -145,7 +154,14 @@ export default function UpsellRules() {
                     <Switch
                       id={`rule-active-${rule.id}`}
                       checked={rule.active}
-                      onCheckedChange={(v) => upsertUpsellRule({ ...rule, active: v })}
+                      onCheckedChange={async (v) => {
+                        const r = await upsertUpsellRule({ ...rule, active: v });
+                        notify.report(
+                          r,
+                          { title: v ? 'Rule enabled' : 'Rule paused' },
+                          'Could not change the rule',
+                        );
+                      }}
                     />
                   </TD>
                   <TD align="right">
@@ -162,9 +178,9 @@ export default function UpsellRules() {
                         size="xs"
                         variant="ghost"
                         className="text-state-danger hover:bg-state-danger/10"
-                        onClick={() => {
-                          deleteUpsellRule(rule.id);
-                          toast.success('Rule removed');
+                        onClick={async () => {
+                          const r = await deleteUpsellRule(rule.id);
+                          notify.report(r, { title: 'Rule removed' }, 'Could not remove the rule');
                         }}
                       />
                     </div>
@@ -308,7 +324,7 @@ export default function UpsellRules() {
             <Button variant="secondary" onClick={() => setEditing(null)}>
               Cancel
             </Button>
-            <Button onClick={save}>{editing === 'new' ? 'Add rule' : 'Save changes'}</Button>
+            <Button onClick={save} loading={saving}>{editing === 'new' ? 'Add rule' : 'Save changes'}</Button>
           </>
         }
       >
