@@ -229,17 +229,19 @@ export async function splitOrder(input: SplitOrderInput) {
   const allWarehouses = await db
     .select()
     .from(warehouses)
-    .where(eq(warehouses.active, true))
-    .orderBy(asc(warehouses.shippingCostWeight));
+    .where(eq(warehouses.active, true));
 
   const stockMap = await stockFor(allWarehouses.map((w) => w.id));
 
-  const whs = allWarehouses.map((w) => ({
-    id: w.id,
-    name: w.name,
-    shippingCostWeight: num(w.shippingCostWeight),
-    stock: stockMap.get(w.id) ?? {},
-  }));
+  const whs = allWarehouses
+    .map((w) => ({
+      id: w.id,
+      name: w.name,
+      shippingCostWeight: num(w.shippingCostWeight),
+      baseShipCost: num(w.baseShipCost),
+      stock: stockMap.get(w.id) ?? {},
+    }))
+    .sort((a, b) => a.shippingCostWeight * a.baseShipCost - b.shippingCostWeight * b.baseShipCost);
 
   const lines = input.order_lines;
 
@@ -250,7 +252,7 @@ export async function splitOrder(input: SplitOrderInput) {
         allocation: lines.map((l) => ({ warehouse_id: wh.id, product_id: l.product_id, qty: l.qty })),
         backorder: [],
         shipment_count: 1,
-        estimated_cost: round2(wh.shippingCostWeight),
+        estimated_cost: round2(wh.shippingCostWeight * wh.baseShipCost),
       };
     }
   }
@@ -284,7 +286,7 @@ export async function splitOrder(input: SplitOrderInput) {
   const estimated_cost = round2(
     [...usedWarehouses].reduce((sum, id) => {
       const wh = whs.find((w) => w.id === id);
-      return sum + (wh?.shippingCostWeight ?? 0);
+      return sum + (wh ? wh.shippingCostWeight * wh.baseShipCost : 0);
     }, 0),
   );
 
