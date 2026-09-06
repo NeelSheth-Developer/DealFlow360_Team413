@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --grad-hero: linear-gradient(135deg, #ede9fe 0%, #f5f3ff 45%, #ffe4f3 100%);
+  --grad-brand: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  --grad-cta: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+  --grad-risk-low: linear-gradient(90deg, #22c55e, #14b8a6);
+  --grad-risk-mid: linear-gradient(90deg, #f59e0b, #ec4899);
+  --grad-risk-high: linear-gradient(90deg, #ef4444, #7c3aed);
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply font-sans antialiased;
+    background: var(--grad-hero);
+    background-attachment: fixed;
+    color: #1e1033;
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(139, 92, 246, 0.25);
+  }
+
+  /* Scrollbars styled to match the theme */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.28);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.45);
+    background-clip: content-box;
+  }
+
+  /* Remove number input spinners so our own steppers are the only control */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  :focus-visible {
+    outline: none;
+    @apply ring-2 ring-brand-500 ring-offset-2 ring-offset-surface-base;
+  }
+}
+
+@layer components {
+  .glass {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(139, 92, 246, 0.16);
+    box-shadow: 0 8px 32px rgba(124, 58, 237, 0.08);
+    border-radius: 1.25rem;
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    box-shadow: 0 12px 40px rgba(124, 58, 237, 0.14);
+    border-radius: 1.25rem;
+  }
+
+  .glass-nav {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.14);
+  }
+
+  .glass-inset {
+    background: rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(139, 92, 246, 0.12);
+    border-radius: 0.875rem;
+  }
+
+  .glass-hover {
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  .glass-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 48px rgba(124, 58, 237, 0.16);
+  }
+
+  .btn-gradient {
+    background: var(--grad-brand);
+    color: #fff;
+  }
+  .btn-gradient:hover:not(:disabled) {
+    background: var(--grad-cta);
+  }
+
+  .blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(72px);
+    opacity: 0.45;
+    pointer-events: none;
+    z-index: 0;
+    animation: blobFloat 18s ease-in-out infinite;
+  }
+  .blob--violet {
+    background: #a78bfa;
+  }
+  .blob--pink {
+    background: #f9a8d4;
+    animation-delay: -6s;
+  }
+  .blob--indigo {
+    background: #818cf8;
+    animation-delay: -12s;
+  }
+
+  .text-gradient {
+    background: var(--grad-cta);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Table shell reused by every data table in the app */
+  .table-glass {
+    @apply w-full border-collapse text-sm;
+  }
+  .table-glass thead th {
+    @apply border-b border-brand-500/15 px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted;
+  }
+  .table-glass tbody td {
+    @apply border-b border-brand-500/10 px-3 py-2.5 align-middle text-ink;
+  }
+  .table-glass tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .table-glass tbody tr {
+    transition: background-color 0.15s ease;
+  }
+  .table-glass tbody tr:hover {
+    background: rgba(139, 92, 246, 0.05);
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes blobFloat {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -40px) scale(1.12);
+  }
+  66% {
+    transform: translate(-25px, 25px) scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -81,34 +81,24 @@ function renderText(message: Message): string {
  * Sends one message. Never throws — see the note at the top of this file.
  * Returns `true` when the send succeeded, for callers that want to log the outcome.
  */
-export function deliver(message: Message): Promise<boolean> {
-  if (!message.to) return Promise.resolve(false);
+export async function deliver(message: Message): Promise<boolean> {
+  if (!message.to) return false;
 
-  /**
-   * Scheduled, not awaited.
-   *
-   * No caller reads the result — an approval is approved whether or not its
-   * notification lands — so awaiting only ties the HTTP response to a third party's
-   * latency. On a host that blocks outbound SMTP that is not slowness but a hang, and
-   * a single blocked send stalls the whole request.
-   *
-   * The promise still runs and still logs; only the waiting is gone. Safe because the
-   * process is long-lived — on a runtime that freezes after the response, this would
-   * need awaiting again.
-   */
-  void sendEmail({
-    to: message.to,
-    subject: message.subject,
-    html: renderHtml(message),
-    text: renderText(message),
-  }).catch((error: unknown) => {
+  try {
+    await sendEmail({
+      to: message.to,
+      subject: message.subject,
+      html: renderHtml(message),
+      text: renderText(message),
+    });
+    return true;
+  } catch (error) {
     logger.error(
       { err: error, subject: message.subject, to: message.to },
       'Transactional email failed',
     );
-  });
-
-  return Promise.resolve(true);
+    return false;
+  }
 }
 
 /** Sends the same message to several addresses, skipping blanks and duplicates. */

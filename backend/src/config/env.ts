@@ -47,28 +47,6 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().min(1),
 
   /**
-   * Brevo — a second HTTP sender.
-   *
-   * Picked over an SMTP relay deliberately: most hosting platforms block outbound
-   * SMTP to stop spam, so an SMTP fallback works locally and then hangs in
-   * production. Brevo posts over HTTPS on 443, like Resend, so it is unaffected.
-   *
-   * The sender is EMAIL_FROM, so both transports present the same From and a
-   * fallback is invisible to the recipient. That address must be verified in Brevo,
-   * otherwise it refuses the send.
-   */
-  BREVO_API_KEY: optionalText(),
-
-  /**
-   * Force a transport, or let `auto` walk the chain.
-   *
-   * `auto` tries resend, then brevo, skipping either if it is not configured. Both
-   * post over HTTPS, so neither is affected by the outbound-SMTP blocking that most
-   * hosting platforms apply.
-   */
-  EMAIL_TRANSPORT: z.enum(['auto', 'resend', 'brevo']).default('auto'),
-
-  /**
    * Cloudinary — where generated quotation and invoice PDFs are stored.
    *
    * Optional as a group: with none of the three set, the PDF endpoints stream the file
@@ -76,9 +54,9 @@ const envSchema = z.object({
    * on a machine with no Cloudinary account, and `cloudinaryConfigured` below is the
    * single place that decides which path is taken.
    */
-  CLOUDINARY_CLOUD_NAME: optionalText(),
-  CLOUDINARY_API_KEY: optionalText(),
-  CLOUDINARY_API_SECRET: optionalText(),
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
   CLOUDINARY_FOLDER: z.string().default('dealflow360'),
 
   // Auth / security
@@ -121,34 +99,6 @@ if (!parsed.success) {
 export const env = parsed.data;
 
 export const isProduction = env.NODE_ENV === 'production';
-
-export const brevoConfigured = Boolean(env.BREVO_API_KEY);
-
-export type EmailTransport = 'resend' | 'brevo';
-
-/**
- * The transports to try, in order, filtered to those actually configured.
- *
- * Forcing a transport that has no credentials would fail every send, so a forced
- * choice still has to be configured to be honoured — otherwise the chain is used and
- * a warning explains why.
- */
-export const emailChain: EmailTransport[] = (() => {
-  const available: Record<EmailTransport, boolean> = {
-    resend: true, // RESEND_API_KEY is required, so this is always present
-    brevo: brevoConfigured,
-  };
-
-  if (env.EMAIL_TRANSPORT !== 'auto') {
-    if (available[env.EMAIL_TRANSPORT]) return [env.EMAIL_TRANSPORT];
-    process.stderr.write(
-      `\nWARNING: EMAIL_TRANSPORT=${env.EMAIL_TRANSPORT} but it is not configured.\n` +
-        '         Falling back to whichever transports are.\n\n',
-    );
-  }
-
-  return (['resend', 'brevo'] as EmailTransport[]).filter((t) => available[t]);
-})();
 
 /** All three credentials present. Checked once, so no caller has to re-derive it. */
 export const cloudinaryConfigured = Boolean(

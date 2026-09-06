@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "df360-team413-collection",
     "name": "DealFlow360 \u2014 Team_413 API",
-    "description": "Complete API for DealFlow360, the Odoo Hackathon 2026 sales-operations platform.\n\n## Getting started\n\n1. Start the backend: `npm run dev` (defaults to port 5050).\n2. Seed the first admin: `npm run seed:admin -- admin@teamvector.co \"Admin\" \"S3cure!pass\"`.\n   The API cannot create an admin \u2014 signup always produces a `sales_rep` \u2014 so the bootstrap account has to be planted from the backend.\n3. Set `EXPOSE_DEV_OTP=true` in `.env` so signup returns the code in the response.\n4. Run **01 \u00b7 Auth \u2192 Login (admin)**. Every later request picks up the token automatically from the `staffToken` collection variable.\n\n## Conventions\n\n- Success: `{ \"success\": true, \"data\": ... }`, with `meta` on paginated lists.\n- Failure: `{ \"success\": false, \"error\": { \"code\", \"message\", \"details\" } }`.\n- Money is in major units with 2 decimals. Percentages are numbers, not fractions.\n- Ids are uuids; `reference` (`Q-1042`, `INV-2031`, `DF-CMC827`) is the human-readable form.\n- Request bodies are `.strict()`: an unknown key is rejected with 400 `FIELD_NOT_ALLOWED` rather than silently ignored.\n\n## Two identity spaces\n\nStaff and customers are separate populations. A staff token on `/customer/*` and a customer token on any internal router both get 403 `WRONG_KIND`, checked on every request rather than by hiding buttons in a UI.",
+    "description": "Complete API for DealFlow360, the Odoo Hackathon 2026 sales-operations platform.\n\n## Getting started\n\n1. Start the backend: `npm run dev` (defaults to port 5050).\n2. Seed the first admin: `npm run seed:admin -- admin@teamvector.space \"Admin\" \"S3cure!pass\"`.\n   The API cannot create an admin \u2014 signup always produces a `sales_rep` \u2014 so the bootstrap account has to be planted from the backend.\n3. Set `EXPOSE_DEV_OTP=true` in `.env` so signup returns the code in the response.\n4. Run **01 \u00b7 Auth \u2192 Login (admin)**. Every later request picks up the token automatically from the `staffToken` collection variable.\n\n## Conventions\n\n- Success: `{ \"success\": true, \"data\": ... }`, with `meta` on paginated lists.\n- Failure: `{ \"success\": false, \"error\": { \"code\", \"message\", \"details\" } }`.\n- Money is in major units with 2 decimals. Percentages are numbers, not fractions.\n- Ids are uuids; `reference` (`Q-1042`, `INV-2031`, `DF-CMC827`) is the human-readable form.\n- Request bodies are `.strict()`: an unknown key is rejected with 400 `FIELD_NOT_ALLOWED` rather than silently ignored.\n\n## Two identity spaces\n\nStaff and customers are separate populations. A staff token on `/customer/*` and a customer token on any internal router both get 403 `WRONG_KIND`, checked on every request rather than by hiding buttons in a UI.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -76,7 +76,7 @@
             "description": "Always creates a `sales_rep`. A `role` in the body is rejected with 400 FIELD_NOT_ALLOWED \u2014 that is what keeps `admin` unreachable from outside.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Priya Sharma\",\n  \"email\": \"priya@teamvector.co\",\n  \"password\": \"S3cure!pass\",\n  \"type\": \"internal\"\n}"
+              "raw": "{\n  \"name\": \"Priya Sharma\",\n  \"email\": \"priya@teamvector.space\",\n  \"password\": \"S3cure!pass\",\n  \"type\": \"internal\"\n}"
             }
           },
           "response": [],
@@ -239,7 +239,7 @@
             "description": "Creates a portal account at the lowest tier. Tier is never self-selected \u2014 it decides pricing.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Acme Corp\",\n  \"email\": \"buyer@acme.teamvector.co\",\n  \"password\": \"Acme@2026x\",\n  \"type\": \"customer\"\n}"
+              "raw": "{\n  \"name\": \"Acme Corp\",\n  \"email\": \"buyer@acme.example\",\n  \"password\": \"Acme@2026x\",\n  \"type\": \"customer\"\n}"
             }
           },
           "response": [],
@@ -3953,7 +3953,7 @@
     },
     {
       "key": "adminEmail",
-      "value": "admin@teamvector.co",
+      "value": "admin@teamvector.space",
       "description": "The account created by npm run seed:admin."
     },
     {

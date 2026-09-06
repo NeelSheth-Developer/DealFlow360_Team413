@@ -24,6 +24,7 @@
     "verify:risk": "tsx src/scripts/verify-risk.ts",
     "verify:engines": "tsx src/scripts/verify-engines.ts",
     "seed": "tsx src/scripts/seed.ts"
+    "e2e": "tsx src/scripts/e2e.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
