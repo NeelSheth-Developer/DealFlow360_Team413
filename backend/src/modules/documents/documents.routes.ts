@@ -15,6 +15,17 @@ export const portalPdfRouter = Router({ mergeParams: true });
 const idParam = z.string().uuid('Invalid id');
 
 /**
+ * `?stream=1` forces the bytes back instead of a hosted link.
+ *
+ * Read leniently and never validated: an unparseable value means "no", because a
+ * malformed query param must not be the thing that stops someone downloading their
+ * own quotation. See `DocumentOptions` for why the escape hatch exists at all.
+ */
+function wantsStream(value: unknown): boolean {
+  return value === '1' || value === 'true';
+}
+
+/**
  * Sends either the hosted URL or the file itself, depending on whether the upload
  * succeeded. The response shape tells the client which it got, so the frontend can
  * link to `data.url` when present and fall back to triggering a download otherwise.
@@ -48,7 +59,7 @@ quotationPdfRouter.get(
   asyncHandler(async (req, res) => {
     const id = idParam.parse(req.params.id);
     const actor = await resolveActor(req);
-    send(res, await quotationPdf(actor, id));
+    send(res, await quotationPdf(actor, id, { stream: wantsStream(req.query.stream) }));
   }),
 );
 
@@ -60,7 +71,7 @@ invoicePdfRouter.get(
   asyncHandler(async (req, res) => {
     const id = idParam.parse(req.params.id);
     const actor = await resolveActor(req);
-    send(res, await invoicePdf(actor, id));
+    send(res, await invoicePdf(actor, id, { stream: wantsStream(req.query.stream) }));
   }),
 );
 
@@ -87,7 +98,7 @@ portalPdfRouter.get(
     }
 
     const actor = await resolveActor(req);
-    send(res, await quotationPdf(actor, id));
+    send(res, await quotationPdf(actor, id, { stream: wantsStream(req.query.stream) }));
   }),
 );
 
@@ -105,6 +116,6 @@ portalPdfRouter.get(
     if (invoice.status === 'draft') throw ApiError.notFound('Invoice not found');
 
     const actor = await resolveActor(req);
-    send(res, await invoicePdf(actor, id));
+    send(res, await invoicePdf(actor, id, { stream: wantsStream(req.query.stream) }));
   }),
 );

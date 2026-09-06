@@ -34,6 +34,13 @@ export function createApp() {
     cors({
       origin: env.CORS_ORIGINS.includes('*') ? true : env.CORS_ORIGINS,
       credentials: true,
+      /**
+       * A cross-origin response exposes only the CORS-safelisted headers by default,
+       * so the streamed-PDF branch's own headers were invisible to the browser app and
+       * every downloaded quotation was saved as an unnamed blob. These two carry the
+       * document reference, which is the filename.
+       */
+      exposedHeaders: ['Content-Disposition', 'X-Document-Reference'],
     }),
   );
   app.use(compression());
