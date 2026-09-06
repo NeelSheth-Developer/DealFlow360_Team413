@@ -18,7 +18,6 @@ Quote → Risk Scoring → Approval Routing → Fulfillment → Billing → Invo
 |:--|:--|
 | 🎥 **Demo Video** | **[Watch the demo](https://drive.google.com/drive/folders/1OEYiUbT9DnM4zff3vpSnvD0PoAuiY7Ic?usp=sharing)** |
 | 🌐 **Live App** | **<https://dealflow360.teamvector.space/>** |
-| ⚙️ **Live API** | **<https://api.dealflow360.teamvector.space/api/v1>** |
 | 📖 **API Reference** | [`backend/docs/API-REFERENCE.md`](backend/docs/API-REFERENCE.md) — every endpoint, in one file |
 | 🗂️ **DBML Diagram** | **[`backend/docs/schema.dbml`](backend/docs/schema.dbml)** |
 | 🧩 **ER Diagrams** | **[§24 Data model](backend/docs/API-REFERENCE.md#24-data-model)** — 31 tables drawn per area, rendered inline on GitHub |
